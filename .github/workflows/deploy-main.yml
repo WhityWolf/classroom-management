@@ -1,0 +1,40 @@
+name: Deploy main → GitHub Pages (root)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Needs write access to push to the gh-pages branch
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build (main)
+        run: npm run build
+        env:
+          # Replace 'your-repo-name' with your actual GitHub repository name
+          VITE_BASE: /classroom-management/
+
+      - name: Deploy to gh-pages (root)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          # keep_files preserves the /dev/ subdirectory written by the other workflow
+          keep_files: true
+          commit_message: "deploy: main → / [ci skip]"
