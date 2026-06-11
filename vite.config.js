@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Replace 'your-repo-name' with your actual GitHub repository name.
-// If you're deploying to a custom domain or username.github.io root,
-// set base to '/' instead.
+// VITE_BASE is injected by the GitHub Actions workflow.
+// - main branch  →  /your-repo-name/
+// - dev branch   →  /your-repo-name/dev/
+// Fallback to '/your-repo-name/' for local `npm run build`.
 export default defineConfig({
   plugins: [react()],
-  base: '/classroom-management/',
+  base: process.env.VITE_BASE || '/classroom-management/',
 })

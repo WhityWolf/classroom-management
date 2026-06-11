@@ -1,0 +1,41 @@
+name: Deploy dev → GitHub Pages (/dev)
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build (dev)
+        run: npm run build
+        env:
+          # The /dev suffix must match destination_dir below
+          VITE_BASE: /your-repo-name/dev/
+
+      - name: Deploy to gh-pages (/dev)
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          # Write into the dev/ subfolder of the gh-pages branch
+          destination_dir: dev
+          # keep_files preserves the root deployment written by the main workflow
+          keep_files: true
+          commit_message: "deploy: dev → /dev [ci skip]"
