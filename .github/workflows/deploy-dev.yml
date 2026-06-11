@@ -27,7 +27,7 @@ jobs:
         run: npm run build
         env:
           # The /dev suffix must match destination_dir below
-          VITE_BASE: /your-repo-name/dev/
+          VITE_BASE: /classroom-management/dev/
 
       - name: Deploy to gh-pages (/dev)
         uses: peaceiris/actions-gh-pages@v4
