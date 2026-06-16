@@ -1,8 +1,5 @@
 /**
- * auth/roles.js — Two-tier role hierarchy.
- *
- *   CHIEF     Institution-wide authority. Full access to everything.
- *   DEPT_HEAD Scoped to their own department. Can allocate own rooms only.
+ * auth/roles.js — Hierarquia de dois níveis de funções.
  */
 
 export const ROLES = Object.freeze({
@@ -11,8 +8,8 @@ export const ROLES = Object.freeze({
 });
 
 export const ROLE_LABELS = Object.freeze({
-  [ROLES.CHIEF]:     'Chief (Administrator)',
-  [ROLES.DEPT_HEAD]: 'Department Head',
+  [ROLES.CHIEF]:     'Diretor (Administrador)',
+  [ROLES.DEPT_HEAD]: 'Chefe de Departamento',
 });
 
 export const ROLE_LEVEL = Object.freeze({
@@ -20,10 +17,8 @@ export const ROLE_LEVEL = Object.freeze({
   [ROLES.CHIEF]:     1,
 });
 
-/** Roles that must carry a deptId. */
 export const DEPT_SCOPED_ROLES = new Set([ROLES.DEPT_HEAD]);
 
-/** Which roles each role may assign to new users. */
 export const ASSIGNABLE_BY = Object.freeze({
   [ROLES.CHIEF]:     [ROLES.DEPT_HEAD],
   [ROLES.DEPT_HEAD]: [],

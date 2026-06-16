@@ -64,7 +64,7 @@ export function AuthProvider({ children }) {
     setAuthError(null);
     const result = loginUser(username, password);
     if (!result) {
-      const msg = 'Invalid username or password.';
+      const msg = 'Usuário ou senha inválidos.';
       setAuthError(msg);
       return { ok: false, message: msg };
     }

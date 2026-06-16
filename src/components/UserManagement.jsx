@@ -1,7 +1,3 @@
-/**
- * components/UserManagement.jsx
- * User management panel — simplified for CHIEF / DEPT_HEAD two-tier system.
- */
 import { useState, useMemo } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useT, dtc, dbg } from '../theme.jsx';
@@ -11,10 +7,10 @@ import { PERMS } from '../auth/permissions.js';
 import { formatDateTime } from '../auth/utils.js';
 
 const DEPTS_LIST = [
-  { id:'MATH', name:'Mathematics',      clr:'#60A5FA', textClr:'#1d4ed8', lightBg:'#eff6ff', bg:'#0d1f3d' },
-  { id:'PHYS', name:'Physics',          clr:'#FBBF24', textClr:'#92400e', lightBg:'#fffbeb', bg:'#2c1f06' },
-  { id:'CS',   name:'Computer Science', clr:'#34D399', textClr:'#065f46', lightBg:'#ecfdf5', bg:'#062c1d' },
-  { id:'CHEM', name:'Chemistry',        clr:'#A78BFA', textClr:'#5b21b6', lightBg:'#f5f3ff', bg:'#1c0d3d' },
+  { id:'MATH', name:'Matemática',           clr:'#60A5FA', textClr:'#1d4ed8', lightBg:'#eff6ff', bg:'#0d1f3d' },
+  { id:'PHYS', name:'Física',               clr:'#FBBF24', textClr:'#92400e', lightBg:'#fffbeb', bg:'#2c1f06' },
+  { id:'CS',   name:'Ciência da Computação',clr:'#34D399', textClr:'#065f46', lightBg:'#ecfdf5', bg:'#062c1d' },
+  { id:'CHEM', name:'Química',              clr:'#A78BFA', textClr:'#5b21b6', lightBg:'#f5f3ff', bg:'#1c0d3d' },
 ];
 const DEPT_MAP = Object.fromEntries(DEPTS_LIST.map(d => [d.id, d]));
 
@@ -23,12 +19,12 @@ export default function UserManagement({ onClose }) {
   const { T, theme } = useT();
   const mono = { fontFamily:"'DM Mono',monospace" };
 
-  const [users,    setUsers]    = useState(() => getUsers());
-  const [search,   setSearch]   = useState('');
-  const [editUser, setEditUser] = useState(null);
-  const [creating, setCreating] = useState(false);
-  const [deactConf,setDeactConf]= useState(null);
-  const [feedback, setFeedback] = useState(null);
+  const [users,     setUsers]     = useState(() => getUsers());
+  const [search,    setSearch]    = useState('');
+  const [editUser,  setEditUser]  = useState(null);
+  const [creating,  setCreating]  = useState(false);
+  const [deactConf, setDeactConf] = useState(null);
+  const [feedback,  setFeedback]  = useState(null);
 
   const reload = () => setUsers(getUsers());
   const flash  = (type, msg) => { setFeedback({type,msg}); setTimeout(()=>setFeedback(null),3000); };
@@ -47,33 +43,33 @@ export default function UserManagement({ onClose }) {
   }, [users, search]);
 
   const handleDeactivate = (user) => {
-    try { deactivateUser(user.id); reload(); flash('ok', `${user.name} deactivated.`); }
+    try { deactivateUser(user.id); reload(); flash('ok', `${user.name} foi desativado(a).`); }
     catch(e) { flash('err', e.message); }
     setDeactConf(null);
   };
 
-  const fdbkBg  = feedback?.type==='ok' ? (theme==='light'?'#f0fdf4':'#0a2a0a') : (theme==='light'?'#fef2f2':'#2a0a0a');
-  const fdbkBdr = feedback?.type==='ok' ? (theme==='light'?'#86efac':'#34d39944') : (theme==='light'?'#fca5a5':'#ef444444');
-  const fdbkClr = feedback?.type==='ok' ? (theme==='light'?'#15803d':'#34d399')    : (theme==='light'?'#b91c1c':'#ef4444');
+  const fdbkBg  = feedback?.type==='ok'?(theme==='light'?'#f0fdf4':'#0a2a0a'):(theme==='light'?'#fef2f2':'#2a0a0a');
+  const fdbkBdr = feedback?.type==='ok'?(theme==='light'?'#86efac':'#34d39944'):(theme==='light'?'#fca5a5':'#ef444444');
+  const fdbkClr = feedback?.type==='ok'?(theme==='light'?'#15803d':'#34d399'):(theme==='light'?'#b91c1c':'#ef4444');
 
   return (
     <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
-      {/* Header */}
+      {/* Cabeçalho */}
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'14px 20px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
         <div>
-          <div style={{fontSize:14,fontWeight:700,color:T.txt}}>User Management</div>
-          <div style={{...mono,fontSize:9,color:T.dim}}>{visible.length} user{visible.length!==1?'s':''} shown</div>
+          <div style={{fontSize:14,fontWeight:700,color:T.txt}}>Gerenciamento de Usuários</div>
+          <div style={{...mono,fontSize:9,color:T.dim}}>{visible.length} usuário{visible.length!==1?'s':''} exibido{visible.length!==1?'s':''}</div>
         </div>
         <div style={{flex:1}}/>
         {can(PERMS.CREATE_ANY_USER)&&(
           <button onClick={()=>{setCreating(true);setEditUser(null);}}
             style={{padding:'6px 14px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:600,cursor:'pointer'}}>
-            + New User
+            + Novo Usuário
           </button>
         )}
         <button onClick={onClose}
           style={{padding:'6px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>
-          ✕ Close
+          ✕ Fechar
         </button>
       </div>
 
@@ -85,11 +81,11 @@ export default function UserManagement({ onClose }) {
       )}
 
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
-        {/* User list */}
+        {/* Lista de usuários */}
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
           <div style={{padding:'10px 20px',borderBottom:`1px solid ${T.bdr}`}}>
             <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
-              placeholder="Search by name, username, or role…"
+              placeholder="Buscar por nome, usuário ou função…"
               style={{width:'100%',padding:'6px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'}}/>
           </div>
 
@@ -97,7 +93,7 @@ export default function UserManagement({ onClose }) {
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
               <thead>
                 <tr style={{position:'sticky',top:0,background:T.surface,borderBottom:`1px solid ${T.bdr}`,zIndex:2}}>
-                  {['Name','Username','Role','Department','Last Login','Status',''].map(h=>(
+                  {['Nome','Usuário','Função','Departamento','Último Acesso','Status',''].map(h=>(
                     <th key={h} style={{padding:'8px 14px',textAlign:'left',...mono,fontSize:8,color:T.dim,fontWeight:400,textTransform:'uppercase',letterSpacing:1}}>{h}</th>
                   ))}
                 </tr>
@@ -106,8 +102,8 @@ export default function UserManagement({ onClose }) {
                 {visible.map(user=>{
                   const dept   = DEPT_MAP[user.deptId];
                   const isSelf = user.id===currentUser.id;
-                  const canEdit   = can(PERMS.EDIT_ANY_USER);
-                  const canDeact  = can(PERMS.DEACTIVATE_USER)&&!isSelf;
+                  const canEdit  = can(PERMS.EDIT_ANY_USER);
+                  const canDeact = can(PERMS.DEACTIVATE_USER)&&!isSelf;
                   return(
                     <tr key={user.id}
                       style={{borderBottom:`1px solid ${T.bdr}`,background:!user.isActive?T.faint:'transparent',opacity:user.isActive?1:0.55}}>
@@ -117,7 +113,7 @@ export default function UserManagement({ onClose }) {
                       </td>
                       <td style={{padding:'10px 14px',...mono,fontSize:11,color:T.muted}}>
                         {user.username}
-                        {isSelf&&<span style={{marginLeft:6,fontSize:8,color:'#3b82f6',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:3,padding:'1px 4px'}}>you</span>}
+                        {isSelf&&<span style={{marginLeft:6,fontSize:8,color:'#3b82f6',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:3,padding:'1px 4px'}}>você</span>}
                       </td>
                       <td style={{padding:'10px 14px'}}><RoleBadge role={user.role} theme={theme}/></td>
                       <td style={{padding:'10px 14px'}}>
@@ -133,7 +129,7 @@ export default function UserManagement({ onClose }) {
                           background:user.isActive?(theme==='light'?'#f0fdf4':'#0a2a0a'):T.faint,
                           border:`1px solid ${user.isActive?(theme==='light'?'#86efac':'#34d39933'):T.bdr}`,
                           color:user.isActive?(theme==='light'?'#15803d':'#34d399'):T.dim}}>
-                          {user.isActive?'Active':'Inactive'}
+                          {user.isActive?'Ativo':'Inativo'}
                         </span>
                       </td>
                       <td style={{padding:'10px 14px'}}>
@@ -142,13 +138,13 @@ export default function UserManagement({ onClose }) {
                             <button onClick={()=>{setEditUser(user);setCreating(false);}}
                               style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:10,cursor:'pointer'}}
                               onMouseEnter={e=>e.currentTarget.style.borderColor=T.muted}
-                              onMouseLeave={e=>e.currentTarget.style.borderColor=T.bdr2}>Edit</button>
+                              onMouseLeave={e=>e.currentTarget.style.borderColor=T.bdr2}>Editar</button>
                           )}
                           {canDeact&&user.isActive&&(
                             <button onClick={()=>setDeactConf(user)}
                               style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:theme==='light'?'#b91c1c':'#ef4444',fontSize:10,cursor:'pointer'}}
                               onMouseEnter={e=>e.currentTarget.style.borderColor='#ef4444'}
-                              onMouseLeave={e=>e.currentTarget.style.borderColor='#ef444455'}>Deactivate</button>
+                              onMouseLeave={e=>e.currentTarget.style.borderColor='#ef444455'}>Desativar</button>
                           )}
                         </div>
                       </td>
@@ -160,15 +156,15 @@ export default function UserManagement({ onClose }) {
           </div>
         </div>
 
-        {/* Side form */}
+        {/* Formulário lateral */}
         {(creating||editUser)&&(
           <div style={{width:320,borderLeft:`1px solid ${T.bdr}`,overflow:'auto',background:T.card,flexShrink:0}}>
             <UserForm T={T} theme={theme} mono={mono}
               existing={editUser} currentUser={currentUser}
               onSave={(data)=>{
                 try{
-                  if(editUser){updateUser(editUser.id,data);if(editUser.id===currentUser.id)refreshUser();flash('ok','User updated.');}
-                  else{createUser(data,currentUser.id);flash('ok',`User "${data.username}" created.`);}
+                  if(editUser){updateUser(editUser.id,data);if(editUser.id===currentUser.id)refreshUser();flash('ok','Usuário atualizado.');}
+                  else{createUser(data,currentUser.id);flash('ok',`Usuário "${data.username}" criado.`);}
                   reload();setEditUser(null);setCreating(false);
                 }catch(e){flash('err',e.message);}
               }}
@@ -177,22 +173,22 @@ export default function UserManagement({ onClose }) {
         )}
       </div>
 
-      {/* Deactivation confirm */}
+      {/* Confirmação de desativação */}
       {deactConf&&(
         <div onClick={()=>setDeactConf(null)}
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300}}>
           <div onClick={e=>e.stopPropagation()}
             style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:12,padding:24,width:340,boxShadow:T.shadowMd}}>
-            <div style={{fontSize:14,fontWeight:700,color:T.txt,marginBottom:8}}>Deactivate user?</div>
+            <div style={{fontSize:14,fontWeight:700,color:T.txt,marginBottom:8}}>Desativar usuário?</div>
             <div style={{fontSize:12,color:T.muted,marginBottom:20}}>
-              <strong>{deactConf.name}</strong> will lose all access immediately. Data is preserved.
+              <strong>{deactConf.name}</strong> perderá todo o acesso imediatamente. Os dados são preservados.
             </div>
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
               <button onClick={()=>setDeactConf(null)}
-                style={{padding:'7px 16px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancel</button>
+                style={{padding:'7px 16px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
               <button onClick={()=>handleDeactivate(deactConf)}
                 style={{padding:'7px 16px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:600,cursor:'pointer'}}>
-                Deactivate
+                Desativar
               </button>
             </div>
           </div>
@@ -219,13 +215,13 @@ function UserForm({T, theme, mono, existing, currentUser, onSave, onCancel}) {
 
   const validate = () => {
     const e = {};
-    if (!form.name.trim())                             e.name     = 'Required';
-    if (!form.username.trim())                         e.username = 'Required';
-    if (!form.email.trim()||!form.email.includes('@')) e.email    = 'Valid email required';
-    if (!existing && !form.password)                   e.password = 'Required for new users';
-    if (form.password && form.password.length < 6)    e.password = 'Min 6 characters';
-    if (!form.role)                                    e.role     = 'Required';
-    if (needsDept && !form.deptId)                     e.deptId   = 'Required for this role';
+    if (!form.name.trim())                             e.name     = 'Obrigatório';
+    if (!form.username.trim())                         e.username = 'Obrigatório';
+    if (!form.email.trim()||!form.email.includes('@')) e.email    = 'E-mail válido obrigatório';
+    if (!existing && !form.password)                   e.password = 'Obrigatório para novos usuários';
+    if (form.password && form.password.length < 6)    e.password = 'Mínimo 6 caracteres';
+    if (!form.role)                                    e.role     = 'Obrigatório';
+    if (needsDept && !form.deptId)                     e.deptId   = 'Obrigatório para esta função';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -241,6 +237,7 @@ function UserForm({T, theme, mono, existing, currentUser, onSave, onCancel}) {
 
   const inp = {width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'};
   const lbl = {...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4};
+
   const field = (label, key, type='text', placeholder='') => (
     <div style={{marginBottom:12}}>
       <label style={lbl}>{label}</label>
@@ -254,14 +251,14 @@ function UserForm({T, theme, mono, existing, currentUser, onSave, onCancel}) {
 
   return (
     <form onSubmit={handleSubmit} style={{padding:20}}>
-      <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:T.txt}}>{existing?'Edit User':'New User'}</div>
-      {field('Full Name',  'name',     'text',     'Dr. Jane Smith')}
-      {field('Username',   'username', 'text',     'jane.smith')}
-      {field('Email',      'email',    'email',    'jane.smith@westmore.edu')}
-      {field(existing?'New Password (leave blank to keep)':'Password', 'password', 'password', existing?'(unchanged)':'min 6 characters')}
+      <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:T.txt}}>{existing?'Editar Usuário':'Novo Usuário'}</div>
+      {field('Nome Completo',   'name',     'text',     'Dr. João Silva')}
+      {field('Usuário',         'username', 'text',     'joao.silva')}
+      {field('E-mail',          'email',    'email',    'joao.silva@westmore.edu')}
+      {field(existing?'Nova Senha (deixe em branco para manter)':'Senha', 'password', 'password', existing?'(sem alteração)':'mínimo 6 caracteres')}
 
       <div style={{marginBottom:12}}>
-        <label style={lbl}>Role</label>
+        <label style={lbl}>Função</label>
         <select value={form.role} onChange={e=>set('role',e.target.value)}
           style={{...inp,cursor:'pointer'}}>
           {assignable.map(r=><option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
@@ -271,10 +268,10 @@ function UserForm({T, theme, mono, existing, currentUser, onSave, onCancel}) {
 
       {needsDept&&(
         <div style={{marginBottom:12}}>
-          <label style={lbl}>Department</label>
+          <label style={lbl}>Departamento</label>
           <select value={form.deptId} onChange={e=>set('deptId',e.target.value)}
             style={{...inp,cursor:'pointer'}}>
-            <option value="">— Select —</option>
+            <option value="">— Selecionar —</option>
             {DEPTS_LIST.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
           {errors.deptId&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.deptId}</div>}
@@ -284,16 +281,16 @@ function UserForm({T, theme, mono, existing, currentUser, onSave, onCancel}) {
       {existing&&(
         <label style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,cursor:'pointer',fontSize:12,color:T.txt}}>
           <input type="checkbox" checked={form.isActive} onChange={e=>set('isActive',e.target.checked)} style={{accentColor:'#3b82f6',width:14,height:14}}/>
-          Account active
+          Conta ativa
         </label>
       )}
 
       <div style={{display:'flex',gap:8,marginTop:4}}>
         <button type="button" onClick={onCancel}
-          style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancel</button>
+          style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
         <button type="submit"
           style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:600,cursor:'pointer'}}>
-          {existing?'Save Changes':'Create User'}
+          {existing?'Salvar Alterações':'Criar Usuário'}
         </button>
       </div>
     </form>
@@ -302,8 +299,8 @@ function UserForm({T, theme, mono, existing, currentUser, onSave, onCancel}) {
 
 function RoleBadge({role, theme}) {
   const styles = {
-    [ROLES.CHIEF]:     {bg:theme==='light'?'#f5f3ff':'#1c0d3d', clr:theme==='light'?'#5b21b6':'#a78bfa', bdr:'#a78bfa44'},
-    [ROLES.DEPT_HEAD]: {bg:theme==='light'?'#ecfdf5':'#062c1d', clr:theme==='light'?'#065f46':'#34d399', bdr:'#34d39944'},
+    [ROLES.CHIEF]:     {bg:theme==='light'?'#f5f3ff':'#1c0d3d',clr:theme==='light'?'#5b21b6':'#a78bfa',bdr:'#a78bfa44'},
+    [ROLES.DEPT_HEAD]: {bg:theme==='light'?'#ecfdf5':'#062c1d',clr:theme==='light'?'#065f46':'#34d399',bdr:'#34d39944'},
   };
   const s = styles[role] || styles[ROLES.DEPT_HEAD];
   return (
