@@ -11,6 +11,7 @@ const DEPTS_LIST = [
   { id:'PHYS', name:'Física',               clr:'#FBBF24', textClr:'#92400e', lightBg:'#fffbeb', bg:'#2c1f06' },
   { id:'CS',   name:'Ciência da Computação',clr:'#34D399', textClr:'#065f46', lightBg:'#ecfdf5', bg:'#062c1d' },
   { id:'CHEM', name:'Química',              clr:'#A78BFA', textClr:'#5b21b6', lightBg:'#f5f3ff', bg:'#1c0d3d' },
+  { id:'BIO',  name:'Biologia',             clr:'#2DD4BF', textClr:'#0f766e', lightBg:'#f0fdfa', bg:'#042f2e' },
 ];
 const DEPT_MAP = Object.fromEntries(DEPTS_LIST.map(d => [d.id, d]));
 

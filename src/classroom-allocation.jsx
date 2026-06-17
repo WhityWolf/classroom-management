@@ -5,6 +5,9 @@ import { ROLES } from './auth/roles.js';
 import { PERMS } from './auth/permissions.js';
 import LoginPage from './components/LoginPage.jsx';
 import UserManagement from './components/UserManagement.jsx';
+import * as db from './db/allocations.js';
+import { useRealtimeSync } from './db/useRealtimeSync.js';
+import { supabaseConfigured } from './db/supabaseClient.js';
 
 // ─── Departamentos ────────────────────────────────────────────────────────────
 const DEPTS = [
@@ -12,17 +15,15 @@ const DEPTS = [
   { id:'PHYS', full:'Departamento de Física',              clr:'#FBBF24', textClr:'#92400e', bg:'#2c1f06', lightBg:'#fffbeb' },
   { id:'CS',   full:'Departamento de Ciência da Computação', clr:'#34D399', textClr:'#065f46', bg:'#062c1d', lightBg:'#ecfdf5' },
   { id:'CHEM', full:'Departamento de Química',             clr:'#A78BFA', textClr:'#5b21b6', bg:'#1c0d3d', lightBg:'#f5f3ff' },
+  { id:'BIO',  full:'Departamento de Biologia',            clr:'#2DD4BF', textClr:'#0f766e', bg:'#042f2e', lightBg:'#f0fdfa' },
 ];
 const DAYS  = ['Segunda','Terça','Quarta','Quinta','Sexta'];
 const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19];
-const ROOM_TYPES = ['Anfiteatro','Laboratório','Sala de Seminário','Laboratório de Informática','Sala Tutorial','Auditório'];
-const ROOM_FEATS = [['Projetor','Quadro Branco'],['Projetor','Quadro Inteligente'],['Quadro Branco','Ar-condicionado'],['Projetor','Ar-condicionado','Quadro Branco'],['Quadro Inteligente','Equipamento de Lab'],['Computadores','Projetor','Ar-condicionado']];
-const COURSE_NAMES = {
-  MATH:['Cálculo I','Cálculo II','Álgebra Linear','Estatística','Equações Diferenciais','Teoria dos Números','Álgebra Abstrata','Análise Real','Análise Complexa','Topologia','Probabilidade','Matemática Discreta','Análise Numérica','Teoria dos Grafos','Otimização','Geometria','Lógica','Teoria dos Conjuntos','Modelagem Matemática','Teoria dos Jogos'],
-  PHYS:['Mecânica Clássica','Eletromagnetismo','Termodinâmica','Mecânica Quântica','Óptica','Relatividade Especial','Astrofísica','Física Nuclear','Dinâmica de Fluidos','Teoria de Ondas','Física do Estado Sólido','Física de Partículas','Biofísica','Acústica','Física de Plasma','Física Atômica','Fotônica','Física Computacional','Física Médica','Geofísica'],
-  CS:  ['Algoritmos','Estruturas de Dados','Sistemas Operacionais','Redes de Computadores','Banco de Dados','Inteligência Artificial','Aprendizado de Máquina','Compiladores','Engenharia de Software','Computação Gráfica','Segurança Cibernética','Desenvolvimento Web','Computação em Nuvem','Sistemas Distribuídos','Visão Computacional','PLN','Robótica','IHC','Computação Paralela','Desenvolvimento de Jogos'],
-  CHEM:['Química Orgânica','Química Inorgânica','Química Física','Bioquímica','Química Analítica','Química de Polímeros','Eletroquímica','Espectroscopia','Termoquímica','Cinética','Catálise','Química Ambiental','Química Medicinal','Química Computacional','Química Verde','Nanoquímica','Química de Superfícies','Cristalografia','Radioquímica','Biologia Química'],
-};
+
+// Salas reais sem departamento dono (ex.: Espaço Integrado, blocos do CCN2) têm
+// dept_id null no banco — só o Diretor aloca/edita essas salas. gDept cai aqui
+// para que o restante do código (badges, cores) não precise tratar null à parte.
+const SHARED_ROOM_DEPT = { id:null, full:'Sala Compartilhada (gerida pelo Diretor)', clr:'#94A3B8', textClr:'#475569', bg:'#1e293b', lightBg:'#f1f5f9' };
 
 // ─── Opções de recursos das salas ─────────────────────────────────────────────
 const FEATURE_OPTIONS = [
@@ -30,39 +31,13 @@ const FEATURE_OPTIONS = [
   { group:'Tecnologia',      items:['Computadores','Equipamento de Gravação','Videoconferência','Wi-Fi','Sistema de Som'] },
   { group:'Conforto',        items:['Ar-condicionado','Aquecimento','Luz Natural','Isolamento Acústico'] },
   { group:'Acessibilidade',  items:['Acesso para Cadeirantes','Acesso por Elevador','Saída de Emergência'] },
-  { group:'Lab / Especial',  items:['Equipamento de Lab','Bancadas de Lab','Capela de Exaustão','Equipamento de Segurança','Câmara Escura'] },
+  { group:'Lab / Especial',  items:['Equipamento de Lab','Bancadas de Lab','Capela de Exaustão','Equipamento de Segurança','Câmara Escura','Mesas de Desenho'] },
 ];
 
 const DS = { ACTIVE:'active', FINISHED:'finished', FORCE_FINISHED:'force_finished' };
 
-// ─── Geração de dados ─────────────────────────────────────────────────────────
-function mkRng(s){s=s>>>0;return()=>{s^=s<<13;s^=s>>17;s^=s<<5;return(s>>>0)/4294967296;};}
-const {ROOMS_BASE,INIT_COURSES}=(()=>{
-  const r=mkRng(31415),r2=mkRng(99991);
-  const ROOMS_BASE=DEPTS.flatMap(d=>Array.from({length:30},(_,i)=>({
-    id:`${d.id}-R${String(i+1).padStart(2,'0')}`,deptId:d.id,label:`${d.id[0]}${200+i+1}`,
-    cap:[20,30,40,50,60,80,100,120][Math.floor(r()*8)],
-    type:ROOM_TYPES[Math.floor(r2()*ROOM_TYPES.length)],
-    features:ROOM_FEATS[Math.floor(r2()*ROOM_FEATS.length)],
-    building:`Bloco-${d.id[0]}`,floor:Math.floor(r2()*4)+1,
-  })));
-  const INIT_COURSES=[];let n=1;
-  DEPTS.forEach(d=>{
-    const ns=COURSE_NAMES[d.id];
-    for(let i=0;i<175;i++){
-      const p=r();
-      const days=p<.35?['Segunda','Quarta','Sexta']:p<.65?['Terça','Quinta']:p<.80?['Segunda','Quarta']:p<.92?['Segunda','Quinta']:[DAYS[Math.floor(r()*5)]];
-      const sh=Math.floor(r()*10)+8,dur=r()<.5?1:r()<.75?2:3,eh=Math.min(sh+dur,20);
-      INIT_COURSES.push({id:`${d.id}-C${n++}`,code:`${d.id}${(Math.floor(i/ns.length)+1)*100+(i%ns.length)+1}`,
-        name:ns[i%ns.length]+(Math.floor(i/ns.length)>0?` ${Math.floor(i/ns.length)+1}`:''),
-        sec:Math.floor(r()*4)+1,deptId:d.id,days,sh,eh,enroll:Math.floor(r()*90)+10,room:null});
-    }
-  });
-  return{ROOMS_BASE,INIT_COURSES};
-})();
-
 // ─── Auxiliares ───────────────────────────────────────────────────────────────
-const gDept=id=>DEPTS.find(d=>d.id===id);
+const gDept=id=>DEPTS.find(d=>d.id===id)||SHARED_ROOM_DEPT;
 function buildAlloc(courses){const m={};courses.forEach(c=>{if(!c.room)return;c.days.forEach(day=>{for(let h=c.sh;h<c.eh;h++){const k=`${c.room}|${day}|${h}`;if(!m[k])m[k]=[];m[k].push(c);}});});return m;}
 function roomFree(rid,course,alloc){for(const day of course.days)for(let h=course.sh;h<course.eh;h++)if((alloc[`${rid}|${day}|${h}`]||[]).length)return false;return true;}
 function getConflicts(rid,course,alloc,courses){const ids=new Set();for(const day of course.days)for(let h=course.sh;h<course.eh;h++)(alloc[`${rid}|${day}|${h}`]||[]).forEach(c=>{if(c.id!==course.id)ids.add(c.id);});return[...ids].map(id=>courses.find(c=>c.id===id)).filter(Boolean);}
@@ -104,11 +79,6 @@ function autoAllocate(unplacedCourses, rooms, existingAlloc) {
   return{assignments,failed};
 }
 
-const LS={
-  get:(k,def)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):def;}catch{return def;}},
-  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}},
-};
-
 // ─── Raiz ─────────────────────────────────────────────────────────────────────
 export default function App(){
   const[theme,setTheme]=useState('light');
@@ -136,19 +106,37 @@ function Dashboard(){
   const isDeptHead=currentUser.role===ROLES.DEPT_HEAD;
 
   const[activeDeptId,setActiveDeptId]=useState(isChief?DEPTS[0].id:currentUser.deptId);
-  const[courses,setCourses]          =useState(INIT_COURSES);
-  const[roomFeatures,setRoomFeatures]=useState({});
-  const[descs,setDescs]              =useState({});
+  const[rooms,setRooms]              =useState([]);
+  const[courses,setCourses]          =useState([]);
+  const[deptStatuses,setDeptStatuses]=useState(Object.fromEntries(DEPTS.map(d=>[d.id,DS.ACTIVE])));
+  const[notifications,setNotifs]     =useState([]);
+  const[dataLoading,setDataLoading]  =useState(true);
+  const[loadError,setLoadError]      =useState(null);
 
-  const[deptStatuses,setDeptStatusesRaw]=useState(()=>LS.get('cas_dept_statuses',Object.fromEntries(DEPTS.map(d=>[d.id,DS.ACTIVE]))));
-  const[notifications,setNotifsRaw]    =useState(()=>LS.get('cas_notifications',[]));
-  const setDeptStatuses=next=>{LS.set('cas_dept_statuses',next);setDeptStatusesRaw(next);};
-  const setNotifs      =next=>{LS.set('cas_notifications',next);setNotifsRaw(next);};
+  useEffect(()=>{
+    if(!supabaseConfigured){
+      setLoadError('Supabase não configurado — defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY (veja .env.example).');
+      setDataLoading(false);
+      return;
+    }
+    let active=true;
+    db.fetchAll()
+      .then(({rooms,courses,deptStatuses,notifications})=>{
+        if(!active)return;
+        setRooms(rooms);setCourses(courses);setDeptStatuses(deptStatuses);setNotifs(notifications);
+      })
+      .catch(e=>{if(active)setLoadError(e.message);})
+      .finally(()=>{if(active)setDataLoading(false);});
+    return()=>{active=false;};
+  },[]);
+
+  useRealtimeSync({setRooms,setCourses,setDeptStatuses,setNotifs});
 
   const[selId,          setSelId]          =useState(null);
   const[day,            setDay]            =useState('Segunda');
   const[viewMode,       setViewMode]       =useState('list');
   const[search,         setSearch]         =useState('');
+  const[sidebarTab,     setSidebarTab]     =useState('pending');
   const[finishConfirm,  setFinishConfirm]  =useState(false);
   const[editingCourse,  setEditingCourse]  =useState(null);
   const[featuresModal,  setFeaturesModal]  =useState(null);
@@ -164,7 +152,7 @@ function Dashboard(){
   const d         =gDept(activeDeptId);
   const alloc     =useMemo(()=>buildAlloc(courses),[courses]);
   const sel       =useMemo(()=>selId?courses.find(c=>c.id===selId):null,[selId,courses]);
-  const ROOMS     =useMemo(()=>ROOMS_BASE.map(r=>({...r,features:roomFeatures[r.id]??r.features,desc:descs[r.id]||''})),[roomFeatures,descs]);
+  const ROOMS     =rooms;
   const myStatus  =isDeptHead?deptStatuses[currentUser.deptId]:null;
   const isLocked  =isDeptHead&&myStatus!==DS.ACTIVE;
   const unreadCount=notifications.filter(n=>!n.read).length;
@@ -182,6 +170,15 @@ function Dashboard(){
     const q=search.toLowerCase();
     return base.filter(c=>c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q));
   },[allUnallocated,isDeptHead,currentUser.deptId,search]);
+
+  const allAllocated=useMemo(()=>courses.filter(c=>c.room),[courses]);
+  const allocatedSidebarCourses=useMemo(()=>{
+    const base=isDeptHead?allAllocated.filter(c=>c.deptId===currentUser.deptId):allAllocated;
+    if(!search.trim())return base;
+    const q=search.toLowerCase();
+    return base.filter(c=>c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q));
+  },[allAllocated,isDeptHead,currentUser.deptId,search]);
+  const visibleSidebarCourses=sidebarTab==='pending'?sidebarCourses:allocatedSidebarCourses;
 
   const autoAllocInput=useMemo(()=>
     isDeptHead?allUnallocated.filter(c=>c.deptId===currentUser.deptId):allUnallocated
@@ -203,61 +200,100 @@ function Dashboard(){
     if(roomFree(rid,sel,alloc))forceAllocate(rid);
     else if(canMerge)setMergeModal({roomId:rid});
   };
-  const forceAllocate=rid=>{
-    setCourses(p=>p.map(c=>c.id===selId?{...c,room:rid}:c));
+  const forceAllocate=async rid=>{
+    if(!sel)return;
+    const course=sel,room=ROOMS.find(r=>r.id===rid);
     setSelId(null);setMergeModal(null);
-    if(isChief&&sel)setActiveDeptId(courses.find(c=>c.id===selId)?.deptId??activeDeptId);
+    if(isChief)setActiveDeptId(course.deptId);
+    try{
+      await db.allocateCourse(course.id,rid);
+      showToast(`${course.code} alocada em ${room?.label??rid}.`,'ok');
+    }catch(e){
+      showToast(`Falha ao alocar: ${e.message}`,'err');
+    }
   };
-  const deallocate=cid=>{if(canDealloc)setCourses(p=>p.map(c=>c.id===cid?{...c,room:null}:c));};
-  const saveFeatures=(rid,feats,desc)=>{if(canEditFeatures){setRoomFeatures(p=>({...p,[rid]:feats}));setDescs(p=>({...p,[rid]:desc}));setFeaturesModal(null);}};
+  const deallocate=async cid=>{
+    if(!canDealloc)return;
+    const course=courses.find(c=>c.id===cid);
+    const roomLabel=course?.room?ROOMS.find(r=>r.id===course.room)?.label:null;
+    try{
+      await db.deallocateCourse(cid);
+      showToast(`${course?.code??cid} desalocada${roomLabel?` (estava em ${roomLabel})`:''}.`,'warn');
+    }catch(e){
+      showToast(`Falha ao desalocar: ${e.message}`,'err');
+    }
+  };
+  const saveFeatures=async(rid,feats,desc)=>{
+    if(!canEditFeatures)return;
+    setFeaturesModal(null);
+    try{
+      await db.saveRoomFeatures(rid,feats,desc);
+    }catch(e){
+      showToast(`Falha ao salvar sala: ${e.message}`,'err');
+    }
+  };
   const selectCourse=c=>{
     if(!canAllocate)return;
     if(selId===c.id){setSelId(null);return;}
     setSelId(c.id);
     if(isChief)setActiveDeptId(c.deptId);
   };
-  const handleEditCourse=(courseId,changes)=>{
-    setCourses(prev=>{
-      const original=prev.find(c=>c.id===courseId);
-      if(!original)return prev;
-      const updated={...original,...changes};
-      let finalRoom=updated.room;
-      if(finalRoom&&(changes.sh!==undefined||changes.eh!==undefined||changes.days!==undefined)){
-        const others=prev.filter(c=>c.room===finalRoom&&c.id!==courseId);
-        if(!roomFree(finalRoom,updated,buildAlloc(others))){
-          finalRoom=null;
-          showToast('Horário alterado — sala removida. Por favor, realoque.','warn');
-        }
-      }
-      return prev.map(c=>c.id===courseId?{...updated,room:finalRoom}:c);
-    });
+  const handleEditCourse=async(courseId,changes)=>{
     setEditingCourse(null);
+    const original=courses.find(c=>c.id===courseId);
+    if(!original)return;
+    const updated={...original,...changes};
+    let finalRoom=updated.room;
+    // TODO (production): conflict check reads from local realtime-synced state,
+    // not a fresh DB read — acceptable race window for this prototype's scale.
+    if(finalRoom&&(changes.sh!==undefined||changes.eh!==undefined||changes.days!==undefined)){
+      const others=courses.filter(c=>c.room===finalRoom&&c.id!==courseId);
+      if(!roomFree(finalRoom,updated,buildAlloc(others))){
+        finalRoom=null;
+        showToast('Horário alterado — sala removida. Por favor, realoque.','warn');
+      }
+    }
+    try{
+      await db.editCourse(courseId,{...changes,room:finalRoom});
+    }catch(e){
+      showToast(`Falha ao salvar disciplina: ${e.message}`,'err');
+    }
   };
 
   const handleAutoAllocate=()=>{
     if(autoAllocInput.length===0){showToast('Não há disciplinas para alocar.','warn');return;}
     setAutoAllocResult(autoAllocate(autoAllocInput,visRooms,alloc));
   };
-  const handleApplyAllocation=()=>{
+  const handleApplyAllocation=async()=>{
     if(!autoAllocResult)return;
-    setCourses(prev=>{
-      let updated=[...prev];
-      autoAllocResult.assignments.forEach(({course,room})=>{updated=updated.map(c=>c.id===course.id?{...c,room:room.id}:c);});
-      return updated;
-    });
-    showToast(`✨ ${autoAllocResult.assignments.length} disciplina${autoAllocResult.assignments.length!==1?'s':''} alocada${autoAllocResult.assignments.length!==1?'s':''} automaticamente.`,'ok');
+    const{assignments}=autoAllocResult;
     setAutoAllocResult(null);setSelId(null);
+    try{
+      await db.applyAllocations(assignments);
+      showToast(`✨ ${assignments.length} disciplina${assignments.length!==1?'s':''} alocada${assignments.length!==1?'s':''} automaticamente.`,'ok');
+    }catch(e){
+      showToast(`Falha ao aplicar alocação automática: ${e.message}`,'err');
+    }
   };
 
-  const handleFinish=()=>{
-    setDeptStatuses({...deptStatuses,[currentUser.deptId]:DS.FINISHED});
-    setNotifs([...notifications,{id:Date.now(),deptId:currentUser.deptId,deptName:gDept(currentUser.deptId)?.full,type:'FINISHED',userName:currentUser.name,timestamp:new Date().toISOString(),read:false}]);
+  const handleFinish=async()=>{
     setSelId(null);setFinishConfirm(false);
-    showToast('Alocação enviada. O diretor foi notificado.','ok');
+    try{
+      await db.finishDept(currentUser.deptId,gDept(currentUser.deptId)?.full,currentUser.name);
+      showToast('Alocação enviada. O diretor foi notificado.','ok');
+    }catch(e){
+      showToast(`Falha ao enviar alocação: ${e.message}`,'err');
+    }
   };
-  const handleReopen     =deptId=>{setDeptStatuses({...deptStatuses,[deptId]:DS.ACTIVE});showToast(`${gDept(deptId)?.full} reaberto.`,'ok');};
-  const handleForceFinish=deptId=>{setDeptStatuses({...deptStatuses,[deptId]:DS.FORCE_FINISHED});showToast(`${gDept(deptId)?.full} bloqueado.`,'ok');};
-  const markNotifsRead=()=>setNotifs(notifications.map(n=>({...n,read:true})));
+  const handleReopen=async deptId=>{
+    try{await db.setDeptStatus(deptId,DS.ACTIVE);showToast(`${gDept(deptId)?.full} reaberto.`,'ok');}
+    catch(e){showToast(`Falha: ${e.message}`,'err');}
+  };
+  const handleForceFinish=async deptId=>{
+    try{await db.setDeptStatus(deptId,DS.FORCE_FINISHED);showToast(`${gDept(deptId)?.full} bloqueado.`,'ok');}
+    catch(e){showToast(`Falha: ${e.message}`,'err');}
+  };
+  const markNotifsRead=()=>{db.markAllNotificationsRead().catch(()=>{});};
 
   const mergeRoom  =mergeModal?ROOMS.find(r=>r.id===mergeModal.roomId):null;
   const mergeCons  =(mergeModal&&sel)?getConflicts(mergeModal.roomId,sel,alloc,courses):[];
@@ -265,6 +301,9 @@ function Dashboard(){
   const dClr       =dtc(d,theme);
   const selBannerBg=dbg(d,theme);
   const mono       ={fontFamily:"'DM Mono',monospace"};
+
+  if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Carregando dados…</div>;
+  if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
 
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -335,14 +374,19 @@ function Dashboard(){
         {/* Barra lateral */}
         <aside style={{width:274,borderRight:`1px solid ${T.bdr}`,display:'flex',flexDirection:'column',overflow:'hidden',background:theme==='light'?T.surface:T.card}}>
           <div style={{padding:'10px 12px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
-            <div style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>
-              {isChief?'Todas as Disciplinas Pendentes':'Disciplinas Pendentes'}
+            <div style={{display:'flex',gap:2,border:`1px solid ${T.bdr2}`,borderRadius:6,overflow:'hidden',marginBottom:8}}>
+              {[['pending','Pendentes'],['allocated','Alocadas']].map(([k,lbl])=>(
+                <button key={k} className={`viewbtn${sidebarTab===k?' active':''}`} onClick={()=>setSidebarTab(k)}
+                  style={{flex:1,padding:'4px 8px',fontSize:10,fontWeight:500,background:'transparent',border:'none',color:sidebarTab===k?dClr:T.muted,transition:'all .12s',cursor:'pointer'}}>{lbl}</button>
+              ))}
             </div>
             <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Buscar disciplinas…" disabled={isLocked}
               style={{width:'100%',padding:'5px 9px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:11,outline:'none',opacity:isLocked?.6:1}}/>
             <div style={{fontSize:10,color:T.muted,marginTop:5}}>
-              {sidebarCourses.length} pendentes · {autoAllocInput.length} total não alocadas
+              {sidebarTab==='pending'
+                ?<>{sidebarCourses.length} pendentes · {autoAllocInput.length} total não alocadas</>
+                :<>{allocatedSidebarCourses.length} alocadas</>}
             </div>
           </div>
 
@@ -358,15 +402,16 @@ function Dashboard(){
           )}
 
           <div style={{flex:1,overflowY:'auto',padding:'5px'}}>
-            {sidebarCourses.length===0?(
+            {visibleSidebarCourses.length===0?(
               <div style={{textAlign:'center',padding:32,color:T.dim}}>
-                <div style={{fontSize:24,marginBottom:8}}>{search?'∅':'✓'}</div>
-                <div style={{fontSize:12}}>{search?'Nenhum resultado':'Todas as disciplinas alocadas'}</div>
+                <div style={{fontSize:24,marginBottom:8}}>{search?'∅':sidebarTab==='pending'?'✓':'—'}</div>
+                <div style={{fontSize:12}}>{search?'Nenhum resultado':sidebarTab==='pending'?'Todas as disciplinas alocadas':'Nenhuma disciplina alocada ainda'}</div>
               </div>
-            ):sidebarCourses.map(c=>(
+            ):visibleSidebarCourses.map(c=>(
               <CourseCard key={c.id} course={c} activeDept={gDept(activeDeptId)} showDeptBadge={isChief}
                 selected={selId===c.id} locked={isLocked}
-                onSelect={()=>selectCourse(c)}
+                roomLabel={sidebarTab==='allocated'?ROOMS.find(r=>r.id===c.room)?.label:undefined}
+                onSelect={sidebarTab==='pending'?()=>selectCourse(c):undefined}
                 onEdit={canEditCourse?()=>setEditingCourse(c):null}/>
             ))}
           </div>
@@ -465,12 +510,12 @@ function Dashboard(){
 }
 
 // ─── Card de disciplina ───────────────────────────────────────────────────────
-function CourseCard({course,activeDept,showDeptBadge,selected,locked,onSelect,onEdit}){
+function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,onSelect,onEdit}){
   const{T,theme}=useT();
   const cd=gDept(course.deptId),badgeClr=dtc(cd,theme);
   return(
     <div className={`cc${selected?' sel':''}${locked?' locked':''}`}
-      style={{padding:'8px 10px',borderRadius:6,marginBottom:2,cursor:locked?'default':'pointer',background:'transparent',border:`1px solid ${selected?activeDept.clr:T.bdr}`,transition:'background .1s, border-color .1s'}}>
+      style={{padding:'8px 10px',borderRadius:6,marginBottom:2,cursor:(locked||!onSelect)?'default':'pointer',background:'transparent',border:`1px solid ${selected?activeDept.clr:T.bdr}`,transition:'background .1s, border-color .1s'}}>
       <div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}>
         <div style={{display:'flex',alignItems:'center',gap:5}}>
           {showDeptBadge&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.id}</span>}
@@ -488,6 +533,7 @@ function CourseCard({course,activeDept,showDeptBadge,selected,locked,onSelect,on
       </div>
       <div style={{fontSize:11,fontWeight:500,color:T.txt,marginBottom:2,lineHeight:1.3}} onClick={onSelect}>{course.name}</div>
       <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}} onClick={onSelect}>{course.days.map(x=>x.slice(0,3)).join('/')} · {fmtHour(course.sh)}–{fmtHour(course.eh)}</div>
+      {roomLabel&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:badgeClr,marginTop:2}}>📍 {roomLabel}</div>}
     </div>
   );
 }

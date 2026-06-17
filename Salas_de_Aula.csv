@@ -1,0 +1,49 @@
+LOCAL,BLOCO,NÚMERO,CAPACIDADE,EQUIPAMENTO
+CCN1,Espaço Integrado,15,50,Projetor
+CCN1,Espaço Integrado,16,50,Projetor
+CCN1,Espaço Integrado,20,50,Projetor
+CCN1,Espaço Integrado,21,50,Projetor
+CCN1,Espaço Integrado,22,50,Projetor
+CCN1,Espaço Integrado,23,50,Projetor
+CCN1,Espaço Integrado,24,50,Projetor
+CCN1,SG-01,1,45,Projetor
+CCN1,SG-01,3,45,Projetor
+CCN1,SG-01,5,45,Projetor
+CCN1,SG-01,6,45,Projetor
+CCN1,SG-01,7,45,Projetor
+CCN1,SG-02,215,44,Projetor
+CCN1,SG-02,216,49,Projetor
+CCN1,SG-02,217,43,Projetor
+CCN1,SG-03,227,45,Projetor (não funciona)
+CCN1,SG-03,229,20,Projetor (não funciona)
+CCN1,SG-04,249,35,nao tem 
+CCN1,SG-04,250,50,nao tem 
+CCN1,SG-04,251,50,nao tem 
+CCN1,SG-04,256,40,Projetor
+CCN1,SG-04,257,40,nao tem 
+CCN1,SG-09,260,30,Projetor
+CCN1,SG-09,262,30,Projetor (com problema)
+CCN1,PPG-Química,sn,20,
+CCN1,PPG-Matemática,sn,50,Projetor
+CCN1,PPG-Matemática,sn,50,Projetor
+CCN1,PPG-Matemática,sn,50,nao tem 
+CCN1,PROFMAT,1,25,Projetor
+CCN1,PROFMAT,2,25,Projetor
+CCN1,PPG-Computação,sn,28,Projetor
+CCN2,Bloco II,A,56,Projetor
+CCN2,Bloco II,B,56,Projetor
+CCN2,Bloco II,C,56,Projetor
+CCN2,Bloco II,D,20,Mesas de desenho
+CCN2,Bloco II,E,35,Projetor
+CCN2,Bloco II,F,45,Projetor (com cabo externo)
+CCN2,Bloco IV,A,56,Projetor
+CCN2,Bloco IV,B,56,Projetor
+CCN2,Bloco IV,C,56,Projetor
+CCN2,Bloco IV,D,40,Projetor
+CCN2,Bloco IV,E,56,Projetor
+CCN2,Bloco IV,F,56,Projetor
+CCN2,Bloco IV,G,35,Projetor (não funciona)
+CCN2,Bloco IV,H,40,Projetor
+CCN2,Bloco IV,I,45,Projetor
+CCN2,Bloco V,A,56,Projetor
+CCN2,Bloco V,B,80,Projetor

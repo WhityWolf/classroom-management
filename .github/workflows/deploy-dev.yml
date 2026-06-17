@@ -28,6 +28,10 @@ jobs:
         env:
           # The /dev suffix must match destination_dir below
           VITE_BASE: /classroom-management/dev/
+          # Same Supabase project/dataset as the main deploy — this is a
+          # prototype with one shared dataset, not separate dev/prod data.
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Deploy to gh-pages (/dev)
         uses: peaceiris/actions-gh-pages@v4

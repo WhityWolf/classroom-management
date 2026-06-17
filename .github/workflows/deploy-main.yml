@@ -29,6 +29,8 @@ jobs:
         env:
           # Replace 'your-repo-name' with your actual GitHub repository name
           VITE_BASE: /classroom-management/
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Deploy to gh-pages (root)
         uses: peaceiris/actions-gh-pages@v4

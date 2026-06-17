@@ -4,7 +4,7 @@ import { useT } from '../theme.jsx';
 import { DEMO_CREDENTIALS } from '../auth/mockDb.js';
 import { ROLE_LABELS } from '../auth/roles.js';
 
-const DEPTS = { MATH:'Matemática', PHYS:'Física', CS:'Ciência da Computação', CHEM:'Química' };
+const DEPTS = { MATH:'Matemática', PHYS:'Física', CS:'Ciência da Computação', CHEM:'Química', BIO:'Biologia' };
 
 export default function LoginPage() {
   const { login, authError } = useAuth();
