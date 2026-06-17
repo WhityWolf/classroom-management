@@ -25,15 +25,6 @@ const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19];
 // para que o restante do código (badges, cores) não precise tratar null à parte.
 const SHARED_ROOM_DEPT = { id:null, full:'Sala Compartilhada (gerida pelo Diretor)', clr:'#94A3B8', textClr:'#475569', bg:'#1e293b', lightBg:'#f1f5f9' };
 
-// ─── Opções de recursos das salas ─────────────────────────────────────────────
-const FEATURE_OPTIONS = [
-  { group:'Exibição',        items:['Projetor','Quadro Inteligente','Quadro Branco','Lousa','Câmera de Documentos','Tela de TV'] },
-  { group:'Tecnologia',      items:['Computadores','Equipamento de Gravação','Videoconferência','Wi-Fi','Sistema de Som'] },
-  { group:'Conforto',        items:['Ar-condicionado','Aquecimento','Luz Natural','Isolamento Acústico'] },
-  { group:'Acessibilidade',  items:['Acesso para Cadeirantes','Acesso por Elevador','Saída de Emergência'] },
-  { group:'Lab / Especial',  items:['Equipamento de Lab','Bancadas de Lab','Capela de Exaustão','Equipamento de Segurança','Câmara Escura','Mesas de Desenho'] },
-];
-
 const DS = { ACTIVE:'active', FINISHED:'finished', FORCE_FINISHED:'force_finished' };
 
 // ─── Auxiliares ───────────────────────────────────────────────────────────────
@@ -110,6 +101,7 @@ function Dashboard(){
   const[courses,setCourses]          =useState([]);
   const[deptStatuses,setDeptStatuses]=useState(Object.fromEntries(DEPTS.map(d=>[d.id,DS.ACTIVE])));
   const[notifications,setNotifs]     =useState([]);
+  const[featureOptions,setFeatureOptions]=useState([]);
   const[dataLoading,setDataLoading]  =useState(true);
   const[loadError,setLoadError]      =useState(null);
 
@@ -121,16 +113,16 @@ function Dashboard(){
     }
     let active=true;
     db.fetchAll()
-      .then(({rooms,courses,deptStatuses,notifications})=>{
+      .then(({rooms,courses,deptStatuses,notifications,featureOptions})=>{
         if(!active)return;
-        setRooms(rooms);setCourses(courses);setDeptStatuses(deptStatuses);setNotifs(notifications);
+        setRooms(rooms);setCourses(courses);setDeptStatuses(deptStatuses);setNotifs(notifications);setFeatureOptions(featureOptions);
       })
       .catch(e=>{if(active)setLoadError(e.message);})
       .finally(()=>{if(active)setDataLoading(false);});
     return()=>{active=false;};
   },[]);
 
-  useRealtimeSync({setRooms,setCourses,setDeptStatuses,setNotifs});
+  useRealtimeSync({setRooms,setCourses,setDeptStatuses,setNotifs,setFeatureOptions});
 
   const[selId,          setSelId]          =useState(null);
   const[day,            setDay]            =useState('Segunda');
@@ -230,6 +222,22 @@ function Dashboard(){
       await db.saveRoomFeatures(rid,feats,desc);
     }catch(e){
       showToast(`Falha ao salvar sala: ${e.message}`,'err');
+    }
+  };
+  const addFeatureOption=async name=>{
+    if(!canEditFeatures||!name.trim()||featureOptions.includes(name.trim()))return;
+    try{
+      await db.addFeatureOption(name.trim());
+    }catch(e){
+      showToast(`Falha ao criar recurso: ${e.message}`,'err');
+    }
+  };
+  const removeFeatureOption=async name=>{
+    if(!canEditFeatures)return;
+    try{
+      await db.removeFeatureOption(name);
+    }catch(e){
+      showToast(`Falha ao remover recurso: ${e.message}`,'err');
     }
   };
   const selectCourse=c=>{
@@ -488,7 +496,7 @@ function Dashboard(){
       {deptPanel&&<DeptStatusPanel deptStatuses={deptStatuses} notifications={notifications} onReopen={handleReopen} onForceFinish={handleForceFinish} onClose={()=>setDeptPanel(false)}/>}
       {notifPanel&&<NotifPanel notifications={notifications} onClose={()=>setNotifPanel(false)}/>}
       {editingCourse&&<CourseEditModal course={editingCourse} onSave={handleEditCourse} onCancel={()=>setEditingCourse(null)}/>}
-      {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)}/>}
+      {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
       {autoAllocResult&&<AutoAllocModal result={autoAllocResult} dept={d} onApply={handleApplyAllocation} onCancel={()=>setAutoAllocResult(null)}/>}
       {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} onConfirm={()=>forceAllocate(mergeModal.roomId)} onCancel={()=>setMergeModal(null)}/>}
       {showUsers&&(
@@ -774,13 +782,25 @@ function CapacityBar({cap,enroll,conflicts,avail}){
 }
 
 // ─── Modal de recursos da sala ────────────────────────────────────────────────
-function RoomFeaturesModal({room,dept,onSave,onClose}){
+function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,onRemoveOption}){
   const{T,theme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
   const rd=gDept(room.deptId),rdClr=dtc(rd,theme);
   const[selected,setSelected]=useState(new Set(room.features));
   const[desc,setDesc]        =useState(room.desc||'');
+  const[newOption,setNewOption]=useState('');
   const toggle=f=>setSelected(prev=>{const s=new Set(prev);s.has(f)?s.delete(f):s.add(f);return s;});
+  const submitNewOption=()=>{
+    const name=newOption.trim();
+    if(!name)return;
+    onAddOption(name);
+    setSelected(prev=>new Set(prev).add(name));
+    setNewOption('');
+  };
+  const removeOption=f=>{
+    onRemoveOption(f);
+    setSelected(prev=>{const s=new Set(prev);s.delete(f);return s;});
+  };
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:540,maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
@@ -810,21 +830,29 @@ function RoomFeaturesModal({room,dept,onSave,onClose}){
           <div style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginBottom:14}}>
             Recursos e Equipamentos — {selected.size} selecionados
           </div>
-          {FEATURE_OPTIONS.map(({group,items})=>(
-            <div key={group} style={{marginBottom:16}}>
-              <div style={{...mono,fontSize:9,color:T.muted,marginBottom:8,letterSpacing:.5}}>{group}</div>
-              <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                {items.map(f=>{
-                  const active=selected.has(f);
-                  return(
-                    <button key={f} onClick={()=>toggle(f)} style={{padding:'5px 10px',borderRadius:6,fontSize:11,cursor:'pointer',transition:'all .12s',background:active?(theme==='light'?`${rd.clr}22`:`${rd.clr}18`):'transparent',color:active?rdClr:T.muted,border:`1px solid ${active?rd.clr:T.bdr2}`,fontWeight:active?600:400}}>
-                      {active?'✓ ':''}{f}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+          <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:14}}>
+            {featureOptions.length===0&&<span style={{...mono,fontSize:10,color:T.dim}}>Nenhum recurso cadastrado ainda.</span>}
+            {featureOptions.map(f=>{
+              const active=selected.has(f);
+              return(
+                <div key={f} style={{display:'flex',alignItems:'center',borderRadius:6,border:`1px solid ${active?rd.clr:T.bdr2}`,background:active?(theme==='light'?`${rd.clr}22`:`${rd.clr}18`):'transparent',overflow:'hidden'}}>
+                  <button onClick={()=>toggle(f)} style={{padding:'5px 4px 5px 10px',border:'none',background:'none',fontSize:11,cursor:'pointer',color:active?rdClr:T.muted,fontWeight:active?600:400}}>
+                    {active?'✓ ':''}{f}
+                  </button>
+                  <button onClick={()=>removeOption(f)} title="Remover este recurso do catálogo"
+                    style={{padding:'5px 8px',border:'none',background:'none',cursor:'pointer',fontSize:9,color:T.dim,lineHeight:1}}
+                    onMouseEnter={e=>e.currentTarget.style.color='#ef4444'} onMouseLeave={e=>e.currentTarget.style.color=T.dim}>✕</button>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:'flex',gap:6,marginBottom:6}}>
+            <input value={newOption} onChange={e=>setNewOption(e.target.value)}
+              onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();submitNewOption();}}}
+              placeholder="Novo recurso (ex.: Sala com microscópio)"
+              style={{flex:1,padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'}}/>
+            <button onClick={submitNewOption} disabled={!newOption.trim()} style={{padding:'7px 14px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:newOption.trim()?T.txt:T.dim,fontSize:11,cursor:newOption.trim()?'pointer':'default'}}>+ Adicionar</button>
+          </div>
         </div>
 
         <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:16,flexShrink:0,borderTop:`1px solid ${T.bdr}`,paddingTop:16}}>

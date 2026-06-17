@@ -19,7 +19,7 @@ function upsertById(list, row) {
   return next;
 }
 
-export function useRealtimeSync({ setRooms, setCourses, setDeptStatuses, setNotifs }) {
+export function useRealtimeSync({ setRooms, setCourses, setDeptStatuses, setNotifs, setFeatureOptions }) {
   useEffect(() => {
     if (!supabaseConfigured) return;
     const channel = supabase
@@ -36,8 +36,13 @@ export function useRealtimeSync({ setRooms, setCourses, setDeptStatuses, setNoti
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, ({ eventType, new: row, old }) => {
         setNotifs(prev => eventType === 'DELETE' ? prev.filter(n => n.id !== old.id) : upsertById(prev, mapNotification(row)));
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'room_features' }, ({ eventType, new: row, old }) => {
+        setFeatureOptions(prev => eventType === 'DELETE'
+          ? prev.filter(name => name !== old.name)
+          : prev.includes(row.name) ? prev : [...prev, row.name].sort());
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [setRooms, setCourses, setDeptStatuses, setNotifs]);
+  }, [setRooms, setCourses, setDeptStatuses, setNotifs, setFeatureOptions]);
 }

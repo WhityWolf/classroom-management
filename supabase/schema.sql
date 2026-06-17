@@ -43,10 +43,20 @@ create table notifications (
   read       boolean not null default false
 );
 
+-- Catalog of selectable room resources (e.g. "Projetor"). Flat, no
+-- categories — the CHIEF grows this list ad hoc as real needs come up
+-- (see RoomFeaturesModal in classroom-allocation.jsx). Deleting an entry
+-- here doesn't retroactively scrub it from rooms.features, it just stops
+-- offering it for new selections.
+create table room_features (
+  name text primary key
+);
+
 alter table rooms enable row level security;
 alter table courses enable row level security;
 alter table dept_statuses enable row level security;
 alter table notifications enable row level security;
+alter table room_features enable row level security;
 
 -- TODO (production): replace these permissive policies with rules scoped to
 -- the authenticated user's role/dept once real Supabase Auth is wired up to
@@ -56,5 +66,8 @@ create policy "anon full access" on rooms for all using (true) with check (true)
 create policy "anon full access" on courses for all using (true) with check (true);
 create policy "anon full access" on dept_statuses for all using (true) with check (true);
 create policy "anon full access" on notifications for all using (true) with check (true);
+create policy "anon full access" on room_features for all using (true) with check (true);
 
-alter publication supabase_realtime add table rooms, courses, dept_statuses, notifications;
+alter publication supabase_realtime add table rooms, courses, dept_statuses, notifications, room_features;
+
+insert into room_features (name) values ('Projetor'), ('Mesas de Desenho');

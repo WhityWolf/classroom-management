@@ -25,17 +25,19 @@ async function unwrap(query) {
 }
 
 export async function fetchAll() {
-  const [rooms, courses, deptStatusRows, notifRows] = await Promise.all([
+  const [rooms, courses, deptStatusRows, notifRows, featureRows] = await Promise.all([
     unwrap(supabase.from('rooms').select('*')),
     unwrap(supabase.from('courses').select('*')),
     unwrap(supabase.from('dept_statuses').select('*')),
     unwrap(supabase.from('notifications').select('*').order('id')),
+    unwrap(supabase.from('room_features').select('*').order('name')),
   ]);
   return {
     rooms: rooms.map(mapRoom),
     courses: courses.map(mapCourse),
     deptStatuses: Object.fromEntries(deptStatusRows.map(r => [r.dept_id, r.status])),
     notifications: notifRows.map(mapNotification),
+    featureOptions: featureRows.map(r => r.name),
   };
 }
 
@@ -60,6 +62,14 @@ export async function editCourse(courseId, changes) {
 
 export async function saveRoomFeatures(roomId, features, description) {
   await unwrap(supabase.from('rooms').update({ features, description }).eq('id', roomId));
+}
+
+export async function addFeatureOption(name) {
+  await unwrap(supabase.from('room_features').insert({ name }));
+}
+
+export async function removeFeatureOption(name) {
+  await unwrap(supabase.from('room_features').delete().eq('name', name));
 }
 
 // Individual updates run concurrently rather than a single upsert: an upsert
