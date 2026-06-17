@@ -11,7 +11,7 @@ export const mapRoom = r => ({
 });
 export const mapCourse = c => ({
   id: c.id, code: c.code, name: c.name, sec: c.sec, deptId: c.dept_id,
-  days: c.days, sh: c.sh, eh: c.eh, enroll: c.enroll, room: c.room,
+  blocks: c.blocks, enroll: c.enroll, room: c.room,
 });
 export const mapNotification = n => ({
   id: n.id, deptId: n.dept_id, deptName: n.dept_name, type: n.type,
@@ -52,12 +52,32 @@ export async function deallocateCourse(courseId) {
 export async function editCourse(courseId, changes) {
   const patch = {};
   if (changes.name !== undefined) patch.name = changes.name;
-  if (changes.days !== undefined) patch.days = changes.days;
-  if (changes.sh !== undefined) patch.sh = changes.sh;
-  if (changes.eh !== undefined) patch.eh = changes.eh;
+  if (changes.blocks !== undefined) patch.blocks = changes.blocks;
   if (changes.enroll !== undefined) patch.enroll = changes.enroll;
   if (changes.room !== undefined) patch.room = changes.room;
   await unwrap(supabase.from('courses').update(patch).eq('id', courseId));
+}
+
+export async function createCourse(course) {
+  await unwrap(supabase.from('courses').insert({
+    id: course.id, code: course.code, name: course.name, sec: course.sec,
+    dept_id: course.deptId, blocks: course.blocks,
+    enroll: course.enroll, room: null,
+  }));
+}
+
+// Destructive: deletes every existing row for deptId (allocated or not),
+// then bulk-inserts the new set. Not transactional — known/accepted
+// limitation for this prototype stage. If insert fails after delete
+// succeeds, the dept is left with zero courses; the import modal keeps
+// parsed rows in state so retrying doesn't require re-uploading the file.
+export async function replaceDeptCourses(deptId, courses) {
+  await unwrap(supabase.from('courses').delete().eq('dept_id', deptId));
+  if (courses.length === 0) return;
+  await unwrap(supabase.from('courses').insert(courses.map(c => ({
+    id: c.id, code: c.code, name: c.name, sec: c.sec, dept_id: deptId,
+    blocks: c.blocks, enroll: c.enroll, room: null,
+  }))));
 }
 
 export async function saveRoomFeatures(roomId, features, description) {

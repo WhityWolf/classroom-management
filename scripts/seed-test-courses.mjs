@@ -40,8 +40,7 @@ function generate() {
         name,
         sec: 1,
         dept_id: dept,
-        days: r() < .5 ? ['Segunda', 'Quarta'] : ['Terça', 'Quinta'],
-        sh, eh,
+        blocks: [{ days: r() < .5 ? ['Segunda', 'Quarta'] : ['Terça', 'Quinta'], sh, eh }],
         enroll: 20 + Math.floor(r() * 40),
         room: null,
       });

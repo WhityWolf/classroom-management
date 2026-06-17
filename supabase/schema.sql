@@ -19,9 +19,11 @@ create table courses (
   name    text not null,
   sec     integer not null,
   dept_id text not null,
-  days    text[] not null,
-  sh      integer not null,
-  eh      integer not null,
+  -- A course can meet on different days at different times (real SIGAA
+  -- imports have ~5% of turmas like this, e.g. Monday one time block,
+  -- Friday another) — one row per meeting block:
+  -- [{"days":["Terça","Quinta"],"sh":8,"eh":10}, {"days":["Sexta"],"sh":14,"eh":16}]
+  blocks  jsonb not null default '[]',
   enroll  integer not null,
   room    text references rooms(id) on delete set null
 );

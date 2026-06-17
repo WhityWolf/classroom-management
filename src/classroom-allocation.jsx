@@ -17,8 +17,10 @@ const DEPTS = [
   { id:'CHEM', full:'Departamento de Química',             clr:'#A78BFA', textClr:'#5b21b6', bg:'#1c0d3d', lightBg:'#f5f3ff' },
   { id:'BIO',  full:'Departamento de Biologia',            clr:'#2DD4BF', textClr:'#0f766e', bg:'#042f2e', lightBg:'#f0fdfa' },
 ];
-const DAYS  = ['Segunda','Terça','Quarta','Quinta','Sexta'];
-const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19];
+const DAYS  = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+// 6:00–21:00 start hours (eh can go one past the last entry, i.e. 22:00) —
+// matches the real SIGAA slot table: M1=6h..M6=11h, T1=12h..T6=17h, N1=18h..N4=21h.
+const HOURS = [6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
 
 // Salas reais sem departamento dono (ex.: Espaço Integrado, blocos do CCN2) têm
 // dept_id null no banco — só o Diretor aloca/edita essas salas. gDept cai aqui
@@ -29,17 +31,133 @@ const DS = { ACTIVE:'active', FINISHED:'finished', FORCE_FINISHED:'force_finishe
 
 // ─── Auxiliares ───────────────────────────────────────────────────────────────
 const gDept=id=>DEPTS.find(d=>d.id===id)||SHARED_ROOM_DEPT;
-function buildAlloc(courses){const m={};courses.forEach(c=>{if(!c.room)return;c.days.forEach(day=>{for(let h=c.sh;h<c.eh;h++){const k=`${c.room}|${day}|${h}`;if(!m[k])m[k]=[];m[k].push(c);}});});return m;}
-function roomFree(rid,course,alloc){for(const day of course.days)for(let h=course.sh;h<course.eh;h++)if((alloc[`${rid}|${day}|${h}`]||[]).length)return false;return true;}
-function getConflicts(rid,course,alloc,courses){const ids=new Set();for(const day of course.days)for(let h=course.sh;h<course.eh;h++)(alloc[`${rid}|${day}|${h}`]||[]).forEach(c=>{if(c.id!==course.id)ids.add(c.id);});return[...ids].map(id=>courses.find(c=>c.id===id)).filter(Boolean);}
-function rowSlots(rid,day,alloc){const slots=[];let h=8;while(h<20){const arr=alloc[`${rid}|${day}|${h}`]||[];if(arr.length){const c=arr[0];if(c.sh===h){slots.push({h,span:c.eh-c.sh,c,merged:arr.length-1});h=c.eh;}else h++;}else{slots.push({h,span:1,c:null,merged:0});h++;}}return slots;}
+
+// Uma disciplina pode se reunir em dias diferentes com horários diferentes
+// (ex.: Segunda/Quarta 15h-18h e Sexta 17h-18h) — cada combinação é um
+// "bloco". course.blocks = [{days:[...], sh, eh}, ...].
+const totalWeeklyHours=course=>course.blocks.reduce((s,b)=>s+b.days.length*(b.eh-b.sh),0);
+const courseOccupiesDay=(course,day)=>course.blocks.some(b=>b.days.includes(day));
+// Assume que um dia aparece em no máximo um bloco por disciplina — verdade
+// em todos os exemplos reais vistos, não vale a pena tratar o caso teórico contrário.
+const blockForDay=(course,day)=>course.blocks.find(b=>b.days.includes(day));
+const fmtSchedule=course=>course.blocks.map(b=>`${b.days.map(d=>d.slice(0,3)).join('/')} ${fmtHour(b.sh)}–${fmtHour(b.eh)}`).join('; ');
+
+function buildAlloc(courses){const m={};courses.forEach(c=>{if(!c.room)return;c.blocks.forEach(block=>{block.days.forEach(day=>{for(let h=block.sh;h<block.eh;h++){const k=`${c.room}|${day}|${h}`;if(!m[k])m[k]=[];m[k].push(c);}});});});return m;}
+function roomFree(rid,course,alloc){for(const block of course.blocks)for(const day of block.days)for(let h=block.sh;h<block.eh;h++)if((alloc[`${rid}|${day}|${h}`]||[]).length)return false;return true;}
+function getConflicts(rid,course,alloc,courses){const ids=new Set();for(const block of course.blocks)for(const day of block.days)for(let h=block.sh;h<block.eh;h++)(alloc[`${rid}|${day}|${h}`]||[]).forEach(c=>{if(c.id!==course.id)ids.add(c.id);});return[...ids].map(id=>courses.find(c=>c.id===id)).filter(Boolean);}
+function rowSlots(rid,day,alloc){const slots=[];let h=HOURS[0];const maxH=HOURS[HOURS.length-1]+1;while(h<maxH){const arr=alloc[`${rid}|${day}|${h}`]||[];if(arr.length){const c=arr[0];const block=blockForDay(c,day);if(block.sh===h){slots.push({h,span:block.eh-block.sh,c,merged:arr.length-1});h=block.eh;}else h++;}else{slots.push({h,span:1,c:null,merged:0});h++;}}return slots;}
 function fmtHour(h){return`${String(h).padStart(2,'0')}:00`;}
+
+// ─── Catálogo de disciplinas (criação manual + import CSV) ───────────────────
+// id derivado de dept+código+seção: dobra como detector de duplicata (colisão
+// de PK = erro claro) já que `code` não tem unicidade no schema. código/seção
+// não são editáveis após a criação (só name/days/sh/eh/enroll mudam), então o
+// id nunca precisa ser regenerado — não adicione edição de código/seção sem
+// revisitar isto.
+const slugify=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
+const courseId=(deptId,code,sec)=>`${deptId}-${slugify(code)}-${sec}`;
+
+// Lê um relatório de oferta de turmas do SIGAA (.csv/.ods/.xlsx) — não é uma
+// planilha de uma disciplina por linha, é um bloco "cabeçalho de disciplina"
+// seguido de uma ou mais linhas de turma:
+//   "DMA0192 - ALGEBRA LINEAR (GRADUAÇÃO)"
+//   "2026.1","Turma 01","<docente>","REGULAR","ABERTA","35M34","Sala X","33/50 alunos"
+
+// Parser de CSV com suporte a campos entre aspas (a célula "Docente(s)" do
+// SIGAA costuma ter vírgulas dentro, ex. "NOME (20h), OUTRO NOME (20h)" — um
+// split(',') ingênuo desalinharia todas as colunas seguintes nessas linhas).
+function parseCsvRows(text){
+  const rows=[];
+  let row=[],field='',inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(inQuotes){
+      if(ch==='"'){if(text[i+1]==='"'){field+='"';i++;}else inQuotes=false;}
+      else field+=ch;
+    }else if(ch==='"')inQuotes=true;
+    else if(ch===','){row.push(field);field='';}
+    else if(ch==='\r'){/* ignora */}
+    else if(ch==='\n'){row.push(field);rows.push(row);row=[];field='';}
+    else field+=ch;
+  }
+  if(field.length||row.length){row.push(field);rows.push(row);}
+  return rows.filter(r=>r.some(c=>c.trim().length));
+}
+
+// .ods/.xlsx — mesma estrutura de linhas do CSV, só que como array de arrays
+// já separado por célula (sem o problema de vírgula embutida). xlsx é
+// importado dinamicamente: só baixa o pacote (pesado) quando alguém
+// efetivamente sobe um arquivo nesse formato — quem só usa CSV nunca paga
+// esse custo no carregamento inicial do app.
+async function parseSheetRows(file){
+  const XLSX=await import('xlsx');
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array'});
+  const sheet=wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(sheet,{header:1,defval:''});
+}
+
+const SIGAA_DAY_DIGIT={2:'Segunda',3:'Terça',4:'Quarta',5:'Quinta',6:'Sexta',7:'Sábado'};
+const SIGAA_SHIFT_BASE={M:5,T:11,N:17}; // hora(slot n) = base+n — M1=6h,T1=12h,N1=18h
+
+// "35M34 (10/03/2026 - 11/07/2026)" → ignora a faixa de datas; pode ter mais
+// de um bloco separado por espaço (dias/horários diferentes na mesma turma,
+// ex. "2T456 6T56" = Segunda à tarde num horário, Sexta noutro).
+function parseHorarioToBlocks(raw){
+  const clean=String(raw??'').replace(/\([^)]*\)/g,'').trim();
+  const segs=clean.split(/\s+/).filter(Boolean);
+  const blocks=[],errors=[];
+  segs.forEach(seg=>{
+    const m=seg.match(/^([2-7]+)([MTNmtn])([1-9]+)$/);
+    if(!m){errors.push(`Formato de horário não reconhecido: "${seg}"`);return;}
+    const days=[...m[1]].map(d=>SIGAA_DAY_DIGIT[d]);
+    const slots=[...m[3]].map(Number);
+    const base=SIGAA_SHIFT_BASE[m[2].toUpperCase()];
+    blocks.push({days,sh:base+Math.min(...slots),eh:base+Math.max(...slots)+1});
+  });
+  return{blocks,errors};
+}
+
+// Agrupa as linhas em disciplinas+turmas. `rows` é um array de arrays já sem
+// a linha de título (ela é sempre a primeira e é descartada aqui).
+function groupSigaaRows(rows){
+  const out=[];
+  let current=null;
+  rows.slice(1).forEach(row=>{
+    const col1=(row[1]??'').toString().trim();
+    if(!col1){
+      const text=(row[0]??'').toString().trim();
+      const m=text.match(/^(.+?)\s-\s(.+?)\s\(([^)]*)\)\s*$/);
+      current=m?{code:m[1].trim(),name:m[2].trim()}:{code:text,name:text,headerError:`Cabeçalho de disciplina não reconhecido: "${text}"`};
+      return;
+    }
+    const errors={};
+    if(!current)errors.codigo='Linha de turma sem cabeçalho de disciplina associado';
+    else if(current.headerError)errors.codigo=current.headerError;
+    const secMatch=col1.match(/Turma\s+(\d+)/i);
+    if(!secMatch)errors.secao=`Não foi possível identificar a seção em "${col1}"`;
+    const situacao=(row[4]??'').toString().trim().toUpperCase();
+    const skipped=situacao!==''&&situacao!=='ABERTA';
+    const{blocks,errors:horarioErrors}=parseHorarioToBlocks(row[5]);
+    if(horarioErrors.length)errors.horario=horarioErrors.join('; ');
+    else if(blocks.length===0)errors.horario='Horário vazio ou não reconhecido';
+    const matMatch=(row[7]??'').toString().match(/(\d+)/);
+    const enroll=matMatch?Number(matMatch[1]):NaN;
+    if(!Number.isInteger(enroll)||enroll<0)errors.matriculados=`Matrícula não reconhecida em "${row[7]}"`;
+    out.push({
+      raw:{codigo:current?.code,nome:current?.name,turma:col1,situacao:row[4],horario:row[5],matriculados:row[7]},
+      normalized:{code:current?.code,name:current?.name,sec:secMatch?Number(secMatch[1]):null,blocks,enroll},
+      errors,skipped,skipReason:skipped?`Situação: ${row[4]}`:null,
+    });
+  });
+  return out;
+}
 
 // ─── Algoritmo de alocação automática ────────────────────────────────────────
 function autoAllocate(unplacedCourses, rooms, existingAlloc) {
   const sorted=[...unplacedCourses].sort((a,b)=>{
     if(b.enroll!==a.enroll)return b.enroll-a.enroll;
-    return(b.days.length*(b.eh-b.sh))-(a.days.length*(a.eh-a.sh));
+    return totalWeeklyHours(b)-totalWeeklyHours(a);
   });
   const tempAlloc={};
   Object.entries(existingAlloc).forEach(([k,arr])=>{tempAlloc[k]=[...arr];});
@@ -59,12 +177,14 @@ function autoAllocate(unplacedCourses, rooms, existingAlloc) {
       return s(curr)>s(prev)?curr:prev;
     });
     assignments.push({course,room:best});
-    course.days.forEach(day=>{
-      for(let h=course.sh;h<course.eh;h++){
-        const k=`${best.id}|${day}|${h}`;
-        if(!tempAlloc[k])tempAlloc[k]=[];
-        tempAlloc[k].push(course);
-      }
+    course.blocks.forEach(block=>{
+      block.days.forEach(day=>{
+        for(let h=block.sh;h<block.eh;h++){
+          const k=`${best.id}|${day}|${h}`;
+          if(!tempAlloc[k])tempAlloc[k]=[];
+          tempAlloc[k].push(course);
+        }
+      });
     });
   }
   return{assignments,failed};
@@ -131,6 +251,8 @@ function Dashboard(){
   const[sidebarTab,     setSidebarTab]     =useState('pending');
   const[finishConfirm,  setFinishConfirm]  =useState(false);
   const[editingCourse,  setEditingCourse]  =useState(null);
+  const[creatingCourse, setCreatingCourse] =useState(false);
+  const[importingCourses,setImportingCourses]=useState(false);
   const[featuresModal,  setFeaturesModal]  =useState(null);
   const[autoAllocResult,setAutoAllocResult]=useState(null);
   const[deptPanel,      setDeptPanel]      =useState(false);
@@ -186,6 +308,8 @@ function Dashboard(){
   const canMerge      =canAllocate&&can(PERMS.MERGE_GROUPS);
   const canEditFeatures=isChief;
   const canEditCourse =canAllocate;
+  const canManageCatalog=canAllocate;
+  const targetDeptId  =isChief?activeDeptId:currentUser.deptId;
 
   const tryAllocate=rid=>{
     if(!canAllocate||!sel)return;
@@ -254,7 +378,7 @@ function Dashboard(){
     let finalRoom=updated.room;
     // TODO (production): conflict check reads from local realtime-synced state,
     // not a fresh DB read — acceptable race window for this prototype's scale.
-    if(finalRoom&&(changes.sh!==undefined||changes.eh!==undefined||changes.days!==undefined)){
+    if(finalRoom&&changes.blocks!==undefined){
       const others=courses.filter(c=>c.room===finalRoom&&c.id!==courseId);
       if(!roomFree(finalRoom,updated,buildAlloc(others))){
         finalRoom=null;
@@ -265,6 +389,24 @@ function Dashboard(){
       await db.editCourse(courseId,{...changes,room:finalRoom});
     }catch(e){
       showToast(`Falha ao salvar disciplina: ${e.message}`,'err');
+    }
+  };
+  const handleCreateCourse=async course=>{
+    setCreatingCourse(false);
+    try{
+      await db.createCourse(course);
+      showToast(`${course.code} criada.`,'ok');
+    }catch(e){
+      showToast(`Falha ao criar disciplina: ${e.message}`,'err');
+    }
+  };
+  const handleImportCourses=async newCourses=>{
+    setImportingCourses(false);
+    try{
+      await db.replaceDeptCourses(targetDeptId,newCourses);
+      showToast(`${newCourses.length} disciplina${newCourses.length!==1?'s':''} importada${newCourses.length!==1?'s':''} para ${gDept(targetDeptId)?.full}.`,'ok');
+    }catch(e){
+      showToast(`Falha ao importar disciplinas: ${e.message}`,'err');
     }
   };
 
@@ -427,6 +569,20 @@ function Dashboard(){
 
           {!isLocked&&(isDeptHead||isChief)&&(
             <div style={{padding:'10px 12px',borderTop:`1px solid ${T.bdr}`,flexShrink:0,display:'flex',flexDirection:'column',gap:6}}>
+              {canManageCatalog&&(
+                <div style={{display:'flex',gap:6}}>
+                  <button onClick={()=>setCreatingCourse(true)}
+                    style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:11,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
+                    + Nova Disciplina
+                  </button>
+                  <button onClick={()=>setImportingCourses(true)}
+                    style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:11,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
+                    ⇪ Importar CSV
+                  </button>
+                </div>
+              )}
               {autoAllocInput.length>0&&(
                 <button onClick={handleAutoAllocate}
                   style={{width:'100%',padding:'8px',background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,borderRadius:7,color:theme==='light'?'#1d4ed8':'#60A5FA',fontSize:11,fontWeight:600,cursor:'pointer',transition:'all .15s',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
@@ -469,10 +625,10 @@ function Dashboard(){
               <div style={{width:6,height:6,borderRadius:'50%',background:d.clr,animation:'blink 1.5s infinite'}}/>
               <span style={{...mono,fontSize:10,color:dClr,fontWeight:600}}>{sel.code}</span>
               <span style={{fontSize:11,color:T.txt2,maxWidth:200,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{sel.name}</span>
-              <span style={{...mono,fontSize:10,color:T.muted}}>{sel.days.map(x=>x.slice(0,3)).join('/')} · {fmtHour(sel.sh)}–{fmtHour(sel.eh)} · {sel.enroll} alunos</span>
+              <span style={{...mono,fontSize:10,color:T.muted}}>{fmtSchedule(sel)} · {sel.enroll} alunos</span>
               <div style={{flex:1}}/>
-              {viewMode==='grid'&&!sel.days.includes(day)&&<span style={{fontSize:9,color:theme==='light'?'#b45309':'#FBBF24'}}>Não ocorre na {day} — mude para {sel.days[0].slice(0,3)}</span>}
-              {viewMode==='grid'&&sel.days.includes(day)&&<span style={{fontSize:9,color:T.muted}}><span style={{color:d.clr}}>●</span> livre {canMerge&&<><span style={{color:'#F59E0B'}}>●</span> mesclar</>}</span>}
+              {viewMode==='grid'&&!courseOccupiesDay(sel,day)&&<span style={{fontSize:9,color:theme==='light'?'#b45309':'#FBBF24'}}>Não ocorre na {day} — mude para {sel.blocks.flatMap(b=>b.days)[0]?.slice(0,3)}</span>}
+              {viewMode==='grid'&&courseOccupiesDay(sel,day)&&<span style={{fontSize:9,color:T.muted}}><span style={{color:d.clr}}>●</span> livre {canMerge&&<><span style={{color:'#F59E0B'}}>●</span> mesclar</>}</span>}
               <button onClick={()=>setSelId(null)} style={{padding:'2px 8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:9,cursor:'pointer'}}>✕</button>
             </div>
           )}
@@ -495,10 +651,14 @@ function Dashboard(){
       {finishConfirm&&<FinishConfirmModal deptName={gDept(currentUser.deptId)?.full} remaining={autoAllocInput.length} onConfirm={handleFinish} onCancel={()=>setFinishConfirm(false)}/>}
       {deptPanel&&<DeptStatusPanel deptStatuses={deptStatuses} notifications={notifications} onReopen={handleReopen} onForceFinish={handleForceFinish} onClose={()=>setDeptPanel(false)}/>}
       {notifPanel&&<NotifPanel notifications={notifications} onClose={()=>setNotifPanel(false)}/>}
-      {editingCourse&&<CourseEditModal course={editingCourse} onSave={handleEditCourse} onCancel={()=>setEditingCourse(null)}/>}
+      {(editingCourse||creatingCourse)&&<CourseEditModal course={editingCourse} isChief={isChief} targetDeptId={targetDeptId} courses={courses}
+        onSave={handleEditCourse} onCreate={handleCreateCourse} onCancel={()=>{setEditingCourse(null);setCreatingCourse(false);}}/>}
+      {importingCourses&&<CourseImportModal targetDeptId={targetDeptId} deptName={gDept(targetDeptId)?.full}
+        existingCourses={courses.filter(c=>c.deptId===targetDeptId)}
+        onConfirm={handleImportCourses} onCancel={()=>setImportingCourses(false)}/>}
       {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
       {autoAllocResult&&<AutoAllocModal result={autoAllocResult} dept={d} onApply={handleApplyAllocation} onCancel={()=>setAutoAllocResult(null)}/>}
-      {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} onConfirm={()=>forceAllocate(mergeModal.roomId)} onCancel={()=>setMergeModal(null)}/>}
+      {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={day} onConfirm={()=>forceAllocate(mergeModal.roomId)} onCancel={()=>setMergeModal(null)}/>}
       {showUsers&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'stretch',justifyContent:'flex-end',zIndex:200}}>
           <div style={{width:'min(900px,95vw)',background:T.surface,borderLeft:`1px solid ${T.bdr}`,display:'flex',flexDirection:'column',animation:'slideIn .2s ease'}}>
@@ -547,7 +707,7 @@ function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,o
         </div>
       </div>
       <div style={{fontSize:11,fontWeight:500,color:T.txt,marginBottom:2,lineHeight:1.3}} onClick={onSelect}>{course.name}</div>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}} onClick={onSelect}>{course.days.map(x=>x.slice(0,3)).join('/')} · {fmtHour(course.sh)}–{fmtHour(course.eh)}</div>
+      <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}} onClick={onSelect}>{fmtSchedule(course)}</div>
       {roomLabel&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:badgeClr,marginTop:2}}>📍 {roomLabel}</div>}
     </div>
   );
@@ -563,7 +723,7 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
     ...rooms.filter(r=>r.deptId!==deptId).sort(byBuildingThenLabel),
   ],[rooms,deptId]);
   return(
-    <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:LW+CW*12}}>
+    <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:LW+CW*HOURS.length}}>
       <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
       <thead>
         <tr style={{position:'sticky',top:0,zIndex:5,background:T.surface,boxShadow:theme==='light'?'0 1px 2px rgba(0,0,0,.06)':'none'}}>
@@ -577,15 +737,16 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
           const free=canAllocate&&sel?roomFree(room.id,sel,alloc):false;
           const hasCon=canAllocate&&sel?!free:false;
           const slots=rowSlots(room.id,day,alloc);
-          const dayOk=sel?sel.days.includes(day):false;
+          const selBlock=sel?blockForDay(sel,day):null;
+          const dayOk=!!selBlock;
           const showSep=!isOwn&&sorted[idx-1]?.deptId===deptId;
           const showBuildingSep=idx===0||sorted[idx-1]?.building!==room.building;
           const capWarn=sel&&room.cap<sel.enroll;
           const rowBg=isOwn?(theme==='light'?'#ffffff':T.bg):(theme==='light'?T.faint:T.inner);
           return(
             <Fragment key={room.id}>
-              {showSep&&<tr><td colSpan={13} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:700,color:T.txt2,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outros Departamentos ↓</td></tr>}
-              {showBuildingSep&&<tr><td colSpan={13} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{room.building}</td></tr>}
+              {showSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:700,color:T.txt2,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outros Departamentos ↓</td></tr>}
+              {showBuildingSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{room.building}</td></tr>}
               <tr style={{borderBottom:`1px solid ${T.bdr}`,background:rowBg}}>
                 <td style={{padding:'0 6px 0 10px',height:RH}}>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
@@ -602,11 +763,12 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
                 {slots.map((slot,si)=>{
                   if(slot.c){
                     const cd=gDept(slot.c.deptId),cdClr=dtc(cd,theme),isMine=slot.c.deptId===deptId;
-                    const isMergeZone=canAllocate&&canMerge&&sel&&dayOk&&hasCon&&slot.h>=sel.sh&&slot.h<sel.eh;
+                    const isMergeZone=canAllocate&&canMerge&&sel&&dayOk&&hasCon&&slot.h>=selBlock.sh&&slot.h<selBlock.eh;
+                    const slotBlock=blockForDay(slot.c,day);
                     return(
                       <td key={si} colSpan={slot.span} style={{padding:'2px 2px',height:RH,verticalAlign:'middle',background:isMergeZone?(theme==='light'?'#fffbeb':'#F59E0B0f'):'transparent',cursor:isMergeZone?'pointer':'default',transition:'background .1s'}} className={isMergeZone?'gridcell-merge':''} onClick={()=>isMergeZone&&onTryAlloc(room.id)}>
                         <div onClick={e=>{if(isMine&&canDealloc&&!isMergeZone){e.stopPropagation();onDealloc(slot.c.id);}}} className={isMine&&canDealloc?'chip-own':''}
-                          title={`${slot.c.name} · ${slot.c.sh}:00–${slot.c.eh}:00 · ${slot.c.enroll} alunos${isMine&&canDealloc?'\nClique para desalocar':''}${isMergeZone?'\nClique para mesclar':''}`}
+                          title={`${slot.c.name} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos${isMine&&canDealloc?'\nClique para desalocar':''}${isMergeZone?'\nClique para mesclar':''}`}
                           style={{height:'100%',padding:'0 5px',borderRadius:3,background:isMine?`${cd.clr}${theme==='light'?'28':'22'}`:`${cd.clr}${theme==='light'?'18':'0e'}`,borderLeft:`2px solid ${isMergeZone?'#F59E0B':cd.clr}`,display:'flex',alignItems:'center',gap:4,overflow:'hidden',cursor:isMergeZone?'pointer':isMine&&canDealloc?'pointer':'default',transition:'filter .12s'}}>
                           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:isMergeZone?'#d97706':cdClr,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{slot.c.code}</span>
                           {slot.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:'#d97706',background:'#F59E0B22',borderRadius:2,padding:'0 3px',flexShrink:0}}>+{slot.merged}</span>}
@@ -616,7 +778,7 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
                       </td>
                     );
                   }
-                  const hlFree=canAllocate&&free&&dayOk&&slot.h>=sel?.sh&&slot.h<sel?.eh;
+                  const hlFree=canAllocate&&free&&dayOk&&slot.h>=selBlock?.sh&&slot.h<selBlock?.eh;
                   return(
                     <td key={si} style={{padding:'2px 2px',height:RH,verticalAlign:'middle',background:hlFree?`${dept.clr}${theme==='light'?'22':'1a'}`:'transparent',cursor:hlFree?'pointer':'default',transition:'background .1s'}} className={hlFree?'gridcell-hl':''} onClick={()=>hlFree&&onTryAlloc(room.id)}>
                       {hlFree&&<div style={{height:'100%',borderRadius:3,border:`1px dashed ${dept.clr}${theme==='light'?'88':'44'}`,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:11,color:`${dept.clr}${theme==='light'?'aa':'66'}`}}>+</span></div>}
@@ -919,7 +1081,7 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
                       <span style={{...mono,fontSize:9,color:cdClr}}>{course.code}</span>
                       <span style={{fontSize:11,color:T.txt,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{course.name}</span>
                     </div>
-                    <div style={{...mono,fontSize:9,color:T.dim}}>{course.days.map(d=>d.slice(0,3)).join('/')} · {fmtHour(course.sh)}–{fmtHour(course.eh)} · {course.enroll} alunos</div>
+                    <div style={{...mono,fontSize:9,color:T.dim}}>{fmtSchedule(course)} · {course.enroll} alunos</div>
                   </div>
                   <div style={{fontSize:14,color:T.dim,flexShrink:0}}>→</div>
                   <div style={{textAlign:'right',flexShrink:0}}>
@@ -1077,59 +1239,127 @@ function NotifPanel({notifications,onClose}){
 }
 
 // ─── Modal de edição de disciplina ────────────────────────────────────────────
-function CourseEditModal({course,onSave,onCancel}){
+function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,onCancel}){
   const{T,theme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
-  const cd=gDept(course.deptId),cdClr=dtc(cd,theme);
-  const[name,setName]=useState(course.name);
-  const[days,setDays]=useState([...course.days]);
-  const[sh,setSh]=useState(course.sh);
-  const[eh,setEh]=useState(course.eh);
-  const[enroll,setEnroll]=useState(course.enroll);
+  const[code,setCode]=useState(course?.code??'');
+  const[sec,setSec]=useState(course?.sec??1);
+  const[deptId,setDeptId]=useState(course?.deptId??targetDeptId);
+  const effectiveDeptId=course?course.deptId:deptId;
+  const cd=gDept(effectiveDeptId),cdClr=dtc(cd,theme);
+  const[name,setName]=useState(course?.name??'');
+  const[blocks,setBlocks]=useState(()=>course?course.blocks.map(b=>({days:[...b.days],sh:b.sh,eh:b.eh})):[{days:[],sh:8,eh:9}]);
+  const[enroll,setEnroll]=useState(course?.enroll??1);
   const[errors,setErrors]=useState({});
-  const toggleDay=d=>setDays(prev=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b)));
-  const validate=()=>{const e={};if(!name.trim())e.name='Obrigatório';if(days.length===0)e.days='Selecione ao menos um dia';if(eh<=sh)e.eh='O término deve ser após o início';if(enroll<1||enroll>1000)e.enroll='Entre 1 e 1000';setErrors(e);return Object.keys(e).length===0;};
-  const handleSave=()=>{if(!validate())return;onSave(course.id,{name:name.trim(),days,sh,eh,enroll:Number(enroll)});};
+  const[blockErrors,setBlockErrors]=useState([]);
+  const updateBlock=(i,patch)=>setBlocks(prev=>prev.map((b,bi)=>bi===i?{...b,...patch}:b));
+  const toggleBlockDay=(i,d)=>setBlocks(prev=>prev.map((b,bi)=>bi!==i?b:{...b,days:b.days.includes(d)?b.days.filter(x=>x!==d):[...b.days,d].sort((a,c)=>DAYS.indexOf(a)-DAYS.indexOf(c))}));
+  const addBlock=()=>setBlocks(prev=>[...prev,{days:[],sh:8,eh:9}]);
+  const removeBlock=i=>setBlocks(prev=>prev.filter((_,bi)=>bi!==i));
+  const validate=()=>{
+    const e={};
+    if(!course){
+      if(!code.trim())e.code='Obrigatório';
+      const secNum=Number(sec);
+      if(!Number.isInteger(secNum)||secNum<1)e.sec='Deve ser um número inteiro ≥ 1';
+      else if(courses.some(c=>c.deptId===effectiveDeptId&&c.code.trim().toUpperCase()===code.trim().toUpperCase()&&c.sec===secNum))
+        e.sec='Já existe uma disciplina com este código e seção neste departamento';
+    }
+    if(!name.trim())e.name='Obrigatório';
+    if(enroll<1||enroll>1000)e.enroll='Entre 1 e 1000';
+    const bErrs=blocks.map(b=>{
+      const be={};
+      if(b.days.length===0)be.days='Selecione ao menos um dia';
+      if(b.eh<=b.sh)be.eh='O término deve ser após o início';
+      return be;
+    });
+    const dayCounts={};
+    blocks.forEach(b=>b.days.forEach(d=>{dayCounts[d]=(dayCounts[d]||0)+1;}));
+    const dupDay=Object.entries(dayCounts).find(([,n])=>n>1)?.[0];
+    if(dupDay)e.blocks=`O dia ${dupDay} aparece em mais de um horário desta disciplina`;
+    setBlockErrors(bErrs);
+    setErrors(e);
+    return Object.keys(e).length===0&&bErrs.every(be=>Object.keys(be).length===0);
+  };
+  const handleSave=()=>{
+    if(!validate())return;
+    if(course){
+      onSave(course.id,{name:name.trim(),blocks,enroll:Number(enroll)});
+    }else{
+      onCreate({id:courseId(effectiveDeptId,code.trim(),Number(sec)),code:code.trim(),name:name.trim(),sec:Number(sec),deptId:effectiveDeptId,blocks,enroll:Number(enroll)});
+    }
+  };
   const inp={width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'};
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:440,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
           <div style={{width:3,height:20,borderRadius:1,background:cd.clr}}/>
-          <span style={{...mono,fontSize:10,color:cdClr,fontWeight:500}}>{course.code}</span>
-          <span style={{fontSize:14,fontWeight:700,color:T.txt}}>Editar Disciplina</span>
-          {course.room&&<span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fef3c7':'#3a1a0a',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'2px 6px',marginLeft:'auto'}}>⚠ Alteração de horário remove a sala</span>}
-          <button onClick={onCancel} style={{background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer',marginLeft:course.room?0:'auto'}}>✕</button>
+          {course&&<span style={{...mono,fontSize:10,color:cdClr,fontWeight:500}}>{course.code}</span>}
+          <span style={{fontSize:14,fontWeight:700,color:T.txt}}>{course?'Editar Disciplina':'Nova Disciplina'}</span>
+          {course?.room&&<span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fef3c7':'#3a1a0a',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'2px 6px',marginLeft:'auto'}}>⚠ Alteração de horário remove a sala</span>}
+          <button onClick={onCancel} style={{background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer',marginLeft:course?.room?0:'auto'}}>✕</button>
         </div>
+        {!course&&isChief&&(
+          <div style={{marginBottom:12}}>
+            <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Departamento</label>
+            <select value={deptId} onChange={e=>setDeptId(e.target.value)} style={{...inp,cursor:'pointer'}}>
+              {DEPTS.map(d=><option key={d.id} value={d.id}>{d.full}</option>)}
+            </select>
+          </div>
+        )}
+        {!course&&(
+          <div style={{display:'flex',gap:10,marginBottom:12}}>
+            <div style={{flex:2}}>
+              <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Código</label>
+              <input value={code} onChange={e=>setCode(e.target.value)} style={inp}/>
+              {errors.code&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.code}</div>}
+            </div>
+            <div style={{flex:1}}>
+              <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Seção</label>
+              <input type="number" min={1} value={sec} onChange={e=>setSec(e.target.value)} style={inp}/>
+              {errors.sec&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.sec}</div>}
+            </div>
+          </div>
+        )}
         <div style={{marginBottom:12}}>
           <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Nome da Disciplina</label>
           <input value={name} onChange={e=>setName(e.target.value)} style={inp}/>
           {errors.name&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.name}</div>}
         </div>
-        <div style={{marginBottom:12}}>
-          <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:6}}>Dias</label>
-          <div style={{display:'flex',gap:5}}>
-            {DAYS.map(day=>(
-              <button key={day} type="button" onClick={()=>toggleDay(day)} style={{padding:'5px 8px',borderRadius:5,fontSize:10,fontWeight:500,cursor:'pointer',transition:'all .1s',background:days.includes(day)?cd.clr:'transparent',color:days.includes(day)?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${days.includes(day)?cd.clr:T.bdr2}`}}>{day.slice(0,3)}</button>
-            ))}
+        {errors.blocks&&<div style={{fontSize:10,color:'#ef4444',marginBottom:8}}>{errors.blocks}</div>}
+        {blocks.map((block,i)=>(
+          <div key={i} style={{border:`1px solid ${T.bdr}`,borderRadius:8,padding:10,marginBottom:10}}>
+            <div style={{display:'flex',alignItems:'center',marginBottom:8}}>
+              <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>Horário{blocks.length>1?` ${i+1}`:''}</label>
+              {blocks.length>1&&<button type="button" onClick={()=>removeBlock(i)} title="Remover este horário" style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:13,cursor:'pointer'}}>✕</button>}
+            </div>
+            <div style={{marginBottom:8}}>
+              <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
+                {DAYS.map(day=>(
+                  <button key={day} type="button" onClick={()=>toggleBlockDay(i,day)} style={{padding:'5px 8px',borderRadius:5,fontSize:10,fontWeight:500,cursor:'pointer',transition:'all .1s',background:block.days.includes(day)?cd.clr:'transparent',color:block.days.includes(day)?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${block.days.includes(day)?cd.clr:T.bdr2}`}}>{day.slice(0,3)}</button>
+                ))}
+              </div>
+              {blockErrors[i]?.days&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{blockErrors[i].days}</div>}
+            </div>
+            <div style={{display:'flex',gap:10}}>
+              <div style={{flex:1}}>
+                <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Início</label>
+                <select value={block.sh} onChange={e=>{const v=Number(e.target.value);updateBlock(i,{sh:v,eh:block.eh<=v?v+1:block.eh});}} style={{...inp,cursor:'pointer'}}>
+                  {HOURS.map(h=><option key={h} value={h}>{fmtHour(h)}</option>)}
+                </select>
+              </div>
+              <div style={{flex:1}}>
+                <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Término</label>
+                <select value={block.eh} onChange={e=>updateBlock(i,{eh:Number(e.target.value)})} style={{...inp,cursor:'pointer'}}>
+                  {HOURS.filter(h=>h>block.sh).concat([22]).map(h=><option key={h} value={h}>{fmtHour(h)}</option>)}
+                </select>
+                {blockErrors[i]?.eh&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{blockErrors[i].eh}</div>}
+              </div>
+            </div>
           </div>
-          {errors.days&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.days}</div>}
-        </div>
-        <div style={{display:'flex',gap:10,marginBottom:12}}>
-          <div style={{flex:1}}>
-            <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Início</label>
-            <select value={sh} onChange={e=>{const v=Number(e.target.value);setSh(v);if(eh<=v)setEh(v+1);}} style={{...inp,cursor:'pointer'}}>
-              {HOURS.map(h=><option key={h} value={h}>{fmtHour(h)}</option>)}
-            </select>
-          </div>
-          <div style={{flex:1}}>
-            <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Término</label>
-            <select value={eh} onChange={e=>setEh(Number(e.target.value))} style={{...inp,cursor:'pointer'}}>
-              {HOURS.filter(h=>h>sh).concat([20]).map(h=><option key={h} value={h}>{fmtHour(h)}</option>)}
-            </select>
-            {errors.eh&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.eh}</div>}
-          </div>
-        </div>
+        ))}
+        <button type="button" onClick={addBlock} style={{width:'100%',padding:'8px',marginBottom:20,background:'transparent',border:`1px dashed ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>+ Adicionar outro horário</button>
         <div style={{marginBottom:20}}>
           <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Alunos Matriculados</label>
           <input type="number" min={1} max={1000} value={enroll} onChange={e=>setEnroll(e.target.value)} style={inp}/>
@@ -1137,17 +1367,197 @@ function CourseEditModal({course,onSave,onCancel}){
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
           <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
-          <button onClick={handleSave} style={{padding:'8px 20px',background:cd.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:11,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>Salvar Alterações</button>
+          <button onClick={handleSave} style={{padding:'8px 20px',background:cd.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:11,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>{course?'Salvar Alterações':'Criar Disciplina'}</button>
         </div>
       </div>
     </div>
   );
 }
 
+// ─── Modal de import de disciplinas (CSV) ─────────────────────────────────────
+function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCancel}){
+  const{T,theme}=useT();
+  const mono={fontFamily:"'DM Mono',monospace"};
+  const dept=gDept(targetDeptId),dClr=dtc(dept,theme);
+  const[step,setStep]=useState('pick');
+  const[rows,setRows]=useState([]);
+  const[tab,setTab]=useState('valid');
+  const[parseError,setParseError]=useState(null);
+
+  const handleFile=async file=>{
+    setParseError(null);
+    try{
+      const isSpreadsheet=/\.(ods|xlsx|xls)$/i.test(file.name);
+      const tableRows=isSpreadsheet?await parseSheetRows(file):parseCsvRows(await file.text());
+      if(tableRows.length<2){setParseError('Arquivo vazio ou sem linhas de dados.');return;}
+      const parsed=groupSigaaRows(tableRows);
+      const rowKey=r=>`${String(r.normalized.code??'').trim().toUpperCase()}__${r.normalized.sec}`;
+      const groups={};
+      parsed.forEach(r=>{if(!r.skipped&&Object.keys(r.errors).length===0)(groups[rowKey(r)]=groups[rowKey(r)]||[]).push(r);});
+      parsed.forEach(r=>{
+        if(r.skipped||Object.keys(r.errors).length>0)return;
+        if(groups[rowKey(r)].length>1)r.errors.secao='Código + seção duplicados neste arquivo';
+      });
+      setRows(parsed);setTab('valid');setStep('preview');
+    }catch(e){
+      setParseError(`Falha ao ler o arquivo: ${e.message}`);
+    }
+  };
+
+  const validRows=rows.filter(r=>!r.skipped&&Object.keys(r.errors).length===0);
+  const skippedRows=rows.filter(r=>r.skipped);
+  const invalidRows=rows.filter(r=>!r.skipped&&Object.keys(r.errors).length>0);
+  const allocatedExisting=existingCourses.filter(c=>c.room).length;
+
+  const handleConfirmImport=()=>onConfirm(validRows.map(r=>({
+    id:courseId(targetDeptId,r.normalized.code,r.normalized.sec),
+    code:r.normalized.code,name:r.normalized.name,sec:r.normalized.sec,deptId:targetDeptId,
+    blocks:r.normalized.blocks,enroll:r.normalized.enroll,
+  })));
+
+  return(
+    <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,width:600,maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+
+        {step==='pick'&&(
+          <>
+            <div style={{padding:'20px 24px',flexShrink:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+                <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>⇪</div>
+                <div>
+                  <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Importar Disciplinas — {deptName}</div>
+                  <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>Substitui todas as disciplinas atuais do departamento</div>
+                </div>
+                <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
+              </div>
+              <div style={{background:T.inner,borderRadius:8,padding:'12px 14px',marginBottom:16,border:`1px solid ${T.bdr}`,fontSize:11,color:T.txt2,lineHeight:1.7}}>
+                Arquivo <strong>.csv, .ods ou .xlsx</strong> no formato do relatório de oferta de turmas do SIGAA: uma linha de cabeçalho por disciplina (<span style={{...mono,background:T.faint,padding:'1px 4px',borderRadius:3}}>"CÓDIGO - NOME (NÍVEL)"</span>) seguida de uma linha por turma, com as colunas Ano Período, Turma, Docente(s), Tipo, Situação, Horário e Mat./Cap.
+                <br/>Turmas com Situação diferente de "ABERTA" são ignoradas. O Horário usa o código do SIGAA (ex.: <span style={mono}>35M34</span>, podendo ter mais de um bloco separado por espaço para dias com horários diferentes).
+              </div>
+              <input type="file" accept=".csv,.ods,.xlsx,.xls" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}} style={{...mono,fontSize:11,color:T.txt}}/>
+              {parseError&&<div style={{fontSize:11,color:'#ef4444',marginTop:10}}>{parseError}</div>}
+            </div>
+            <div style={{padding:'14px 20px',borderTop:`1px solid ${T.bdr}`,display:'flex',justifyContent:'flex-end'}}>
+              <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
+            </div>
+          </>
+        )}
+
+        {step==='preview'&&(
+          <>
+            <div style={{padding:'20px 24px 16px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+                <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>⇪</div>
+                <div>
+                  <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Pré-visualização do Import</div>
+                  <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>Revise antes de continuar — corrija o arquivo se houver erros</div>
+                </div>
+                <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
+              </div>
+              <div style={{display:'flex',gap:8}}>
+                <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,borderRadius:7,textAlign:'center'}}>
+                  <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#15803d':'#34D399',lineHeight:1}}>{validRows.length}</div>
+                  <div style={{...mono,fontSize:8,color:T.dim,marginTop:2}}>VÁLIDAS</div>
+                </div>
+                {skippedRows.length>0&&(
+                  <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:7,textAlign:'center'}}>
+                    <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#b45309':'#FBBF24',lineHeight:1}}>{skippedRows.length}</div>
+                    <div style={{...mono,fontSize:8,color:T.dim,marginTop:2}}>IGNORADAS</div>
+                  </div>
+                )}
+                {invalidRows.length>0&&(
+                  <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:7,textAlign:'center'}}>
+                    <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1}}>{invalidRows.length}</div>
+                    <div style={{...mono,fontSize:8,color:T.dim,marginTop:2}}>COM ERRO</div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{display:'flex',gap:0,borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
+              {[['valid',`✓ Válidas (${validRows.length})`],['skipped',`— Ignoradas (${skippedRows.length})`],['invalid',`⚠ Com erro (${invalidRows.length})`]].map(([key,label])=>(
+                key!=='valid'&&rows.filter(r=>key==='skipped'?r.skipped:(!r.skipped&&Object.keys(r.errors).length>0)).length===0?null:(
+                  <button key={key} onClick={()=>setTab(key)} style={{flex:1,padding:'9px',fontSize:11,fontWeight:500,cursor:'pointer',background:'transparent',border:'none',borderBottom:`2px solid ${tab===key?dept.clr:'transparent'}`,color:tab===key?dClr:T.muted,transition:'all .12s'}}>{label}</button>
+                )
+              ))}
+            </div>
+            <div style={{flex:1,overflowY:'auto',padding:'8px 0'}}>
+              {tab==='valid'?(
+                validRows.length===0?<div style={{textAlign:'center',padding:32,color:T.dim,fontSize:12}}>Nenhuma linha válida.</div>
+                :validRows.map((r,i)=>(
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 20px',borderBottom:`1px solid ${T.bdr}`,background:i%2===0?'transparent':(theme==='light'?T.faint:T.inner+'88')}}>
+                    <div style={{width:2,height:30,borderRadius:1,background:dept.clr,flexShrink:0}}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
+                        <span style={{...mono,fontSize:9,color:dClr}}>{r.normalized.code} · sec {r.normalized.sec}</span>
+                        <span style={{fontSize:11,color:T.txt,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.normalized.name}</span>
+                      </div>
+                      <div style={{...mono,fontSize:9,color:T.dim}}>{fmtSchedule({blocks:r.normalized.blocks})} · {r.normalized.enroll} alunos</div>
+                    </div>
+                  </div>
+                ))
+              ):tab==='skipped'?(
+                skippedRows.map((r,i)=>(
+                  <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 20px',borderBottom:`1px solid ${T.bdr}`}}>
+                    <div style={{width:2,height:30,borderRadius:1,background:'#F59E0B',flexShrink:0,marginTop:2}}/>
+                    <div>
+                      <div style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:2}}>{r.raw.codigo||'(sem código)'}{r.raw.nome?` · ${r.raw.nome}`:''} {r.raw.turma?`· ${r.raw.turma}`:''}</div>
+                      <div style={{fontSize:10,color:theme==='light'?'#b45309':'#FBBF24',lineHeight:1.4}}>{r.skipReason}</div>
+                    </div>
+                  </div>
+                ))
+              ):(
+                invalidRows.map((r,i)=>(
+                  <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 20px',borderBottom:`1px solid ${T.bdr}`}}>
+                    <div style={{width:2,height:30,borderRadius:1,background:'#ef4444',flexShrink:0,marginTop:2}}/>
+                    <div>
+                      <div style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:2}}>{r.raw.codigo||'(sem código)'}{r.raw.nome?` · ${r.raw.nome}`:''} {r.raw.turma?`· ${r.raw.turma}`:''}</div>
+                      {Object.entries(r.errors).map(([field,msg])=>(
+                        <div key={field} style={{fontSize:10,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.4}}>{field}: {msg}</div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <div style={{padding:'16px 20px',borderTop:`1px solid ${T.bdr}`,flexShrink:0,display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button onClick={()=>setStep('pick')} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Voltar</button>
+              <button onClick={()=>setStep('confirm')} disabled={invalidRows.length>0||validRows.length===0}
+                style={{padding:'8px 22px',borderRadius:7,fontSize:11,fontWeight:700,cursor:(invalidRows.length>0||validRows.length===0)?'not-allowed':'pointer',background:(invalidRows.length>0||validRows.length===0)?T.inner:dept.clr,border:'none',color:(invalidRows.length>0||validRows.length===0)?T.dim:(theme==='light'?'#fff':'#000')}}>
+                Continuar
+              </button>
+            </div>
+          </>
+        )}
+
+        {step==='confirm'&&(
+          <div style={{padding:28}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
+              <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#fef2f2':'#1a0505',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>⚠</div>
+              <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Substituir Disciplinas de {deptName}?</div>
+              <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
+            </div>
+            <div style={{background:theme==='light'?'#fef2f2':'#1a0505',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444433'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:12,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.7}}>
+              Isso vai <strong>excluir permanentemente {existingCourses.length} disciplina{existingCourses.length!==1?'s':''} existente{existingCourses.length!==1?'s':''}</strong> do {deptName}{allocatedExisting>0?<>, incluindo <strong>{allocatedExisting} já alocada{allocatedExisting!==1?'s':''} em sala{allocatedExisting!==1?'s':''}</strong> (essas alocações serão perdidas)</>:''}. As <strong>{validRows.length} novas disciplinas</strong> do arquivo serão inseridas em seguida. Esta ação não pode ser desfeita.
+            </div>
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button onClick={()=>setStep('preview')} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Voltar</button>
+              <button onClick={handleConfirmImport} style={{padding:'8px 20px',borderRadius:7,fontSize:11,fontWeight:700,background:'#ef4444',border:'none',color:'#fff',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.1)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
+                Excluir e Importar {validRows.length} Disciplina{validRows.length!==1?'s':''}
+              </button>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
+
 // ─── Modal de mesclagem ───────────────────────────────────────────────────────
-function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,onConfirm,onCancel}){
+function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,day,onConfirm,onCancel}){
   const{T,theme}=useT();
   const rd=gDept(room.deptId),dClr=dtc(dept,theme);
+  const incomingBlock=blockForDay(incomingCourse,day);
   const over=totalEnroll>room.cap,existing=conflicts.reduce((s,c)=>s+c.enroll,0);
   const pctEx=Math.min(existing/room.cap,1)*100,pctNew=Math.min(incomingCourse.enroll/room.cap,Math.max(0,1-pctEx/100))*100;
   const[confirmed,setConfirmed]=useState(false);
@@ -1183,16 +1593,16 @@ function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,onConfirm,on
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
               <div><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:dClr,fontWeight:600}}>{incomingCourse.code}</span><span style={{fontSize:10,color:T.txt2,marginLeft:8}}>{incomingCourse.name}</span></div>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}}>{incomingCourse.sh}:00–{incomingCourse.eh}:00</span>
+                <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}}>{fmtHour(incomingBlock.sh)}–{fmtHour(incomingBlock.eh)}</span>
                 <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:dClr,background:dbg(dept,theme),border:`1px solid ${dept.clr}55`,borderRadius:3,padding:'1px 5px'}}>NOVA</span>
               </div>
             </div>
           </div>
-          {conflicts.map(c=>{const cd=gDept(c.deptId),cdClr=dtc(cd,theme);return(
+          {conflicts.map(c=>{const cd=gDept(c.deptId),cdClr=dtc(cd,theme),cBlock=blockForDay(c,day);return(
             <div key={c.id} style={{padding:'9px 12px',background:T.card,border:`1px solid ${T.bdr}`,borderRadius:7,marginBottom:4}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:cdClr}}>{c.code}</span><span style={{fontSize:10,color:T.muted,marginLeft:8}}>{c.name}</span></div>
-                <div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{c.sh}:00–{c.eh}:00</span><span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.muted}}>{c.enroll} al.</span></div>
+                <div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{fmtHour(cBlock.sh)}–{fmtHour(cBlock.eh)}</span><span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.muted}}>{c.enroll} al.</span></div>
               </div>
             </div>
           );})}
