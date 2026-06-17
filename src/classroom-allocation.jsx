@@ -412,7 +412,8 @@ function Dashboard(){
                 selected={selId===c.id} locked={isLocked}
                 roomLabel={sidebarTab==='allocated'?ROOMS.find(r=>r.id===c.room)?.label:undefined}
                 onSelect={sidebarTab==='pending'?()=>selectCourse(c):undefined}
-                onEdit={canEditCourse?()=>setEditingCourse(c):null}/>
+                onEdit={canEditCourse?()=>setEditingCourse(c):null}
+                onRemove={sidebarTab==='allocated'&&canDealloc&&!isLocked?()=>deallocate(c.id):null}/>
             ))}
           </div>
 
@@ -510,7 +511,7 @@ function Dashboard(){
 }
 
 // ─── Card de disciplina ───────────────────────────────────────────────────────
-function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,onSelect,onEdit}){
+function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,onSelect,onEdit,onRemove}){
   const{T,theme}=useT();
   const cd=gDept(course.deptId),badgeClr=dtc(cd,theme);
   return(
@@ -529,6 +530,12 @@ function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,o
               onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;e.currentTarget.style.color=T.txt;}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>✏</button>
           )}
+          {onRemove&&(
+            <button onClick={e=>{e.stopPropagation();onRemove();}} title="Remover alocação"
+              style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:8,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor='#ef4444';e.currentTarget.style.color='#ef4444';}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>✕</button>
+          )}
         </div>
       </div>
       <div style={{fontSize:11,fontWeight:500,color:T.txt,marginBottom:2,lineHeight:1.3}} onClick={onSelect}>{course.name}</div>
@@ -542,7 +549,11 @@ function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,o
 function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
   const{T,theme}=useT();
   const CW=76,RH=33,LW=130;
-  const sorted=useMemo(()=>[...rooms.filter(r=>r.deptId===deptId),...rooms.filter(r=>r.deptId!==deptId)],[rooms,deptId]);
+  const byBuildingThenLabel=(a,b)=>a.building.localeCompare(b.building)||a.label.localeCompare(b.label,undefined,{numeric:true});
+  const sorted=useMemo(()=>[
+    ...rooms.filter(r=>r.deptId===deptId).sort(byBuildingThenLabel),
+    ...rooms.filter(r=>r.deptId!==deptId).sort(byBuildingThenLabel),
+  ],[rooms,deptId]);
   return(
     <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:LW+CW*12}}>
       <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
@@ -560,11 +571,13 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
           const slots=rowSlots(room.id,day,alloc);
           const dayOk=sel?sel.days.includes(day):false;
           const showSep=!isOwn&&sorted[idx-1]?.deptId===deptId;
+          const showBuildingSep=idx===0||sorted[idx-1]?.building!==room.building;
           const capWarn=sel&&room.cap<sel.enroll;
           const rowBg=isOwn?(theme==='light'?'#ffffff':T.bg):(theme==='light'?T.faint:T.inner);
           return(
             <Fragment key={room.id}>
               {showSep&&<tr><td colSpan={13} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outros Departamentos ↓</td></tr>}
+              {showBuildingSep&&<tr><td colSpan={13} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,opacity:.8,background:T.faint,letterSpacing:.5}}>{room.building}</td></tr>}
               <tr style={{borderBottom:`1px solid ${T.bdr}`,background:rowBg}}>
                 <td style={{padding:'0 6px 0 10px',height:RH}}>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
@@ -633,6 +646,12 @@ function ListView({rooms,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
 function RoomSection({title,rooms,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
   const{T,theme}=useT();
   const free=rooms.filter(r=>roomFree(r.id,sel,alloc)),busy=rooms.filter(r=>!roomFree(r.id,sel,alloc));
+  const freeSet=new Set(free.map(r=>r.id));
+  const byBuilding=useMemo(()=>{
+    const groups={};
+    rooms.forEach(r=>{(groups[r.building]=groups[r.building]||[]).push(r);});
+    return Object.entries(groups).sort(([a],[b])=>a.localeCompare(b));
+  },[rooms]);
   return(
     <div>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
@@ -642,10 +661,17 @@ function RoomSection({title,rooms,alloc,courses,sel,deptId,dept,canAllocate,canD
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}}>/</span>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:theme==='light'?'#d97706':'#F59E0B'}}>{busy.length} {canMerge?'disponíveis para mescla':'ocupadas'}</span>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))',gap:8}}>
-        {free.map(r=><RoomCard key={r.id} room={r} sel={sel} alloc={alloc} courses={courses} deptId={deptId} dept={dept} status="available" canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>)}
-        {busy.map(r=><RoomCard key={r.id} room={r} sel={sel} alloc={alloc} courses={courses} deptId={deptId} dept={dept} status="busy" canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>)}
-      </div>
+      {byBuilding.map(([building,bRooms])=>{
+        const bSorted=[...bRooms].sort((a,b)=>(freeSet.has(b.id)?1:0)-(freeSet.has(a.id)?1:0));
+        return(
+          <div key={building} style={{marginBottom:14}}>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,marginBottom:6,paddingLeft:2,letterSpacing:.5}}>{building}</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))',gap:8}}>
+              {bSorted.map(r=><RoomCard key={r.id} room={r} sel={sel} alloc={alloc} courses={courses} deptId={deptId} dept={dept} status={freeSet.has(r.id)?'available':'busy'} canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>)}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1,18 +1,19 @@
 // One-off import script — run manually once per Supabase project, never imported by the app.
 // Usage: node --env-file=.env.local scripts/import-real-rooms.mjs
 //
-// Reads the real room inventory from Salas_de_Aula.csv (LOCAL,BLOCO,NÚMERO,
-// CAPACIDADE,EQUIPAMENTO) and upserts it into the `rooms` table, replacing the
-// placeholder rooms scripts/seed-supabase.mjs used to generate. Also makes
-// sure every real department (including BIO, added for this import) has a
-// dept_statuses row, since the app reads that on every login.
+// Reads the real room inventory from scripts/data/salas-de-aula.csv
+// (LOCAL,BLOCO,NÚMERO,CAPACIDADE,EQUIPAMENTO) and upserts it into the `rooms`
+// table, replacing the placeholder rooms scripts/seed-supabase.mjs used to
+// generate. Also makes sure every real department (including BIO, added for
+// this import) has a dept_statuses row, since the app reads that on every
+// login.
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CSV_PATH = path.join(__dirname, '..', 'Salas_de_Aula.csv');
+const CSV_PATH = path.join(__dirname, 'data', 'salas-de-aula.csv');
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
