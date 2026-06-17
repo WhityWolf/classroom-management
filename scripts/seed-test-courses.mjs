@@ -1,10 +1,12 @@
 // One-off script — run manually, any number of times is safe to re-run after
-// clearing (see note below). Inserts a handful of placeholder courses per
-// department (including BIO) purely so the allocation flow can be exercised
-// in the UI. Does NOT touch rooms or dept_statuses — those come from
-// scripts/import-real-rooms.mjs. Replace with real course data when available;
-// these rows are all tagged with id prefix "<dept>-TEST" so they're easy to
-// find and delete later (`delete from courses where id like '%-TEST%';`).
+// clearing (see note below). Inserts placeholder courses per department
+// purely so the allocation flow can be exercised in the UI. Does NOT touch
+// rooms or dept_statuses — those come from scripts/import-real-rooms.mjs.
+// MATH is deliberately excluded — it already has real data imported from a
+// SIGAA export (scripts/import-real-rooms.mjs is rooms-only; the courses
+// came through the in-app CSV/ods importer, see CourseImportModal). These
+// rows are all tagged with id prefix "<dept>-TEST" so they're easy to find
+// and delete later (`delete from courses where id like '%-TEST%';`).
 // Usage: node --env-file=.env.local scripts/seed-test-courses.mjs
 import { createClient } from '@supabase/supabase-js';
 
@@ -18,11 +20,10 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const DAYS = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
 const COURSE_NAMES = {
-  MATH: ['Cálculo I', 'Álgebra Linear', 'Estatística', 'Equações Diferenciais', 'Geometria'],
-  PHYS: ['Mecânica Clássica', 'Eletromagnetismo', 'Termodinâmica', 'Óptica', 'Astrofísica'],
-  CS:   ['Algoritmos', 'Estruturas de Dados', 'Banco de Dados', 'Redes de Computadores', 'Engenharia de Software'],
-  CHEM: ['Química Orgânica', 'Química Analítica', 'Bioquímica', 'Eletroquímica', 'Química Ambiental'],
-  BIO:  ['Biologia Celular', 'Genética', 'Ecologia', 'Botânica', 'Zoologia'],
+  PHYS: ['Mecânica Clássica', 'Eletromagnetismo', 'Termodinâmica', 'Mecânica Quântica', 'Óptica', 'Relatividade Especial', 'Astrofísica', 'Física Nuclear', 'Dinâmica de Fluidos', 'Teoria de Ondas'],
+  CS:   ['Algoritmos', 'Estruturas de Dados', 'Sistemas Operacionais', 'Redes de Computadores', 'Banco de Dados', 'Inteligência Artificial', 'Aprendizado de Máquina', 'Compiladores', 'Engenharia de Software', 'Computação Gráfica'],
+  CHEM: ['Química Orgânica', 'Química Inorgânica', 'Química Física', 'Bioquímica', 'Química Analítica', 'Química de Polímeros', 'Eletroquímica', 'Espectroscopia', 'Termoquímica', 'Cinética'],
+  BIO:  ['Biologia Celular', 'Genética', 'Ecologia', 'Botânica', 'Zoologia', 'Microbiologia', 'Fisiologia Animal', 'Fisiologia Vegetal', 'Evolução', 'Imunologia'],
 };
 
 function mkRng(s) { s = s >>> 0; return () => { s ^= s << 13; s ^= s >> 17; s ^= s << 5; return (s >>> 0) / 4294967296; }; }

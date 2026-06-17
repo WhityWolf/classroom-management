@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [showPass,   setShowPass]   = useState(false);
   const [busy,       setBusy]       = useState(false);
   const [localError, setLocalError] = useState('');
+  const [showDemo,   setShowDemo]   = useState(false);
 
   const error = localError || authError;
 
@@ -54,16 +55,33 @@ export default function LoginPage() {
                    borderRadius:14,overflow:'hidden',boxShadow:T.shadowMd,border:`1px solid ${T.bdr}`}}>
 
         {/* Painel esquerdo */}
-        <div style={{width:290,flexShrink:0,background:theme==='light'?'#1e293b':'#060c18',
+        <div style={{width:290,flexShrink:0,position:'relative',overflow:'hidden',
+                     background:theme==='light'
+                       ?'linear-gradient(160deg,#1e293b 0%,#0f172a 100%)'
+                       :'linear-gradient(160deg,#0a1424 0%,#040810 100%)',
                      padding:'40px 28px',display:'flex',flexDirection:'column'}}>
-          <div style={{...mono,fontSize:9,letterSpacing:4,color:'#64748b',textTransform:'uppercase',marginBottom:20}}>
-            Universidade Westmore
+          <div aria-hidden style={{position:'absolute',inset:0,opacity:.5,
+            backgroundImage:'radial-gradient(circle at 1px 1px, rgba(255,255,255,.06) 1px, transparent 0)',
+            backgroundSize:'18px 18px'}}/>
+          <div aria-hidden style={{position:'absolute',top:-60,right:-60,width:220,height:220,borderRadius:'50%',
+            background:'radial-gradient(circle, rgba(96,165,250,.16), transparent 70%)'}}/>
+
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:24,position:'relative'}}>
+            <div style={{width:34,height:34,borderRadius:8,flexShrink:0,
+              background:'linear-gradient(135deg,#60A5FA,#A78BFA)',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              boxShadow:'0 2px 10px rgba(96,165,250,.35)'}}>
+              <span style={{...mono,fontSize:11,fontWeight:700,color:'#0b1220',letterSpacing:.5}}>UFPI</span>
+            </div>
+            <div style={{...mono,fontSize:9,letterSpacing:3,color:'#94a3b8',textTransform:'uppercase',lineHeight:1.4}}>
+              Universidade Federal<br/>do Piauí
+            </div>
           </div>
-          <div style={{fontSize:22,fontWeight:700,color:'#f1f5f9',lineHeight:1.25,marginBottom:8}}>
+          <div style={{fontSize:22,fontWeight:700,color:'#f1f5f9',lineHeight:1.25,marginBottom:8,position:'relative'}}>
             Sistema de Alocação de Salas
           </div>
-          <div style={{fontSize:12,color:'#64748b',lineHeight:1.6,marginBottom:32}}>
-            Agendamento centralizado de salas e coordenação interdepartamental para o corpo docente.
+          <div style={{fontSize:12,color:'#64748b',lineHeight:1.6,marginBottom:32,position:'relative'}}>
+            Agendamento centralizado de salas e coordenação interdepartamental — Centro de Ciências da Natureza (CCN).
           </div>
 
           <div style={{...mono,fontSize:8,color:'#475569',textTransform:'uppercase',letterSpacing:1,marginBottom:12}}>
@@ -91,7 +109,7 @@ export default function LoginPage() {
           </div>
 
           <div style={{flex:1}}/>
-          <div style={{...mono,fontSize:9,color:'#334155',marginTop:24}}>Semestre 2025–26</div>
+          <div style={{...mono,fontSize:9,color:'#334155',marginTop:24,position:'relative'}}>Período 2026.1</div>
         </div>
 
         {/* Painel direito */}
@@ -141,36 +159,42 @@ export default function LoginPage() {
             )}
 
             <button type="submit" disabled={busy}
-              style={{padding:'10px',background:'#3b82f6',border:'none',borderRadius:7,
-                      color:'#fff',fontSize:13,fontWeight:600,cursor:busy?'wait':'pointer',
+              style={{padding:'10px',background:'linear-gradient(135deg,#60A5FA,#A78BFA)',border:'none',borderRadius:7,
+                      color:'#0b1220',fontSize:13,fontWeight:700,cursor:busy?'wait':'pointer',
+                      boxShadow:'0 2px 10px rgba(96,165,250,.25)',
                       opacity:busy?0.7:1,transition:'opacity .15s, filter .15s',marginTop:4}}
-              onMouseEnter={e=>{if(!busy)e.currentTarget.style.filter='brightness(1.1)';}}
+              onMouseEnter={e=>{if(!busy)e.currentTarget.style.filter='brightness(1.06)';}}
               onMouseLeave={e=>e.currentTarget.style.filter='none'}>
               {busy?'Entrando…':'Entrar'}
             </button>
           </form>
 
           {/* Credenciais de demonstração */}
-          <div style={{borderTop:`1px solid ${T.bdr}`,paddingTop:20}}>
-            <div style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginBottom:10}}>
-              Credenciais de Demonstração — clique para preencher
-            </div>
-            <div style={{display:'flex',flexDirection:'column',gap:3}}>
-              {DEMO_CREDENTIALS.map(cred=>(
-                <button key={cred.username} onClick={()=>fillDemo(cred)}
-                  style={{display:'flex',alignItems:'center',gap:10,padding:'6px 10px',
-                          background:'transparent',border:`1px solid ${T.bdr}`,
-                          borderRadius:6,cursor:'pointer',textAlign:'left',transition:'all .1s'}}
-                  onMouseEnter={e=>{e.currentTarget.style.background=T.hover;e.currentTarget.style.borderColor=T.bdr2;}}
-                  onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor=T.bdr;}}>
-                  <span style={{...mono,fontSize:10,color:T.txt,fontWeight:500,minWidth:100}}>{cred.username}</span>
-                  <span style={{...mono,fontSize:10,color:T.muted,minWidth:72}}>{cred.password}</span>
-                  <span style={{fontSize:10,color:T.dim,flex:1}}>
-                    {ROLE_LABELS[cred.role]}{cred.deptId?` · ${DEPTS[cred.deptId]??cred.deptId}`:''}
-                  </span>
-                </button>
-              ))}
-            </div>
+          <div style={{borderTop:`1px solid ${T.bdr}`,paddingTop:16}}>
+            <button type="button" onClick={()=>setShowDemo(v=>!v)}
+              style={{display:'flex',alignItems:'center',gap:6,width:'100%',background:'none',border:'none',
+                      cursor:'pointer',padding:0,...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>
+              <span style={{display:'inline-block',transition:'transform .15s',transform:showDemo?'rotate(90deg)':'none'}}>›</span>
+              Credenciais de demonstração
+            </button>
+            {showDemo&&(
+              <div style={{display:'flex',flexDirection:'column',gap:3,marginTop:10}}>
+                {DEMO_CREDENTIALS.map(cred=>(
+                  <button key={cred.username} onClick={()=>fillDemo(cred)}
+                    style={{display:'flex',alignItems:'center',gap:10,padding:'6px 10px',
+                            background:'transparent',border:`1px solid ${T.bdr}`,
+                            borderRadius:6,cursor:'pointer',textAlign:'left',transition:'all .1s'}}
+                    onMouseEnter={e=>{e.currentTarget.style.background=T.hover;e.currentTarget.style.borderColor=T.bdr2;}}
+                    onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor=T.bdr;}}>
+                    <span style={{...mono,fontSize:10,color:T.txt,fontWeight:500,minWidth:100}}>{cred.username}</span>
+                    <span style={{...mono,fontSize:10,color:T.muted,minWidth:72}}>{cred.password}</span>
+                    <span style={{fontSize:10,color:T.dim,flex:1}}>
+                      {ROLE_LABELS[cred.role]}{cred.deptId?` · ${DEPTS[cred.deptId]??cred.deptId}`:''}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

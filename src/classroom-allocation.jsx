@@ -1115,7 +1115,7 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
           )}
         </div>
         <div style={{padding:'16px 20px',borderTop:`1px solid ${T.bdr}`,flexShrink:0}}>
-          {failedCount>0&&<div style={{fontSize:10,color:T.muted,marginBottom:12,lineHeight:1.5}}>ⓘ {failedCount} disciplina{failedCount!==1?'s':''} não {failedCount!==1?'puderam':'pôde'} ser alocada{failedCount!==1?'s':''} e permanecerá{failedCount!==1?'o':''} pendente{failedCount!==1?'s':''}. Você pode resolvê-{failedCount!==1?'las':'la'} manualmente após aplicar.</div>}
+          {failedCount>0&&<div style={{fontSize:10,color:T.muted,marginBottom:12,lineHeight:1.5}}>ⓘ {failedCount} disciplina{failedCount!==1?'s':''} não {failedCount!==1?'puderam':'pôde'} ser alocada{failedCount!==1?'s':''} e permanecerá{failedCount!==1?'o':''} pendente{failedCount!==1?'s':''}. Você pode resolvê-{failedCount!==1?'las':'la'} manualmente após aplicar, ou deixar para o diretor resolver.</div>}
           <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
             <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
             <button onClick={onApply} disabled={placedCount===0}
