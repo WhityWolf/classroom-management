@@ -13,7 +13,7 @@ import { supabaseConfigured } from './db/supabaseClient.js';
 const DEPTS = [
   { id:'MATH', full:'Departamento de Matemática',          clr:'#60A5FA', textClr:'#1d4ed8', bg:'#0d1f3d', lightBg:'#eff6ff' },
   { id:'PHYS', full:'Departamento de Física',              clr:'#FBBF24', textClr:'#92400e', bg:'#2c1f06', lightBg:'#fffbeb' },
-  { id:'CS',   full:'Departamento de Ciência da Computação', clr:'#34D399', textClr:'#065f46', bg:'#062c1d', lightBg:'#ecfdf5' },
+  { id:'CS',   full:'Departamento de Computação',          clr:'#34D399', textClr:'#065f46', bg:'#062c1d', lightBg:'#ecfdf5' },
   { id:'CHEM', full:'Departamento de Química',             clr:'#A78BFA', textClr:'#5b21b6', bg:'#1c0d3d', lightBg:'#f5f3ff' },
   { id:'BIO',  full:'Departamento de Biologia',            clr:'#2DD4BF', textClr:'#0f766e', bg:'#042f2e', lightBg:'#f0fdfa' },
 ];
@@ -420,7 +420,7 @@ function Dashboard(){
                 selected={selId===c.id} locked={isLocked}
                 roomLabel={sidebarTab==='allocated'?ROOMS.find(r=>r.id===c.room)?.label:undefined}
                 onSelect={sidebarTab==='pending'?()=>selectCourse(c):undefined}
-                onEdit={canEditCourse?()=>setEditingCourse(c):null}
+                onEdit={sidebarTab==='pending'&&canEditCourse?()=>setEditingCourse(c):null}
                 onRemove={sidebarTab==='allocated'&&canDealloc&&!isLocked?()=>deallocate(c.id):null}/>
             ))}
           </div>
@@ -451,7 +451,7 @@ function Dashboard(){
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 16px',borderBottom:`1px solid ${T.bdr}`,background:theme==='light'?T.surface:T.card,flexShrink:0}}>
             <div style={{display:'flex',gap:2,border:`1px solid ${T.bdr2}`,borderRadius:6,overflow:'hidden'}}>
-              {[['grid','⊞ Grade'],['list','≡ Lista']].map(([m,lbl])=>(
+              {[['list','≡ Salas'],['grid','⊞ Horários']].map(([m,lbl])=>(
                 <button key={m} className={`viewbtn${viewMode===m?' active':''}`} onClick={()=>setViewMode(m)}
                   style={{padding:'4px 12px',fontSize:10,fontWeight:500,background:'transparent',border:'none',color:viewMode===m?dClr:T.muted,transition:'all .12s',cursor:'pointer'}}>{lbl}</button>
               ))}
@@ -567,7 +567,7 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
       <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
       <thead>
         <tr style={{position:'sticky',top:0,zIndex:5,background:T.surface,boxShadow:theme==='light'?'0 1px 2px rgba(0,0,0,.06)':'none'}}>
-          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Cap</th>
+          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
           {HOURS.map(h=><th key={h} style={{padding:'7px 0',textAlign:'center',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`}}>{h}:00</th>)}
         </tr>
       </thead>
@@ -584,8 +584,8 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
           const rowBg=isOwn?(theme==='light'?'#ffffff':T.bg):(theme==='light'?T.faint:T.inner);
           return(
             <Fragment key={room.id}>
-              {showSep&&<tr><td colSpan={13} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outros Departamentos ↓</td></tr>}
-              {showBuildingSep&&<tr><td colSpan={13} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,opacity:.8,background:T.faint,letterSpacing:.5}}>{room.building}</td></tr>}
+              {showSep&&<tr><td colSpan={13} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:700,color:T.txt2,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outros Departamentos ↓</td></tr>}
+              {showBuildingSep&&<tr><td colSpan={13} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{room.building}</td></tr>}
               <tr style={{borderBottom:`1px solid ${T.bdr}`,background:rowBg}}>
                 <td style={{padding:'0 6px 0 10px',height:RH}}>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
@@ -663,7 +663,7 @@ function RoomSection({title,rooms,alloc,courses,sel,deptId,dept,canAllocate,canD
   return(
     <div>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>{title}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:T.txt2,textTransform:'uppercase',letterSpacing:1}}>{title}</span>
         <div style={{flex:1,height:1,background:T.bdr}}/>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:theme==='light'?'#059669':'#34D399'}}>{free.length} livres</span>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}}>/</span>
@@ -673,7 +673,7 @@ function RoomSection({title,rooms,alloc,courses,sel,deptId,dept,canAllocate,canD
         const bSorted=[...bRooms].sort((a,b)=>(freeSet.has(b.id)?1:0)-(freeSet.has(a.id)?1:0));
         return(
           <div key={building} style={{marginBottom:14}}>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,marginBottom:6,paddingLeft:2,letterSpacing:.5}}>{building}</div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,marginBottom:6,paddingLeft:2,letterSpacing:.5}}>{building}</div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))',gap:8}}>
               {bSorted.map(r=><RoomCard key={r.id} room={r} sel={sel} alloc={alloc} courses={courses} deptId={deptId} dept={dept} status={freeSet.has(r.id)?'available':'busy'} canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>)}
             </div>
@@ -701,7 +701,7 @@ function RoomCard({room,sel,alloc,courses,deptId,dept,status,canAllocate,canDeal
       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
         <div style={{width:2,height:16,borderRadius:1,background:rd.clr,opacity:isOwn?1:0.5}}/>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:500,color:isOwn?rdClr:T.muted}}>{room.label}</span>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:capWarn?'#d97706':T.dim,marginLeft:'auto'}}>cap {room.cap}{capWarn?'⚠':''}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:capWarn?'#d97706':T.dim,marginLeft:'auto'}}>limite {room.cap}{capWarn?'⚠':''}</span>
         {canEditFeatures&&(
           <button onClick={e=>{e.stopPropagation();onEditFeatures(room.id);}} className="feat-btn"
             title="Editar recursos da sala"
@@ -766,7 +766,7 @@ function CapacityBar({cap,enroll,conflicts,avail}){
   return(
     <div>
       <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>{avail?`${enroll} / ${cap} vagas`:`${total} / ${cap} vagas${over?' (acima da cap.)':''}`}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>{avail?`${enroll} / ${cap} vagas`:`${total} / ${cap} vagas${over?' (acima do limite)':''}`}</span>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:pctColor}}>{Math.round(total/cap*100)}%</span>
       </div>
       <div style={{height:5,borderRadius:3,background:T.barTrack,overflow:'hidden',display:'flex'}}>
@@ -808,7 +808,7 @@ function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:20,flexShrink:0}}>
           <div style={{width:3,height:20,borderRadius:1,background:rd.clr}}/>
           <span style={{...mono,fontSize:11,color:rdClr,fontWeight:500}}>{room.label}</span>
-          <span style={{...mono,fontSize:9,color:T.dim}}>{room.type} · Cap {room.cap} · Andar {room.floor}</span>
+          <span style={{...mono,fontSize:9,color:T.dim}}>{room.type} · Limite {room.cap} · Andar {room.floor}</span>
           <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
         </div>
 
@@ -927,7 +927,7 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
                       {crossDept&&<span style={{...mono,fontSize:7,color:theme==='light'?'#d97706':'#FBBF24',border:`1px solid ${theme==='light'?'#fcd34d':'#FBBF2444'}`,borderRadius:3,padding:'1px 4px'}}>outro depto</span>}
                       <span style={{...mono,fontSize:11,fontWeight:600,color:rdClr}}>{room.label}</span>
                     </div>
-                    <div style={{...mono,fontSize:9,color:T.dim}}>cap {room.cap} · {room.type}</div>
+                    <div style={{...mono,fontSize:9,color:T.dim}}>limite {room.cap} · {room.type}</div>
                   </div>
                 </div>
               );
