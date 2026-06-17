@@ -18,6 +18,7 @@ export const DEMO_CREDENTIALS = Object.freeze([
   { username:'phys.head', password:'phys123',   role:ROLES.DEPT_HEAD, deptId:'PHYS', name:'Prof. Marcus Webb'    },
   { username:'cs.head',   password:'cs123',     role:ROLES.DEPT_HEAD, deptId:'CS',   name:'Prof. Aisha Rahman'   },
   { username:'chem.head', password:'chem123',   role:ROLES.DEPT_HEAD, deptId:'CHEM', name:'Prof. David Santos'   },
+  { username:'bio.head',  password:'bio123',    role:ROLES.DEPT_HEAD, deptId:'BIO',  name:'Profa. Larissa Nunes' },
 ]);
 
 function readUsers()      { return JSON.parse(localStorage.getItem(DB_KEYS.USERS)    || '[]'); }
