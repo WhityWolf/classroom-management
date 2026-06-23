@@ -790,6 +790,10 @@ function RoomMapScreen({rooms,courses,alloc,onBack}){
   const[day,setDay]=useState('Segunda');
   const allocatedRoomIds=useMemo(()=>new Set(courses.filter(c=>c.room).map(c=>c.room)),[courses]);
   const allocatedRooms=useMemo(()=>rooms.filter(r=>allocatedRoomIds.has(r.id)),[rooms,allocatedRoomIds]);
+  const deptOrder=id=>{const i=DEPTS.findIndex(d=>d.id===id);return i===-1?DEPTS.length:i;};
+  const presentDepts=useMemo(()=>
+    [...new Set(allocatedRooms.map(r=>r.deptId))].map(gDept).sort((a,b)=>deptOrder(a.id)-deptOrder(b.id))
+  ,[allocatedRooms]);
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <style>{`
@@ -819,7 +823,18 @@ function RoomMapScreen({rooms,courses,alloc,onBack}){
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Sair</button>
       </div>
-      <div style={{flex:1,overflow:'auto',background:T.bg}}>
+      {presentDepts.length>0&&(
+        <div style={{display:'flex',alignItems:'center',gap:14,padding:'7px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,flexWrap:'wrap'}}>
+          <span style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>Legenda</span>
+          {presentDepts.map(dp=>(
+            <div key={dp.id??'shared'} style={{display:'flex',alignItems:'center',gap:5}}>
+              <div style={{width:8,height:8,borderRadius:2,background:dp.clr,flexShrink:0}}/>
+              <span style={{...mono,fontSize:9,color:T.muted}}>{dp.full}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{flex:1,overflow:'auto',background:T.bg,padding:16}}>
         <RoomMapGrid rooms={allocatedRooms} day={day} alloc={alloc}/>
       </div>
     </div>
@@ -828,26 +843,36 @@ function RoomMapScreen({rooms,courses,alloc,onBack}){
 
 // Grade somente-leitura usada pelo RoomMapScreen — mesma estrutura de tabela
 // da Grade de alocação, mas agrupada por departamento (não "meu/outro depto")
-// e sem nenhuma interação (sem clique, sem editar, sem mesclar).
+// e sem nenhuma interação (sem clique, sem editar, sem mesclar). Linhas de
+// grade verticais + zebra nas linhas + cabeçalho fixo (sticky no topo) ajudam
+// a ler uma tabela larga. Só o cabeçalho é sticky — sticky simultâneo na
+// coluna de sala (left+top juntos) quebra em tabelas com border-collapse:
+// collapse (o cabeçalho passa a renderizar atrás da primeira linha ao rolar
+// horizontalmente), então a coluna de sala rola normalmente.
 function RoomMapGrid({rooms,day,alloc}){
   const{T,theme}=useT();
   const CW=76,RH=33,LW=150;
   const deptOrder=id=>{const i=DEPTS.findIndex(d=>d.id===id);return i===-1?DEPTS.length:i;};
   const byDeptBuildingLabel=(a,b)=>deptOrder(a.deptId)-deptOrder(b.deptId)||a.building.localeCompare(b.building)||a.label.localeCompare(b.label,undefined,{numeric:true});
   const sorted=useMemo(()=>[...rooms].sort(byDeptBuildingLabel),[rooms]);
+  const deptCounts=useMemo(()=>{const m={};sorted.forEach(r=>{m[r.deptId]=(m[r.deptId]||0)+1;});return m;},[sorted]);
   if(sorted.length===0)return(
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',flexDirection:'column',gap:10,padding:40}}>
       <div style={{fontSize:32,opacity:.15}}>🗺</div>
       <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Nenhuma sala alocada ainda.</div>
     </div>
   );
+  // Marca o início de cada turno (M/T/N — mesma divisão do SIGAA usada em
+  // SIGAA_SHIFT_BASE) com uma linha vertical mais forte, pra cortar visualmente
+  // a tabela larga em Manhã/Tarde/Noite sem precisar de sombreamento extra.
+  const shiftEdge=h=>(h===12||h===18)?`2px solid ${T.bdr2}`:`1px solid ${T.bdr}`;
   return(
-    <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:LW+CW*HOURS.length}}>
+    <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:LW+CW*HOURS.length,border:`1px solid ${T.bdr}`}}>
       <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
       <thead>
         <tr style={{position:'sticky',top:0,zIndex:5,background:T.surface,boxShadow:theme==='light'?'0 1px 2px rgba(0,0,0,.06)':'none'}}>
-          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
-          {HOURS.map(h=><th key={h} style={{padding:'7px 0 7px 5px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`}}>{h}:00</th>)}
+          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,background:T.surface,borderBottom:`1px solid ${T.bdr}`,borderRight:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
+          {HOURS.map(h=><th key={h} style={{padding:'7px 0 7px 5px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,background:T.surface,borderBottom:`1px solid ${T.bdr}`,borderLeft:shiftEdge(h)}}>{h}:00</th>)}
         </tr>
       </thead>
       <tbody>
@@ -856,16 +881,23 @@ function RoomMapGrid({rooms,day,alloc}){
           const slots=rowSlots(room.id,day,alloc);
           const showDeptSep=idx===0||sorted[idx-1].deptId!==room.deptId;
           const showBuildingSep=showDeptSep||sorted[idx-1].building!==room.building;
+          const rowBg=idx%2===0?T.bg:(theme==='light'?T.faint:T.inner);
           return(
             <Fragment key={room.id}>
               {showDeptSep&&(
-                <tr><td colSpan={HOURS.length+1} style={{padding:'6px 10px',fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:rdClr,background:`${rd.clr}${theme==='light'?'14':'10'}`,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>{rd.full}</td></tr>
+                <tr><td colSpan={HOURS.length+1} style={{padding:0,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:`${rd.clr}${theme==='light'?'14':'10'}`}}>
+                    <div style={{width:3,height:14,borderRadius:1,background:rd.clr,flexShrink:0}}/>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:rdClr,letterSpacing:1,textTransform:'uppercase'}}>{rd.full}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>· {deptCounts[room.deptId]} sala{deptCounts[room.deptId]!==1?'s':''}</span>
+                  </div>
+                </td></tr>
               )}
               {showBuildingSep&&(
-                <tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{room.building}</td></tr>
+                <tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 21px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5,borderBottom:`1px solid ${T.bdr}`}}>{room.building}</td></tr>
               )}
               <tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-                <td style={{padding:'0 6px 0 10px',height:RH}}>
+                <td style={{padding:'0 6px 0 10px',height:RH,background:rowBg,borderRight:`1px solid ${T.bdr}`}}>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
                     <div style={{width:2,height:18,borderRadius:1,background:rd.clr}}/>
                     <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:rdClr,whiteSpace:'nowrap'}}>{room.label}</span>
@@ -877,7 +909,7 @@ function RoomMapGrid({rooms,day,alloc}){
                     const cd=gDept(slot.c.deptId),cdClr=dtc(cd,theme);
                     const slotBlock=blockForDay(slot.c,day);
                     return(
-                      <td key={si} colSpan={slot.span} style={{padding:'2px 2px',height:RH,verticalAlign:'middle'}}>
+                      <td key={si} colSpan={slot.span} style={{padding:'2px 2px',height:RH,verticalAlign:'middle',background:rowBg,borderLeft:shiftEdge(slot.h),borderRight:`1px solid ${T.bdr}`}}>
                         <div title={`${slot.c.name}${slot.c.sec!=null?` · Turma ${slot.c.sec}`:''}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos`}
                           style={{height:'100%',padding:'0 5px',borderRadius:3,background:`${cd.clr}${theme==='light'?'28':'22'}`,borderLeft:`2px solid ${cd.clr}`,display:'flex',alignItems:'center',gap:4,overflow:'hidden'}}>
                           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:cdClr,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{slot.c.code}</span>
@@ -886,7 +918,7 @@ function RoomMapGrid({rooms,day,alloc}){
                       </td>
                     );
                   }
-                  return<td key={si} style={{height:RH}}/>;
+                  return<td key={si} style={{height:RH,background:rowBg,borderLeft:shiftEdge(slot.h),borderRight:`1px solid ${T.bdr}`}}/>;
                 })}
               </tr>
             </Fragment>
