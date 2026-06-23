@@ -315,7 +315,6 @@ function Dashboard(){
   const[day,            setDay]            =useState('Segunda');
   const[viewMode,       setViewMode]       =useState('list');
   const[search,         setSearch]         =useState('');
-  const[sidebarTab,     setSidebarTab]     =useState('pending');
   const[finishConfirm,  setFinishConfirm]  =useState(false);
   const[editingCourse,  setEditingCourse]  =useState(null);
   const[creatingCourse, setCreatingCourse] =useState(false);
@@ -325,6 +324,7 @@ function Dashboard(){
   const[deptPanel,      setDeptPanel]      =useState(false);
   const[notifPanel,     setNotifPanel]     =useState(false);
   const[mergeModal,     setMergeModal]     =useState(null);
+  const[dayPickerModal, setDayPickerModal] =useState(null);
   const[showUsers,      setShowUsers]      =useState(false);
   const[toast,          setToast]          =useState(null);
 
@@ -346,25 +346,18 @@ function Dashboard(){
 
   // "Pendentes" inclui disciplinas parcialmente alocadas (ex.: Segunda já
   // tem sala, Quarta não) — ainda há trabalho a fazer. "Alocadas" inclui
-  // qualquer disciplina com pelo menos um dia já alocado — uma parcial
-  // aparece nas duas listas de propósito, pra dar pra acompanhar o que falta
-  // E o que já foi feito ao mesmo tempo.
-  const allUnallocated=useMemo(()=>courses.filter(c=>!isFullyAllocated(c)),[courses]);
-  const sidebarCourses=useMemo(()=>{
-    const base=isDeptHead?allUnallocated.filter(c=>c.deptId===currentUser.deptId):allUnallocated;
-    if(!search.trim())return base;
-    const q=search.toLowerCase();
-    return base.filter(c=>c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q));
-  },[allUnallocated,isDeptHead,currentUser.deptId,search]);
-
-  const allAllocated=useMemo(()=>courses.filter(c=>hasAnyAllocation(c)),[courses]);
-  const allocatedSidebarCourses=useMemo(()=>{
-    const base=isDeptHead?allAllocated.filter(c=>c.deptId===currentUser.deptId):allAllocated;
-    if(!search.trim())return base;
-    const q=search.toLowerCase();
-    return base.filter(c=>c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q));
-  },[allAllocated,isDeptHead,currentUser.deptId,search]);
-  const visibleSidebarCourses=sidebarTab==='pending'?sidebarCourses:allocatedSidebarCourses;
+  // Lista única — sem aba Pendentes/Alocadas. Pendentes (e parciais) vêm
+  // primeiro, já alocadas (100%) depois e esmaecidas no CourseCard — sort é
+  // estável, então só reagrupa, não embaralha a ordem dentro de cada grupo.
+  const visibleSidebarCourses=useMemo(()=>{
+    const base=isDeptHead?courses.filter(c=>c.deptId===currentUser.deptId):courses;
+    const filtered=search.trim()
+      ?base.filter(c=>{const q=search.toLowerCase();return c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q);})
+      :base;
+    return[...filtered].sort((a,b)=>Number(isFullyAllocated(a))-Number(isFullyAllocated(b)));
+  },[courses,isDeptHead,currentUser.deptId,search]);
+  const pendingCount=useMemo(()=>visibleSidebarCourses.filter(c=>!isFullyAllocated(c)).length,[visibleSidebarCourses]);
+  const allocatedCount=visibleSidebarCourses.length-pendingCount;
 
   // Alvo do "Alocar Automaticamente": só disciplinas com ZERO dias alocados.
   // O algoritmo (autoAllocate) só sabe propor uma sala única pra semana toda
@@ -389,35 +382,49 @@ function Dashboard(){
   const canManageCatalog=canAllocate;
   const targetDeptId  =isChief?activeDeptId:currentUser.deptId;
 
-  // `day` presente = só aquele dia (clique vindo da Grade, que já sabe em
-  // qual aba de dia está); `day` ausente/null = a disciplina inteira, todos
-  // os dias na mesma sala de uma vez (clique vindo da vista em Salas).
+  // Clique vindo da Grade — sempre um dia específico (a aba ativa). Mesclar
+  // exige saber qual bloco/horário está em conflito pra mostrar no modal, daí
+  // só fazer sentido aqui (dia único), não no fluxo "todos os dias" da Salas.
   const tryAllocate=(rid,day)=>{
     if(!canAllocate||!sel)return;
     if(roomFree(rid,sel,alloc,day))forceAllocate(rid,day);
-    // Mesclar exige saber qual bloco/horário está em conflito pra mostrar no
-    // modal — só faz sentido com um dia específico (vindo da Grade). No modo
-    // "todos os dias de uma vez" (vista em Salas) um conflito em qualquer dia
-    // não tem uma única mesclagem óbvia, então só avisa pra usar a Grade.
-    else if(day&&canMerge)setMergeModal({roomId:rid,day});
-    else if(!day)showToast('Sala ocupada em algum dia da semana — use a vista "Horários" para ver dia a dia e mesclar se necessário.','warn');
+    else if(canMerge)setMergeModal({roomId:rid,day});
   };
-  const forceAllocate=async(rid,day)=>{
+  // Clique vindo da vista em Salas — sem aba de dia, então primeiro confirma
+  // se a sala está livre pra disciplina inteira (se não, não há um único dia
+  // óbvio pra mesclar; manda usar a Grade). Se estiver livre e a disciplina
+  // ocorrer em mais de um dia, pergunta quais dias alocar nesta sala em vez
+  // de assumir "todos" de cara — DayPickerModal faz essa pergunta.
+  const trySalasAllocate=rid=>{
+    if(!canAllocate||!sel)return;
+    if(!roomFree(rid,sel,alloc)){
+      showToast('Sala ocupada em algum dia da semana — use a vista "Horários" para ver dia a dia e mesclar se necessário.','warn');
+      return;
+    }
+    if(courseDays(sel).length<=1)forceAllocate(rid,null);
+    else setDayPickerModal({roomId:rid});
+  };
+  // `days` aceita: undefined/null → todos os dias da disciplina (vista em
+  // Salas, "todos os dias"); uma string → um único dia (clique na Grade);
+  // um array → o subconjunto escolhido no DayPickerModal (vista em Salas,
+  // "dias específicos").
+  const forceAllocate=async(rid,days)=>{
     if(!sel)return;
     const course=sel,room=ROOMS.find(r=>r.id===rid);
-    const nextRoomByDay=day
-      ?{...course.roomByDay,[day]:rid}
-      :Object.fromEntries(courseDays(course).map(d=>[d,rid]));
-    setMergeModal(null);
+    const targetDays=days==null?courseDays(course):Array.isArray(days)?days:[days];
+    const nextRoomByDay={...course.roomByDay};
+    targetDays.forEach(d=>{nextRoomByDay[d]=rid;});
+    setMergeModal(null);setDayPickerModal(null);
     // Mantém a disciplina selecionada se ainda faltar alocar outro dia dela
     // (fluxo da Grade: aloca Segunda, troca a aba pra Quarta, aloca de novo
     // sem precisar reselecionar) — só desmarca quando ficar 100% alocada.
     const stillSelected=courseDays(course).some(d=>!nextRoomByDay[d]);
     setSelId(stillSelected?course.id:null);
     if(isChief)setActiveDeptId(course.deptId);
+    const daysLabel=days==null?'todos os dias':targetDays.join(', ');
     try{
       await db.setCourseRoomByDay(course.id,nextRoomByDay);
-      showToast(`${course.code} alocada em ${room?.label??rid}${day?` (${day})`:''}.`,'ok');
+      showToast(`${course.code} alocada em ${room?.label??rid} (${daysLabel}).`,'ok');
     }catch(e){
       showToast(`Falha ao alocar: ${e.message}`,'err');
     }
@@ -579,6 +586,7 @@ function Dashboard(){
         .cc:hover{background:${T.hover}!important;}
         .cc.sel{background:${selBannerBg}!important;border-color:${d.clr}!important;}
         .cc.locked{opacity:.5;cursor:default!important;}
+        .cc.done:not(.sel){opacity:.5;}
         .gridcell-hl:hover{background:${d.clr}44!important;}
         .gridcell-merge:hover{background:#F59E0B33!important;}
         .chip-own:hover{filter:brightness(${theme==='light'?'.92':'1.15'});}
@@ -638,19 +646,11 @@ function Dashboard(){
         {/* Barra lateral */}
         <aside style={{width:274,borderRight:`1px solid ${T.bdr}`,display:'flex',flexDirection:'column',overflow:'hidden',background:theme==='light'?T.surface:T.card}}>
           <div style={{padding:'10px 12px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
-            <div style={{display:'flex',gap:2,border:`1px solid ${T.bdr2}`,borderRadius:6,overflow:'hidden',marginBottom:8}}>
-              {[['pending','Pendentes'],['allocated','Alocadas']].map(([k,lbl])=>(
-                <button key={k} className={`viewbtn${sidebarTab===k?' active':''}`} onClick={()=>setSidebarTab(k)}
-                  style={{flex:1,padding:'4px 8px',fontSize:10,fontWeight:500,background:'transparent',border:'none',color:sidebarTab===k?dClr:T.muted,transition:'all .12s',cursor:'pointer'}}>{lbl}</button>
-              ))}
-            </div>
             <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Buscar disciplinas…" disabled={isLocked}
               style={{width:'100%',padding:'5px 9px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:11,outline:'none',opacity:isLocked?.6:1}}/>
             <div style={{fontSize:10,color:T.muted,marginTop:5}}>
-              {sidebarTab==='pending'
-                ?<>{sidebarCourses.length} pendentes · {autoAllocInput.length} total não alocadas</>
-                :<>{allocatedSidebarCourses.length} alocadas</>}
+              {pendingCount} pendente{pendingCount!==1?'s':''} · {allocatedCount} alocada{allocatedCount!==1?'s':''}
             </div>
           </div>
 
@@ -668,16 +668,16 @@ function Dashboard(){
           <div style={{flex:1,overflowY:'auto',padding:'5px'}}>
             {visibleSidebarCourses.length===0?(
               <div style={{textAlign:'center',padding:32,color:T.dim}}>
-                <div style={{fontSize:24,marginBottom:8}}>{search?'∅':sidebarTab==='pending'?'✓':'—'}</div>
-                <div style={{fontSize:12}}>{search?'Nenhum resultado':sidebarTab==='pending'?'Todas as disciplinas alocadas':'Nenhuma disciplina alocada ainda'}</div>
+                <div style={{fontSize:24,marginBottom:8}}>{search?'∅':'—'}</div>
+                <div style={{fontSize:12}}>{search?'Nenhum resultado':'Nenhuma disciplina cadastrada ainda'}</div>
               </div>
             ):visibleSidebarCourses.map(c=>(
               <CourseCard key={c.id} course={c} activeDept={gDept(activeDeptId)} showDeptBadge={isChief}
                 selected={selId===c.id} locked={isLocked}
-                roomLabel={sidebarTab==='allocated'?fmtRoomByDay(c,ROOMS):undefined}
-                onSelect={sidebarTab==='pending'?()=>selectCourse(c):undefined}
-                onEdit={sidebarTab==='pending'&&canEditCourse?()=>setEditingCourse(c):null}
-                onRemove={sidebarTab==='allocated'&&canDealloc&&!isLocked?()=>deallocate(c.id):null}/>
+                roomLabel={fmtRoomByDay(c,ROOMS)}
+                onSelect={()=>selectCourse(c)}
+                onEdit={canEditCourse?()=>setEditingCourse(c):null}
+                onRemove={hasAnyAllocation(c)&&canDealloc&&!isLocked?()=>deallocate(c.id):null}/>
             ))}
           </div>
 
@@ -755,7 +755,7 @@ function Dashboard(){
             ):(
               <ListView rooms={visRooms} alloc={alloc} courses={courses} sel={sel} deptId={activeDeptId} dept={d}
                 canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse}
-                onTryAlloc={rid=>tryAllocate(rid,null)} onDealloc={cid=>deallocate(cid,null)} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
+                onTryAlloc={trySalasAllocate} onDealloc={cid=>deallocate(cid,null)} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
             )}
           </div>
         </div>
@@ -773,6 +773,7 @@ function Dashboard(){
       {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
       {autoAllocResult&&<AutoAllocModal result={autoAllocResult} dept={d} onApply={handleApplyAllocation} onCancel={()=>setAutoAllocResult(null)}/>}
       {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={mergeModal.day} onConfirm={()=>forceAllocate(mergeModal.roomId,mergeModal.day)} onCancel={()=>setMergeModal(null)}/>}
+      {dayPickerModal&&sel&&<DayPickerModal room={ROOMS.find(r=>r.id===dayPickerModal.roomId)} course={sel} dept={d} onConfirm={days=>forceAllocate(dayPickerModal.roomId,days)} onCancel={()=>setDayPickerModal(null)}/>}
       {showUsers&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'stretch',justifyContent:'flex-end',zIndex:200}}>
           <div style={{width:'min(900px,95vw)',background:T.surface,borderLeft:`1px solid ${T.bdr}`,display:'flex',flexDirection:'column',animation:'slideIn .2s ease'}}>
@@ -1002,9 +1003,10 @@ function RoomMapGrid({rooms,day,alloc}){
 function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,onSelect,onEdit,onRemove}){
   const{T,theme}=useT();
   const cd=gDept(course.deptId),badgeClr=dtc(cd,theme);
+  const done=isFullyAllocated(course);
   return(
-    <div className={`cc${selected?' sel':''}${locked?' locked':''}`}
-      style={{padding:'8px 10px',borderRadius:6,marginBottom:2,cursor:(locked||!onSelect)?'default':'pointer',background:'transparent',border:`1px solid ${selected?activeDept.clr:T.bdr}`,transition:'background .1s, border-color .1s'}}>
+    <div className={`cc${selected?' sel':''}${locked?' locked':''}${done?' done':''}`}
+      style={{padding:'8px 10px',borderRadius:6,marginBottom:2,cursor:(locked||!onSelect)?'default':'pointer',background:'transparent',border:`1px solid ${selected?activeDept.clr:T.bdr}`,transition:'background .1s, border-color .1s, opacity .15s'}}>
       <div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}>
         <div style={{display:'flex',alignItems:'center',gap:5}}>
           {showDeptBadge&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.id}</span>}
@@ -1931,6 +1933,60 @@ function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,day,onConfir
           <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background=T.inner} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>Cancelar</button>
           <button onClick={onConfirm} disabled={over&&!confirmed} style={{padding:'8px 20px',borderRadius:7,fontSize:11,fontWeight:700,transition:'all .15s',background:over?(confirmed?'#ef4444':theme==='light'?'#f3f4f6':'#1a0505'):'#F59E0B',border:over?`1px solid ${confirmed?'#ef4444':T.bdr}`:'none',color:over?(confirmed?'#fff':T.dim):'#000',cursor:over&&!confirmed?'not-allowed':'pointer'}} onMouseEnter={e=>{if(!(over&&!confirmed))e.currentTarget.style.filter='brightness(1.08)';}} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
             {over?'⚠ Confirmar Mesclagem':'⇄ Confirmar Mesclagem'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal de escolha de dias (vista em Salas) ────────────────────────────────
+// Só aparece quando a sala está livre pra disciplina inteira E ela ocorre em
+// mais de um dia — pergunta se é pra alocar todos os dias nesta sala (o caso
+// comum, um clique) ou só um subconjunto específico (marca os dias e confirma).
+function DayPickerModal({room,course,dept,onConfirm,onCancel}){
+  const{T,theme}=useT();
+  const mono={fontFamily:"'DM Mono',monospace"};
+  const dClr=dtc(dept,theme);
+  const days=useMemo(()=>courseDays(course).sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b)),[course]);
+  const[selectedDays,setSelectedDays]=useState(days);
+  const toggleDay=d=>setSelectedDays(prev=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b)));
+  const allDays=selectedDays.length===days.length;
+  return(
+    <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:400,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+          <div style={{width:3,height:20,borderRadius:1,background:dept.clr}}/>
+          <div>
+            <div style={{fontSize:14,fontWeight:700,color:T.txt}}>Em quais dias alocar?</div>
+            <div style={{...mono,fontSize:9,color:dClr,marginTop:2}}>{course.code} → {room?.label}</div>
+          </div>
+          <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
+        </div>
+        <div style={{fontSize:11,color:T.txt2,lineHeight:1.6,marginBottom:16}}>
+          Esta disciplina ocorre em mais de um dia ({days.map(d=>d.slice(0,3)).join('/')}). Esta sala está livre em todos eles — quer alocá-la para a semana toda, ou só para alguns dias (deixando o resto pendente, pra alocar em outra sala depois)?
+        </div>
+        <button onClick={()=>onConfirm(null)} style={{width:'100%',padding:'10px',marginBottom:14,background:dept.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:11,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
+          Todos os dias ({days.map(d=>d.slice(0,3)).join('/')})
+        </button>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+          <div style={{flex:1,height:1,background:T.bdr}}/>
+          <span style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>ou escolha os dias</span>
+          <div style={{flex:1,height:1,background:T.bdr}}/>
+        </div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:18}}>
+          {days.map(d=>(
+            <button key={d} type="button" onClick={()=>toggleDay(d)}
+              style={{padding:'6px 12px',borderRadius:6,fontSize:11,fontWeight:500,cursor:'pointer',transition:'all .1s',background:selectedDays.includes(d)?dept.clr:'transparent',color:selectedDays.includes(d)?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${selectedDays.includes(d)?dept.clr:T.bdr2}`}}>
+              {d}
+            </button>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={()=>onConfirm(selectedDays)} disabled={selectedDays.length===0}
+            style={{padding:'8px 20px',borderRadius:7,fontSize:11,fontWeight:700,cursor:selectedDays.length===0?'not-allowed':'pointer',background:selectedDays.length===0?T.inner:dept.clr,border:'none',color:selectedDays.length===0?T.dim:(theme==='light'?'#fff':'#000')}}>
+            {allDays?'Confirmar (todos os dias)':`Confirmar (${selectedDays.length} dia${selectedDays.length!==1?'s':''})`}
           </button>
         </div>
       </div>
