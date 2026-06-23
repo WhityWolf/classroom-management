@@ -17,7 +17,12 @@ create table courses (
   id      text primary key,
   code    text not null,
   name    text not null,
-  sec     integer not null,
+  -- Nullable on purpose: an ODS import with the "Turma" column left blank
+  -- (see parseFlatCourseRows in classroom-allocation.jsx) has no real turma
+  -- number to store. `sec IS NULL` is itself the "not informed" signal — the
+  -- UI shows a "Turma N" badge only when `sec` is set. Manual creation via
+  -- CourseEditModal always provides a real sec (the form requires one).
+  sec     integer,
   dept_id text not null,
   teacher text not null default '',
   -- A course can meet on different days at different times (real SIGAA

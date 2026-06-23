@@ -22,12 +22,15 @@ que não pertencem a nenhum departamento específico.
   dias diferentes com horários diferentes dentro da mesma turma (ex.:
   Segunda 15h–18h e Sexta 17h–18h), refletindo como ofertas reais de
   disciplina costumam ser estruturadas.
-- **Importação de disciplinas** — o chefe de departamento sobe a planilha
-  do semestre (`.csv`, `.ods` ou `.xlsx`) no formato do relatório de oferta
-  de turmas do SIGAA (cabeçalho de disciplina + linhas de turma, código de
-  horário como `35M34`, capacidade como `33/50 alunos`). O sistema decodifica
-  o horário, ignora turmas com situação diferente de "Aberta", detecta
-  duplicatas e mostra uma prévia (válidas / ignoradas / com erro) antes de
+- **Importação de disciplinas** — o chefe de departamento sobe uma planilha
+  (`.ods`, `.xlsx` ou `.csv`) com uma linha por disciplina/turma (colunas
+  Código, Nome, Turma, Docente(s), Horário, Alunos Mat. — Turma é opcional e
+  nunca numerada automaticamente: fica em branco a menos que o usuário a
+  preencha, necessário só quando o mesmo código tem mais de uma turma no
+  arquivo; Horário usa o código do SIGAA, ex. `35M34`, podendo ter mais de um
+  bloco para dias diferentes). Um botão na própria tela de import baixa um
+  modelo `.ods` já preenchido com exemplos. O sistema decodifica o horário,
+  detecta duplicatas e mostra uma prévia (válidas / com erro) antes de
   confirmar a substituição completa das disciplinas do departamento.
 - **Cadastro manual de disciplinas** — formulário para criar ou corrigir
   disciplinas pontualmente, com suporte a múltiplos blocos de horário.

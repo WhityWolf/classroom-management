@@ -48,7 +48,7 @@ function getConflicts(rid,course,alloc,courses){const ids=new Set();for(const bl
 function rowSlots(rid,day,alloc){const slots=[];let h=HOURS[0];const maxH=HOURS[HOURS.length-1]+1;while(h<maxH){const arr=alloc[`${rid}|${day}|${h}`]||[];if(arr.length){const c=arr[0];const block=blockForDay(c,day);if(block.sh===h){slots.push({h,span:block.eh-block.sh,c,merged:arr.length-1});h=block.eh;}else h++;}else{slots.push({h,span:1,c:null,merged:0});h++;}}return slots;}
 function fmtHour(h){return`${String(h).padStart(2,'0')}:00`;}
 
-// ─── Catálogo de disciplinas (criação manual + import CSV) ───────────────────
+// ─── Catálogo de disciplinas (criação manual + import ODS) ───────────────────
 // id derivado de dept+código+seção: dobra como detector de duplicata (colisão
 // de PK = erro claro) já que `code` não tem unicidade no schema. código/seção
 // não são editáveis após a criação (só name/days/sh/eh/enroll mudam), então o
@@ -57,11 +57,13 @@ function fmtHour(h){return`${String(h).padStart(2,'0')}:00`;}
 const slugify=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
 const courseId=(deptId,code,sec)=>`${deptId}-${slugify(code)}-${sec}`;
 
-// Lê um relatório de oferta de turmas do SIGAA (.csv/.ods/.xlsx) — não é uma
-// planilha de uma disciplina por linha, é um bloco "cabeçalho de disciplina"
-// seguido de uma ou mais linhas de turma:
-//   "DMA0192 - ALGEBRA LINEAR (GRADUAÇÃO)"
-//   "2026.1","Turma 01","<docente>","REGULAR","ABERTA","35M34","Sala X","33/50 alunos"
+// Planilha (.csv/.ods/.xlsx) com uma linha por disciplina/turma — modelo
+// próprio do app (não o relatório bruto do SIGAA, que vem em blocos
+// cabeçalho+turmas e exige outra estrutura). Colunas, na ordem:
+//   Código | Nome | Turma | Docente(s) | Horário | Alunos Mat.
+// "Turma" é opcional: em branco, a linha não recebe número de turma nenhum
+// (não é inventado a partir da ordem das linhas) — só é preciso preencher
+// quando o mesmo código tem mais de uma turma no arquivo, para diferenciá-las.
 
 // Parser de CSV com suporte a campos entre aspas (a célula "Docente(s)" do
 // SIGAA costuma ter vírgulas dentro, ex. "NOME (20h), OUTRO NOME (20h)" — um
@@ -130,40 +132,63 @@ function parseHorarioToBlocks(raw){
   return{blocks,errors};
 }
 
-// Agrupa as linhas em disciplinas+turmas. `rows` é um array de arrays já sem
-// a linha de título (ela é sempre a primeira e é descartada aqui).
-function groupSigaaRows(rows){
+// Lê as linhas (uma por disciplina/turma). `rows` é um array de arrays já
+// sem a linha de título (ela é sempre a primeira e é descartada aqui).
+// "Turma" em branco fica sem número de turma — a decisão de numerar (e como)
+// é do usuário; o sistema nunca inventa um número a partir da ordem das
+// linhas. Duas linhas do mesmo código sem Turma preenchida são tratadas como
+// a mesma turma (erro de duplicata), forçando quem importou a diferenciá-las.
+function parseFlatCourseRows(rows){
   const out=[];
-  let current=null;
   rows.slice(1).forEach(row=>{
-    const col1=(row[1]??'').toString().trim();
-    if(!col1){
-      const text=(row[0]??'').toString().trim();
-      const m=text.match(/^(.+?)\s-\s(.+?)\s\(([^)]*)\)\s*$/);
-      current=m?{code:m[1].trim(),name:m[2].trim()}:{code:text,name:text,headerError:`Cabeçalho de disciplina não reconhecido: "${text}"`};
-      return;
-    }
+    const code=(row[0]??'').toString().trim();
+    const name=(row[1]??'').toString().trim();
+    if(!code&&!name)return; // linha em branco
     const errors={};
-    if(!current)errors.codigo='Linha de turma sem cabeçalho de disciplina associado';
-    else if(current.headerError)errors.codigo=current.headerError;
-    const secMatch=col1.match(/Turma\s+(\d+)/i);
-    if(!secMatch)errors.secao=`Não foi possível identificar a seção em "${col1}"`;
-    const situacao=(row[4]??'').toString().trim().toUpperCase();
-    const skipped=situacao!==''&&situacao!=='ABERTA';
-    const{blocks,errors:horarioErrors}=parseHorarioToBlocks(row[5]);
+    if(!code)errors.codigo='Obrigatório';
+    if(!name)errors.nome='Obrigatório';
+    const turmaRaw=(row[2]??'').toString().trim();
+    let sec=null;
+    if(turmaRaw){
+      const explicitSec=Number(turmaRaw);
+      if(Number.isInteger(explicitSec)&&explicitSec>=1)sec=explicitSec;
+      else errors.secao=`Turma deve ser um número inteiro ≥ 1 (recebido "${turmaRaw}")`;
+    }
+    const teacher=parseTeacherNames(row[3]);
+    const{blocks,errors:horarioErrors}=parseHorarioToBlocks(row[4]);
     if(horarioErrors.length)errors.horario=horarioErrors.join('; ');
     else if(blocks.length===0)errors.horario='Horário vazio ou não reconhecido';
-    const matMatch=(row[7]??'').toString().match(/(\d+)/);
+    const matMatch=(row[5]??'').toString().match(/(\d+)/);
     const enroll=matMatch?Number(matMatch[1]):NaN;
-    if(!Number.isInteger(enroll)||enroll<0)errors.matriculados=`Matrícula não reconhecida em "${row[7]}"`;
-    const teacher=parseTeacherNames(row[2]);
+    if(!Number.isInteger(enroll)||enroll<0)errors.matriculados=`Matrícula não reconhecida em "${row[5]}"`;
     out.push({
-      raw:{codigo:current?.code,nome:current?.name,turma:col1,situacao:row[4],horario:row[5],matriculados:row[7],docente:row[2]},
-      normalized:{code:current?.code,name:current?.name,sec:secMatch?Number(secMatch[1]):null,blocks,enroll,teacher},
-      errors,skipped,skipReason:skipped?`Situação: ${row[4]}`:null,
+      raw:{codigo:row[0],nome:row[1],turma:row[2],docente:row[3],horario:row[4],matriculados:row[5]},
+      normalized:{code,name,sec,teacher,blocks,enroll},
+      errors,
     });
   });
   return out;
+}
+
+// Gera e baixa um .ods de exemplo no formato esperado pelo import, com 3
+// disciplinas cobrindo os casos que mais geram dúvida ao preencher: professor
+// único, múltiplos docentes na mesma turma, e horários em dias diferentes da
+// semana (bloco de "Horário" com mais de um código separado por espaço).
+// Turma fica em branco nos exemplos — nenhum dos 3 precisa de mais de uma
+// turma para o mesmo código.
+async function downloadCourseTemplate(){
+  const XLSX=await import('xlsx');
+  const rows=[
+    ['Código','Nome','Turma','Docente(s)','Horário','Alunos Mat.'],
+    ['EX101','Disciplina Exemplo — Professor Único','','JOÃO DA SILVA','35M12',40],
+    ['EX205','Disciplina Exemplo — Múltiplos Docentes','','MARIA OLIVEIRA, PEDRO SANTOS','24T34',35],
+    ['EX310','Disciplina Exemplo — Horários em Dias Diferentes','','ANA PEREIRA','2T456 6T56',28],
+  ];
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:10},{wch:40},{wch:7},{wch:32},{wch:14},{wch:13}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Disciplinas');
+  XLSX.writeFile(wb,'modelo-disciplinas.ods',{bookType:'ods'});
 }
 
 // ─── Algoritmo de alocação automática ────────────────────────────────────────
@@ -592,7 +617,7 @@ function Dashboard(){
                   <button onClick={()=>setImportingCourses(true)}
                     style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:11,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
                     onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
-                    ⇪ Importar CSV
+                    ⇪ Importar ODS
                   </button>
                 </div>
               )}
@@ -702,7 +727,7 @@ function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,o
         <div style={{display:'flex',alignItems:'center',gap:5}}>
           {showDeptBadge&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.id}</span>}
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:showDeptBadge?badgeClr:dtc(activeDept,theme)}} onClick={onSelect}>{course.code}</span>
-          <span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:3,padding:'1px 4px'}} onClick={onSelect}>Turma {course.sec}</span>
+          {course.sec!=null&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:3,padding:'1px 4px'}} onClick={onSelect}>Turma {course.sec}</span>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:4}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{course.enroll} alunos</span>
@@ -783,7 +808,7 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
                     return(
                       <td key={si} colSpan={slot.span} style={{padding:'2px 2px',height:RH,verticalAlign:'middle',background:isMergeZone?(theme==='light'?'#fffbeb':'#F59E0B0f'):'transparent',cursor:isMergeZone?'pointer':'default',transition:'background .1s'}} className={isMergeZone?'gridcell-merge':''} onClick={()=>isMergeZone&&onTryAlloc(room.id)}>
                         <div onClick={e=>{if(isMine&&canDealloc&&!isMergeZone){e.stopPropagation();onDealloc(slot.c.id);}}} className={isMine&&canDealloc?'chip-own':''}
-                          title={`${slot.c.name} · Turma ${slot.c.sec}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos${isMine&&canDealloc?'\nClique para desalocar':''}${isMergeZone?'\nClique para mesclar':''}`}
+                          title={`${slot.c.name}${slot.c.sec!=null?` · Turma ${slot.c.sec}`:''}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos${isMine&&canDealloc?'\nClique para desalocar':''}${isMergeZone?'\nClique para mesclar':''}`}
                           style={{height:'100%',padding:'0 5px',borderRadius:3,background:isMine?`${cd.clr}${theme==='light'?'28':'22'}`:`${cd.clr}${theme==='light'?'18':'0e'}`,borderLeft:`2px solid ${isMergeZone?'#F59E0B':cd.clr}`,display:'flex',alignItems:'center',gap:4,overflow:'hidden',cursor:isMergeZone?'pointer':isMine&&canDealloc?'pointer':'default',transition:'filter .12s'}}>
                           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:isMergeZone?'#d97706':cdClr,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{slot.c.code}</span>
                           {slot.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:'#d97706',background:'#F59E0B22',borderRadius:2,padding:'0 3px',flexShrink:0}}>+{slot.merged}</span>}
@@ -913,7 +938,7 @@ function RoomCard({room,sel,alloc,courses,deptId,dept,status,canAllocate,canDeal
           {conflicts.map(c=>{
             const cd=gDept(c.deptId),cdClr=dtc(cd,theme),isMine=c.deptId===deptId;
             return(
-              <div key={c.id} title={c.teacher?`Turma ${c.sec} · ${c.teacher}`:`Turma ${c.sec}`} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 6px',background:`${cd.clr}${theme==='light'?'18':'0e'}`,borderRadius:4,marginBottom:2}}>
+              <div key={c.id} title={[c.sec!=null?`Turma ${c.sec}`:null,c.teacher].filter(Boolean).join(' · ')||undefined} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 6px',background:`${cd.clr}${theme==='light'?'18':'0e'}`,borderRadius:4,marginBottom:2}}>
                 <div style={{width:2,height:10,borderRadius:1,background:cd.clr}}/>
                 <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:cdClr,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.code}</span>
                 <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.muted}}>{c.enroll} al.</span>
@@ -1394,7 +1419,7 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
   );
 }
 
-// ─── Modal de import de disciplinas (CSV) ─────────────────────────────────────
+// ─── Modal de import de disciplinas (ODS) ─────────────────────────────────────
 function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCancel}){
   const{T,theme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
@@ -1410,12 +1435,12 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
       const isSpreadsheet=/\.(ods|xlsx|xls)$/i.test(file.name);
       const tableRows=isSpreadsheet?await parseSheetRows(file):parseCsvRows(await file.text());
       if(tableRows.length<2){setParseError('Arquivo vazio ou sem linhas de dados.');return;}
-      const parsed=groupSigaaRows(tableRows);
+      const parsed=parseFlatCourseRows(tableRows);
       const rowKey=r=>`${String(r.normalized.code??'').trim().toUpperCase()}__${r.normalized.sec}`;
       const groups={};
-      parsed.forEach(r=>{if(!r.skipped&&Object.keys(r.errors).length===0)(groups[rowKey(r)]=groups[rowKey(r)]||[]).push(r);});
+      parsed.forEach(r=>{if(Object.keys(r.errors).length===0)(groups[rowKey(r)]=groups[rowKey(r)]||[]).push(r);});
       parsed.forEach(r=>{
-        if(r.skipped||Object.keys(r.errors).length>0)return;
+        if(Object.keys(r.errors).length>0)return;
         if(groups[rowKey(r)].length>1)r.errors.secao='Código + seção duplicados neste arquivo';
       });
       setRows(parsed);setTab('valid');setStep('preview');
@@ -1424,9 +1449,8 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
     }
   };
 
-  const validRows=rows.filter(r=>!r.skipped&&Object.keys(r.errors).length===0);
-  const skippedRows=rows.filter(r=>r.skipped);
-  const invalidRows=rows.filter(r=>!r.skipped&&Object.keys(r.errors).length>0);
+  const validRows=rows.filter(r=>Object.keys(r.errors).length===0);
+  const invalidRows=rows.filter(r=>Object.keys(r.errors).length>0);
   const allocatedExisting=existingCourses.filter(c=>c.room).length;
 
   const handleConfirmImport=()=>onConfirm(validRows.map(r=>({
@@ -1451,9 +1475,14 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
                 <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
               </div>
               <div style={{background:T.inner,borderRadius:8,padding:'12px 14px',marginBottom:16,border:`1px solid ${T.bdr}`,fontSize:11,color:T.txt2,lineHeight:1.7}}>
-                Arquivo <strong>.csv, .ods ou .xlsx</strong> no formato do relatório de oferta de turmas do SIGAA: uma linha de cabeçalho por disciplina (<span style={{...mono,background:T.faint,padding:'1px 4px',borderRadius:3}}>"CÓDIGO - NOME (NÍVEL)"</span>) seguida de uma linha por turma, com as colunas Ano Período, Turma, Docente(s), Tipo, Situação, Horário e Mat./Cap.
-                <br/>Turmas com Situação diferente de "ABERTA" são ignoradas. O Horário usa o código do SIGAA (ex.: <span style={mono}>35M34</span>, podendo ter mais de um bloco separado por espaço para dias com horários diferentes).
+                Arquivo <strong>.ods, .xlsx ou .csv</strong> com <strong>uma linha por disciplina/turma</strong>, nas colunas: Código, Nome, Turma, Docente(s), Horário, Alunos Mat.
+                <br/>"Turma" pode ficar em branco — só é necessário preencher se o mesmo código tiver mais de uma turma no arquivo, para diferenciá-las (o sistema nunca numera automaticamente).
+                <br/>Horário usa o código do SIGAA (ex.: <span style={mono}>35M34</span>), podendo ter mais de um bloco separado por espaço quando a turma tem dias/horários diferentes (ex.: <span style={mono}>2T456 6T56</span>).
               </div>
+              <button type="button" onClick={downloadCourseTemplate} style={{display:'flex',alignItems:'center',gap:6,width:'100%',padding:'9px 12px',marginBottom:16,background:'transparent',border:`1px dashed ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:11,fontWeight:600,cursor:'pointer'}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
+                ⇩ Baixar modelo (.ods) com exemplos preenchidos
+              </button>
               <input type="file" accept=".csv,.ods,.xlsx,.xls" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}} style={{...mono,fontSize:11,color:T.txt}}/>
               {parseError&&<div style={{fontSize:11,color:'#ef4444',marginTop:10}}>{parseError}</div>}
             </div>
@@ -1479,12 +1508,6 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
                   <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#15803d':'#34D399',lineHeight:1}}>{validRows.length}</div>
                   <div style={{...mono,fontSize:8,color:T.dim,marginTop:2}}>VÁLIDAS</div>
                 </div>
-                {skippedRows.length>0&&(
-                  <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:7,textAlign:'center'}}>
-                    <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#b45309':'#FBBF24',lineHeight:1}}>{skippedRows.length}</div>
-                    <div style={{...mono,fontSize:8,color:T.dim,marginTop:2}}>IGNORADAS</div>
-                  </div>
-                )}
                 {invalidRows.length>0&&(
                   <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:7,textAlign:'center'}}>
                     <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1}}>{invalidRows.length}</div>
@@ -1494,8 +1517,8 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
               </div>
             </div>
             <div style={{display:'flex',gap:0,borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
-              {[['valid',`✓ Válidas (${validRows.length})`],['skipped',`— Ignoradas (${skippedRows.length})`],['invalid',`⚠ Com erro (${invalidRows.length})`]].map(([key,label])=>(
-                key!=='valid'&&rows.filter(r=>key==='skipped'?r.skipped:(!r.skipped&&Object.keys(r.errors).length>0)).length===0?null:(
+              {[['valid',`✓ Válidas (${validRows.length})`],['invalid',`⚠ Com erro (${invalidRows.length})`]].map(([key,label])=>(
+                key!=='valid'&&invalidRows.length===0?null:(
                   <button key={key} onClick={()=>setTab(key)} style={{flex:1,padding:'9px',fontSize:11,fontWeight:500,cursor:'pointer',background:'transparent',border:'none',borderBottom:`2px solid ${tab===key?dept.clr:'transparent'}`,color:tab===key?dClr:T.muted,transition:'all .12s'}}>{label}</button>
                 )
               ))}
@@ -1508,21 +1531,11 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
                     <div style={{width:2,height:30,borderRadius:1,background:dept.clr,flexShrink:0}}/>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
-                        <span style={{...mono,fontSize:9,color:dClr}}>{r.normalized.code} · Turma {r.normalized.sec}</span>
+                        <span style={{...mono,fontSize:9,color:dClr}}>{r.normalized.code}{r.normalized.sec!=null?` · Turma ${r.normalized.sec}`:''}</span>
                         <span style={{fontSize:11,color:T.txt,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.normalized.name}</span>
                       </div>
                       <div style={{...mono,fontSize:9,color:T.dim}}>{fmtSchedule({blocks:r.normalized.blocks})} · {r.normalized.enroll} alunos</div>
                       {r.normalized.teacher&&<div style={{fontSize:9,color:T.muted,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>👤 {r.normalized.teacher}</div>}
-                    </div>
-                  </div>
-                ))
-              ):tab==='skipped'?(
-                skippedRows.map((r,i)=>(
-                  <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 20px',borderBottom:`1px solid ${T.bdr}`}}>
-                    <div style={{width:2,height:30,borderRadius:1,background:'#F59E0B',flexShrink:0,marginTop:2}}/>
-                    <div>
-                      <div style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:2}}>{r.raw.codigo||'(sem código)'}{r.raw.nome?` · ${r.raw.nome}`:''} {r.raw.turma?`· ${r.raw.turma}`:''}</div>
-                      <div style={{fontSize:10,color:theme==='light'?'#b45309':'#FBBF24',lineHeight:1.4}}>{r.skipReason}</div>
                     </div>
                   </div>
                 ))
@@ -1531,7 +1544,7 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
                   <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 20px',borderBottom:`1px solid ${T.bdr}`}}>
                     <div style={{width:2,height:30,borderRadius:1,background:'#ef4444',flexShrink:0,marginTop:2}}/>
                     <div>
-                      <div style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:2}}>{r.raw.codigo||'(sem código)'}{r.raw.nome?` · ${r.raw.nome}`:''} {r.raw.turma?`· ${r.raw.turma}`:''}</div>
+                      <div style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:2}}>{r.raw.codigo||'(sem código)'}{r.raw.nome?` · ${r.raw.nome}`:''} {r.raw.turma?`· Turma ${r.raw.turma}`:''}</div>
                       {Object.entries(r.errors).map(([field,msg])=>(
                         <div key={field} style={{fontSize:10,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.4}}>{field}: {msg}</div>
                       ))}
