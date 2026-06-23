@@ -100,6 +100,18 @@ async function parseSheetRows(file){
 const SIGAA_DAY_DIGIT={2:'Segunda',3:'Terça',4:'Quarta',5:'Quinta',6:'Sexta',7:'Sábado'};
 const SIGAA_SHIFT_BASE={M:5,T:11,N:17}; // hora(slot n) = base+n — M1=6h,T1=12h,N1=18h
 
+// A célula "Docente(s)" do SIGAA traz "<matrícula> - <NOME> (<carga>h)" por
+// professor, podendo ter mais de um separado por ", " e " e " antes do
+// último (ex.: "123 - A (20h), 456 - B (20h) e 789 - C (20h)") — extrai só
+// os nomes, descartando matrícula e carga horária. Sem matches reconhecidos,
+// devolve a célula como veio em vez de descartar a informação.
+function parseTeacherNames(raw){
+  const str=(raw??'').toString().trim();
+  if(!str)return'';
+  const names=[...str.matchAll(/\d+\s*-\s*([^()]+?)\s*\(\d+h?\)/gi)].map(m=>m[1].trim()).filter(Boolean);
+  return names.length?names.join(', '):str;
+}
+
 // "35M34 (10/03/2026 - 11/07/2026)" → ignora a faixa de datas; pode ter mais
 // de um bloco separado por espaço (dias/horários diferentes na mesma turma,
 // ex. "2T456 6T56" = Segunda à tarde num horário, Sexta noutro).
@@ -144,7 +156,7 @@ function groupSigaaRows(rows){
     const matMatch=(row[7]??'').toString().match(/(\d+)/);
     const enroll=matMatch?Number(matMatch[1]):NaN;
     if(!Number.isInteger(enroll)||enroll<0)errors.matriculados=`Matrícula não reconhecida em "${row[7]}"`;
-    const teacher=(row[2]??'').toString().trim();
+    const teacher=parseTeacherNames(row[2]);
     out.push({
       raw:{codigo:current?.code,nome:current?.name,turma:col1,situacao:row[4],horario:row[5],matriculados:row[7],docente:row[2]},
       normalized:{code:current?.code,name:current?.name,sec:secMatch?Number(secMatch[1]):null,blocks,enroll,teacher},
