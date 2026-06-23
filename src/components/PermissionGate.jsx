@@ -13,8 +13,8 @@
  *     <EditButton />
  *   </PermissionGate>
  *
- *   // Dept-scoped check:
- *   <PermissionGate perm={PERMS.ALLOCATE_OWN_DEPT} deptId="MATH">
+ *   // Role/coordination-scoped check:
+ *   <PermissionGate perm={PERMS.ALLOCATE_OWN_ROOMS} roleId="MATH_GRAD_COORD">
  *     <AllocateButton />
  *   </PermissionGate>
  */
@@ -24,15 +24,15 @@ import { useAuth } from '../auth/AuthContext.jsx';
 /**
  * @param {object}        props
  * @param {string}        props.perm      – one of the PERMS constants (required)
- * @param {string}        [props.deptId]  – if provided, also checks dept scope
+ * @param {string}        [props.roleId]  – if provided, also checks role/coordination scope
  * @param {React.ReactNode} [props.fallback] – rendered when permission is absent
  * @param {React.ReactNode} props.children
  */
-export default function PermissionGate({ perm, deptId, fallback = null, children }) {
-  const { can, canForDept } = useAuth();
+export default function PermissionGate({ perm, roleId, fallback = null, children }) {
+  const { can, canForRole } = useAuth();
 
-  const allowed = deptId !== undefined
-    ? canForDept(perm, deptId)
+  const allowed = roleId !== undefined
+    ? canForRole(perm, roleId)
     : can(perm);
 
   return allowed ? children : fallback;

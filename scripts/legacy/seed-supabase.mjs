@@ -1,3 +1,10 @@
+// LEGACY — kept only for historical reference, do not run against the
+// current schema. Predates the rooms.dept_id→role_id / sub_units / roles /
+// blocks reformulation (its room-generation half was already dead code
+// before that, per CLAUDE.md) and the courses it inserts use a schema this
+// project no longer has (dept_id, building). scripts/import-real-rooms.mjs
+// + the in-app course importer are the real seeding path now.
+//
 // One-off seed script — run manually once per Supabase project, never imported by the app.
 // Usage: node --env-file=.env.local scripts/seed-supabase.mjs
 //

@@ -21,7 +21,16 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
 const PERIOD = '2025.2';
 const slugify = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-const courseId = (deptId, code, sec, period) => `${deptId}-${slugify(code)}-${sec}-${slugify(period)}`;
+const courseId = (roleId, code, sec, period) => `${roleId}-${slugify(code)}-${sec}-${slugify(period)}`;
+
+// `dept` nos itens abaixo é só um rótulo de conveniência pra organizar a lista
+// (mantém os comentários de inventário de salas legíveis) — convertido pro
+// role_id real (já existente via o seed de funções) na hora de montar as
+// linhas. MATH cai num único representante (MATH_GRAD); cursos cujas salas
+// pertencem a outra coordenação de Matemática (MATH_POS/MATH_PROFMAT) testam
+// a alocação cruzada entre coordenações, equivalente ao antigo cruzamento
+// entre departamentos.
+const DEPT_TO_ROLE = { MATH:'MATH_GRAD', PHYS:'PHYS_HEAD', CS:'CS_HEAD', CHEM:'CHEM_HEAD', BIO:'BIO_HEAD' };
 
 // allocation: 'full' (every day in blocks gets a room), 'partial' (only the
 // first day), 'none' (left pending — even a wrapped-up past period can have
@@ -51,13 +60,14 @@ const COURSES = [
 ];
 
 function toCourseRow(c) {
+  const roleId = DEPT_TO_ROLE[c.dept];
   const blocks = [{ days: c.days, sh: c.sh, eh: c.eh }];
   const roomByDay = {};
   if (c.alloc === 'full') c.days.forEach(d => { roomByDay[d] = c.room; });
   else if (c.alloc === 'partial') roomByDay[c.days[0]] = c.room;
   return {
-    id: courseId(c.dept, c.code, 1, PERIOD),
-    code: c.code, name: c.name, sec: 1, dept_id: c.dept, period: PERIOD,
+    id: courseId(roleId, c.code, 1, PERIOD),
+    code: c.code, name: c.name, sec: 1, role_id: roleId, period: PERIOD,
     teacher: c.teacher, blocks, enroll: c.enroll, room_by_day: roomByDay,
   };
 }

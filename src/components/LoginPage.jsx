@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useT } from '../theme.jsx';
-import { DEMO_CREDENTIALS } from '../auth/mockDb.js';
-import { ROLE_LABELS } from '../auth/roles.js';
 
-const DEPTS = { MATH:'Matemática', PHYS:'Física', CS:'Computação', CHEM:'Química', BIO:'Biologia' };
+// Reflete o seed inicial fornecido junto com o schema (ver Fase 2 da
+// reformulação de usuários) — puramente ilustrativo para facilitar testes
+// manuais; não é mais lido de nenhum "banco" mock, os usuários reais agora
+// vêm do Postgres e podem não bater com esta lista se o seed for alterado.
+const DEMO_CREDENTIALS = [
+  { username: 'chief',         password: 'chief123', roleName: 'Diretor' },
+  { username: 'math.grad',     password: 'math123',  roleName: 'Coordenador de Graduação · Matemática' },
+  { username: 'math.pos',      password: 'math123',  roleName: 'Coordenador de Pós-Graduação · Matemática' },
+  { username: 'math.profmat',  password: 'math123',  roleName: 'Coordenador PROFMAT · Matemática' },
+];
 
 export default function LoginPage() {
   const { login, authError } = useAuth();
@@ -25,8 +32,7 @@ export default function LoginPage() {
     if (!username.trim()) { setLocalError('Por favor, insira seu usuário.'); return; }
     if (!password)        { setLocalError('Por favor, insira sua senha.');   return; }
     setBusy(true);
-    await new Promise(r => setTimeout(r, 260));
-    login(username.trim(), password);
+    await login(username.trim(), password);
     setBusy(false);
   };
 
@@ -188,9 +194,7 @@ export default function LoginPage() {
                     onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor=T.bdr;}}>
                     <span style={{...mono,fontSize:10,color:T.txt,fontWeight:500,minWidth:100}}>{cred.username}</span>
                     <span style={{...mono,fontSize:10,color:T.muted,minWidth:72}}>{cred.password}</span>
-                    <span style={{fontSize:10,color:T.dim,flex:1}}>
-                      {ROLE_LABELS[cred.role]}{cred.deptId?` · ${DEPTS[cred.deptId]??cred.deptId}`:''}
-                    </span>
+                    <span style={{fontSize:10,color:T.dim,flex:1}}>{cred.roleName}</span>
                   </button>
                 ))}
               </div>
