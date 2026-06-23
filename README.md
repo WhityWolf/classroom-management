@@ -26,6 +26,10 @@ que não pertencem a nenhum departamento específico.
   dias diferentes com horários diferentes dentro da mesma turma (ex.:
   Segunda 15h–18h e Sexta 17h–18h), refletindo como ofertas reais de
   disciplina costumam ser estruturadas.
+- **Sala diferente em dia diferente** — a vista em Grade aloca dia a dia: dá
+  pra colocar a mesma disciplina numa sala na Segunda e numa sala diferente
+  na Quarta. A vista em Salas continua alocando todos os dias de uma vez na
+  mesma sala, pra quem só precisa do caso comum.
 - **Importação de disciplinas** — o chefe de departamento sobe uma planilha
   (`.ods`, `.xlsx` ou `.csv`) com uma linha por disciplina/turma (colunas
   Código, Nome, Turma, Docente(s), Horário, Alunos Mat. — Turma é opcional e
@@ -140,7 +144,7 @@ departamento está marcado como concluído ou bloqueado pelo Diretor.
 | Tabela | Conteúdo |
 |---|---|
 | `rooms` | Salas reais do CCN1/CCN2 — `dept_id` nulo significa sala compartilhada (só o Diretor gerencia) |
-| `courses` | Disciplinas — `blocks` (jsonb) guarda uma lista de `{dias, início, fim}`, permitindo mais de um horário por disciplina; `teacher` guarda o(s) docente(s) da turma |
+| `courses` | Disciplinas — `blocks` (jsonb) guarda uma lista de `{dias, início, fim}`, permitindo mais de um horário por disciplina; `teacher` guarda o(s) docente(s) da turma; `room_by_day` (jsonb) mapeia cada dia pra sala alocada nele, permitindo salas diferentes em dias diferentes (dia ausente = ainda não alocado) |
 | `room_features` | Catálogo de recursos selecionáveis ao editar uma sala |
 | `dept_statuses` | Status de cada departamento (`active` / `finished` / `force_finished`) |
 | `notifications` | Notificações que o Diretor recebe quando um departamento conclui sua alocação |

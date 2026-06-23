@@ -42,10 +42,36 @@ const courseOccupiesDay=(course,day)=>course.blocks.some(b=>b.days.includes(day)
 const blockForDay=(course,day)=>course.blocks.find(b=>b.days.includes(day));
 const fmtSchedule=course=>course.blocks.map(b=>`${b.days.map(d=>d.slice(0,3)).join('/')} ${fmtHour(b.sh)}–${fmtHour(b.eh)}`).join('; ');
 
-function buildAlloc(courses){const m={};courses.forEach(c=>{if(!c.room)return;c.blocks.forEach(block=>{block.days.forEach(day=>{for(let h=block.sh;h<block.eh;h++){const k=`${c.room}|${day}|${h}`;if(!m[k])m[k]=[];m[k].push(c);}});});});return m;}
-function roomFree(rid,course,alloc){for(const block of course.blocks)for(const day of block.days)for(let h=block.sh;h<block.eh;h++)if((alloc[`${rid}|${day}|${h}`]||[]).length)return false;return true;}
-function getConflicts(rid,course,alloc,courses){const ids=new Set();for(const block of course.blocks)for(const day of block.days)for(let h=block.sh;h<block.eh;h++)(alloc[`${rid}|${day}|${h}`]||[]).forEach(c=>{if(c.id!==course.id)ids.add(c.id);});return[...ids].map(id=>courses.find(c=>c.id===id)).filter(Boolean);}
+// A disciplina pode estar em salas diferentes em dias diferentes (ex.:
+// Segunda na Sala A, Quarta na Sala B) — por isso `room` não é mais um campo
+// único: course.roomByDay = {[dia]: roomId}, um dia ausente = não alocado
+// ainda. courseDays junta os dias de todos os blocos (sem repetir).
+const courseDays=course=>[...new Set(course.blocks.flatMap(b=>b.days))];
+const hasAnyAllocation=course=>Object.keys(course.roomByDay||{}).length>0;
+const isFullyAllocated=course=>{const days=courseDays(course);return days.length>0&&days.every(d=>course.roomByDay?.[d]);};
+
+function buildAlloc(courses){const m={};courses.forEach(c=>{const rbd=c.roomByDay||{};c.blocks.forEach(block=>{block.days.forEach(day=>{const rid=rbd[day];if(!rid)return;for(let h=block.sh;h<block.eh;h++){const k=`${rid}|${day}|${h}`;if(!m[k])m[k]=[];m[k].push(c);}});});});return m;}
+// `day` omitido = checa a disciplina inteira (todos os dias/blocos) — usado
+// pela ListView, que aloca todos os dias na mesma sala de uma vez. `day`
+// informado = checa só aquele dia — usado pela Grade, que aloca dia a dia.
+function roomFree(rid,course,alloc,day){for(const block of course.blocks)for(const d of block.days){if(day&&d!==day)continue;for(let h=block.sh;h<block.eh;h++)if((alloc[`${rid}|${d}|${h}`]||[]).length)return false;}return true;}
+function getConflicts(rid,course,alloc,courses,day){const ids=new Set();for(const block of course.blocks)for(const d of block.days){if(day&&d!==day)continue;for(let h=block.sh;h<block.eh;h++)(alloc[`${rid}|${d}|${h}`]||[]).forEach(c=>{if(c.id!==course.id)ids.add(c.id);});}return[...ids].map(id=>courses.find(c=>c.id===id)).filter(Boolean);}
 function rowSlots(rid,day,alloc){const slots=[];let h=HOURS[0];const maxH=HOURS[HOURS.length-1]+1;while(h<maxH){const arr=alloc[`${rid}|${day}|${h}`]||[];if(arr.length){const c=arr[0];const block=blockForDay(c,day);if(block.sh===h){slots.push({h,span:block.eh-block.sh,c,merged:arr.length-1});h=block.eh;}else h++;}else{slots.push({h,span:1,c:null,merged:0});h++;}}return slots;}
+// Texto da sala pra exibir no card da disciplina: se todos os dias já
+// alocados estão na mesma sala (o caso comum), mostra só o nome da sala;
+// senão, detalha sala por dia (curso alocado em salas diferentes, ou ainda
+// parcialmente alocado).
+function fmtRoomByDay(course,rooms){
+  const days=courseDays(course),rbd=course.roomByDay||{};
+  const allocatedDays=days.filter(d=>rbd[d]);
+  if(allocatedDays.length===0)return null;
+  const uniqueRooms=new Set(allocatedDays.map(d=>rbd[d]));
+  if(uniqueRooms.size===1&&allocatedDays.length===days.length){
+    const rid=rbd[allocatedDays[0]];
+    return rooms.find(r=>r.id===rid)?.label??rid;
+  }
+  return allocatedDays.map(d=>`${d.slice(0,3)}: ${rooms.find(r=>r.id===rbd[d])?.label??rbd[d]}`).join(' · ');
+}
 function fmtHour(h){return`${String(h).padStart(2,'0')}:00`;}
 
 // ─── Catálogo de disciplinas (criação manual + import ODS) ───────────────────
@@ -318,7 +344,12 @@ function Dashboard(){
       :ROOMS.filter(r=>r.deptId===currentUser.deptId)
   ,[ROOMS,activeDeptId,isChief,currentUser.deptId]);
 
-  const allUnallocated=useMemo(()=>courses.filter(c=>!c.room),[courses]);
+  // "Pendentes" inclui disciplinas parcialmente alocadas (ex.: Segunda já
+  // tem sala, Quarta não) — ainda há trabalho a fazer. "Alocadas" inclui
+  // qualquer disciplina com pelo menos um dia já alocado — uma parcial
+  // aparece nas duas listas de propósito, pra dar pra acompanhar o que falta
+  // E o que já foi feito ao mesmo tempo.
+  const allUnallocated=useMemo(()=>courses.filter(c=>!isFullyAllocated(c)),[courses]);
   const sidebarCourses=useMemo(()=>{
     const base=isDeptHead?allUnallocated.filter(c=>c.deptId===currentUser.deptId):allUnallocated;
     if(!search.trim())return base;
@@ -326,7 +357,7 @@ function Dashboard(){
     return base.filter(c=>c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q));
   },[allUnallocated,isDeptHead,currentUser.deptId,search]);
 
-  const allAllocated=useMemo(()=>courses.filter(c=>c.room),[courses]);
+  const allAllocated=useMemo(()=>courses.filter(c=>hasAnyAllocation(c)),[courses]);
   const allocatedSidebarCourses=useMemo(()=>{
     const base=isDeptHead?allAllocated.filter(c=>c.deptId===currentUser.deptId):allAllocated;
     if(!search.trim())return base;
@@ -335,13 +366,19 @@ function Dashboard(){
   },[allAllocated,isDeptHead,currentUser.deptId,search]);
   const visibleSidebarCourses=sidebarTab==='pending'?sidebarCourses:allocatedSidebarCourses;
 
-  const autoAllocInput=useMemo(()=>
-    isDeptHead?allUnallocated.filter(c=>c.deptId===currentUser.deptId):allUnallocated
-  ,[allUnallocated,isDeptHead,currentUser.deptId]);
+  // Alvo do "Alocar Automaticamente": só disciplinas com ZERO dias alocados.
+  // O algoritmo (autoAllocate) só sabe propor uma sala única pra semana toda
+  // — rodar nele uma disciplina parcial sobrescreveria silenciosamente os
+  // dias que o usuário já tinha colocado manualmente em salas diferentes.
+  const autoAllocInput=useMemo(()=>{
+    const base=isDeptHead?courses.filter(c=>c.deptId===currentUser.deptId):courses;
+    return base.filter(c=>!hasAnyAllocation(c));
+  },[courses,isDeptHead,currentUser.deptId]);
 
   const stats=useMemo(()=>{
-    const mine=courses.filter(c=>c.deptId===activeDeptId),done=mine.filter(c=>c.room);
-    return{total:mine.length,done:done.length,pend:mine.length-done.length,cross:done.filter(c=>!c.room.startsWith(activeDeptId)).length};
+    const mine=courses.filter(c=>c.deptId===activeDeptId),done=mine.filter(isFullyAllocated);
+    const cross=mine.filter(c=>Object.values(c.roomByDay||{}).some(rid=>rid&&!rid.startsWith(activeDeptId))).length;
+    return{total:mine.length,done:done.length,pend:mine.length-done.length,cross};
   },[courses,activeDeptId]);
 
   const canAllocate   =isChief||(isDeptHead&&!isLocked);
@@ -352,30 +389,55 @@ function Dashboard(){
   const canManageCatalog=canAllocate;
   const targetDeptId  =isChief?activeDeptId:currentUser.deptId;
 
-  const tryAllocate=rid=>{
+  // `day` presente = só aquele dia (clique vindo da Grade, que já sabe em
+  // qual aba de dia está); `day` ausente/null = a disciplina inteira, todos
+  // os dias na mesma sala de uma vez (clique vindo da vista em Salas).
+  const tryAllocate=(rid,day)=>{
     if(!canAllocate||!sel)return;
-    if(roomFree(rid,sel,alloc))forceAllocate(rid);
-    else if(canMerge)setMergeModal({roomId:rid});
+    if(roomFree(rid,sel,alloc,day))forceAllocate(rid,day);
+    // Mesclar exige saber qual bloco/horário está em conflito pra mostrar no
+    // modal — só faz sentido com um dia específico (vindo da Grade). No modo
+    // "todos os dias de uma vez" (vista em Salas) um conflito em qualquer dia
+    // não tem uma única mesclagem óbvia, então só avisa pra usar a Grade.
+    else if(day&&canMerge)setMergeModal({roomId:rid,day});
+    else if(!day)showToast('Sala ocupada em algum dia da semana — use a vista "Horários" para ver dia a dia e mesclar se necessário.','warn');
   };
-  const forceAllocate=async rid=>{
+  const forceAllocate=async(rid,day)=>{
     if(!sel)return;
     const course=sel,room=ROOMS.find(r=>r.id===rid);
-    setSelId(null);setMergeModal(null);
+    const nextRoomByDay=day
+      ?{...course.roomByDay,[day]:rid}
+      :Object.fromEntries(courseDays(course).map(d=>[d,rid]));
+    setMergeModal(null);
+    // Mantém a disciplina selecionada se ainda faltar alocar outro dia dela
+    // (fluxo da Grade: aloca Segunda, troca a aba pra Quarta, aloca de novo
+    // sem precisar reselecionar) — só desmarca quando ficar 100% alocada.
+    const stillSelected=courseDays(course).some(d=>!nextRoomByDay[d]);
+    setSelId(stillSelected?course.id:null);
     if(isChief)setActiveDeptId(course.deptId);
     try{
-      await db.allocateCourse(course.id,rid);
-      showToast(`${course.code} alocada em ${room?.label??rid}.`,'ok');
+      await db.setCourseRoomByDay(course.id,nextRoomByDay);
+      showToast(`${course.code} alocada em ${room?.label??rid}${day?` (${day})`:''}.`,'ok');
     }catch(e){
       showToast(`Falha ao alocar: ${e.message}`,'err');
     }
   };
-  const deallocate=async cid=>{
+  // `day` presente = remove só a sala daquele dia (clique no chip da Grade);
+  // ausente = remove a alocação inteira (botão "remover" da barra lateral).
+  const deallocate=async(cid,day)=>{
     if(!canDealloc)return;
     const course=courses.find(c=>c.id===cid);
-    const roomLabel=course?.room?ROOMS.find(r=>r.id===course.room)?.label:null;
+    if(!course)return;
+    const oldRoomByDay=course.roomByDay||{};
+    const roomLabel=day
+      ?ROOMS.find(r=>r.id===oldRoomByDay[day])?.label
+      :fmtRoomByDay(course,ROOMS);
+    const nextRoomByDay=day
+      ?Object.fromEntries(Object.entries(oldRoomByDay).filter(([d])=>d!==day))
+      :{};
     try{
-      await db.deallocateCourse(cid);
-      showToast(`${course?.code??cid} desalocada${roomLabel?` (estava em ${roomLabel})`:''}.`,'warn');
+      await db.setCourseRoomByDay(cid,nextRoomByDay);
+      showToast(`${course.code} desalocada${day?` (${day})`:''}${roomLabel?` (estava em ${roomLabel})`:''}.`,'warn');
     }catch(e){
       showToast(`Falha ao desalocar: ${e.message}`,'err');
     }
@@ -416,18 +478,25 @@ function Dashboard(){
     const original=courses.find(c=>c.id===courseId);
     if(!original)return;
     const updated={...original,...changes};
-    let finalRoom=updated.room;
+    let finalRoomByDay=original.roomByDay||{};
     // TODO (production): conflict check reads from local realtime-synced state,
     // not a fresh DB read — acceptable race window for this prototype's scale.
-    if(finalRoom&&changes.blocks!==undefined){
-      const others=courses.filter(c=>c.room===finalRoom&&c.id!==courseId);
-      if(!roomFree(finalRoom,updated,buildAlloc(others))){
-        finalRoom=null;
-        showToast('Horário alterado — sala removida. Por favor, realoque.','warn');
-      }
+    if(changes.blocks!==undefined){
+      const newDays=new Set(courseDays(updated));
+      const others=courses.filter(c=>c.id!==courseId);
+      const othersAlloc=buildAlloc(others);
+      const next={};let droppedAny=false;
+      Object.entries(finalRoomByDay).forEach(([day,rid])=>{
+        // o dia some do novo horário, ou a sala que já tinha deixou de estar
+        // livre nele (mudou o horário pra um que colide com outra disciplina)
+        if(newDays.has(day)&&roomFree(rid,updated,othersAlloc,day))next[day]=rid;
+        else droppedAny=true;
+      });
+      finalRoomByDay=next;
+      if(droppedAny)showToast('Horário alterado — sala removida em algum dia. Por favor, realoque.','warn');
     }
     try{
-      await db.editCourse(courseId,{...changes,room:finalRoom});
+      await db.editCourse(courseId,{...changes,roomByDay:finalRoomByDay});
     }catch(e){
       showToast(`Falha ao salvar disciplina: ${e.message}`,'err');
     }
@@ -487,7 +556,7 @@ function Dashboard(){
   const markNotifsRead=()=>{db.markAllNotificationsRead().catch(()=>{});};
 
   const mergeRoom  =mergeModal?ROOMS.find(r=>r.id===mergeModal.roomId):null;
-  const mergeCons  =(mergeModal&&sel)?getConflicts(mergeModal.roomId,sel,alloc,courses):[];
+  const mergeCons  =(mergeModal&&sel)?getConflicts(mergeModal.roomId,sel,alloc,courses,mergeModal.day):[];
   const mergeTotal =sel?mergeCons.reduce((s,c)=>s+c.enroll,0)+sel.enroll:0;
   const dClr       =dtc(d,theme);
   const selBannerBg=dbg(d,theme);
@@ -605,7 +674,7 @@ function Dashboard(){
             ):visibleSidebarCourses.map(c=>(
               <CourseCard key={c.id} course={c} activeDept={gDept(activeDeptId)} showDeptBadge={isChief}
                 selected={selId===c.id} locked={isLocked}
-                roomLabel={sidebarTab==='allocated'?ROOMS.find(r=>r.id===c.room)?.label:undefined}
+                roomLabel={sidebarTab==='allocated'?fmtRoomByDay(c,ROOMS):undefined}
                 onSelect={sidebarTab==='pending'?()=>selectCourse(c):undefined}
                 onEdit={sidebarTab==='pending'&&canEditCourse?()=>setEditingCourse(c):null}
                 onRemove={sidebarTab==='allocated'&&canDealloc&&!isLocked?()=>deallocate(c.id):null}/>
@@ -682,11 +751,11 @@ function Dashboard(){
             {viewMode==='grid'?(
               <Grid rooms={visRooms} day={day} alloc={alloc} courses={courses} sel={sel} deptId={activeDeptId} dept={d}
                 canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse}
-                onTryAlloc={tryAllocate} onDealloc={deallocate} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
+                onTryAlloc={rid=>tryAllocate(rid,day)} onDealloc={cid=>deallocate(cid,day)} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
             ):(
               <ListView rooms={visRooms} alloc={alloc} courses={courses} sel={sel} deptId={activeDeptId} dept={d}
                 canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse}
-                onTryAlloc={tryAllocate} onDealloc={deallocate} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
+                onTryAlloc={rid=>tryAllocate(rid,null)} onDealloc={cid=>deallocate(cid,null)} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
             )}
           </div>
         </div>
@@ -703,7 +772,7 @@ function Dashboard(){
         onConfirm={handleImportCourses} onCancel={()=>setImportingCourses(false)}/>}
       {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
       {autoAllocResult&&<AutoAllocModal result={autoAllocResult} dept={d} onApply={handleApplyAllocation} onCancel={()=>setAutoAllocResult(null)}/>}
-      {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={day} onConfirm={()=>forceAllocate(mergeModal.roomId)} onCancel={()=>setMergeModal(null)}/>}
+      {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={mergeModal.day} onConfirm={()=>forceAllocate(mergeModal.roomId,mergeModal.day)} onCancel={()=>setMergeModal(null)}/>}
       {showUsers&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'stretch',justifyContent:'flex-end',zIndex:200}}>
           <div style={{width:'min(900px,95vw)',background:T.surface,borderLeft:`1px solid ${T.bdr}`,display:'flex',flexDirection:'column',animation:'slideIn .2s ease'}}>
@@ -788,7 +857,7 @@ function RoomMapScreen({rooms,courses,alloc,onBack}){
   const isChief=currentUser.role===ROLES.CHIEF;
   const mono={fontFamily:"'DM Mono',monospace"};
   const[day,setDay]=useState('Segunda');
-  const allocatedRoomIds=useMemo(()=>new Set(courses.filter(c=>c.room).map(c=>c.room)),[courses]);
+  const allocatedRoomIds=useMemo(()=>new Set(courses.flatMap(c=>Object.values(c.roomByDay||{}))),[courses]);
   const allocatedRooms=useMemo(()=>rooms.filter(r=>allocatedRoomIds.has(r.id)),[rooms,allocatedRoomIds]);
   const deptOrder=id=>{const i=DEPTS.findIndex(d=>d.id===id);return i===-1?DEPTS.length:i;};
   const presentDepts=useMemo(()=>
@@ -987,7 +1056,7 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
       <tbody>
         {sorted.map((room,idx)=>{
           const isOwn=room.deptId===deptId,rd=gDept(room.deptId),rdClr=dtc(rd,theme);
-          const free=canAllocate&&sel?roomFree(room.id,sel,alloc):false;
+          const free=canAllocate&&sel?roomFree(room.id,sel,alloc,day):false;
           const hasCon=canAllocate&&sel?!free:false;
           const slots=rowSlots(room.id,day,alloc);
           const selBlock=sel?blockForDay(sel,day):null;
@@ -1551,8 +1620,8 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
           <div style={{width:3,height:20,borderRadius:1,background:cd.clr}}/>
           {course&&<span style={{...mono,fontSize:10,color:cdClr,fontWeight:500}}>{course.code}</span>}
           <span style={{fontSize:14,fontWeight:700,color:T.txt}}>{course?'Editar Disciplina':'Nova Disciplina'}</span>
-          {course?.room&&<span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fef3c7':'#3a1a0a',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'2px 6px',marginLeft:'auto'}}>⚠ Alteração de horário remove a sala</span>}
-          <button onClick={onCancel} style={{background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer',marginLeft:course?.room?0:'auto'}}>✕</button>
+          {course&&hasAnyAllocation(course)&&<span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fef3c7':'#3a1a0a',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'2px 6px',marginLeft:'auto'}}>⚠ Alteração de horário pode remover a sala de algum dia</span>}
+          <button onClick={onCancel} style={{background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer',marginLeft:course&&hasAnyAllocation(course)?0:'auto'}}>✕</button>
         </div>
         {!course&&isChief&&(
           <div style={{marginBottom:12}}>
@@ -1664,7 +1733,7 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
 
   const validRows=rows.filter(r=>Object.keys(r.errors).length===0);
   const invalidRows=rows.filter(r=>Object.keys(r.errors).length>0);
-  const allocatedExisting=existingCourses.filter(c=>c.room).length;
+  const allocatedExisting=existingCourses.filter(c=>hasAnyAllocation(c)).length;
 
   const handleConfirmImport=()=>onConfirm(validRows.map(r=>({
     id:courseId(targetDeptId,r.normalized.code,r.normalized.sec),

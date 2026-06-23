@@ -11,7 +11,7 @@ export const mapRoom = r => ({
 });
 export const mapCourse = c => ({
   id: c.id, code: c.code, name: c.name, sec: c.sec, deptId: c.dept_id,
-  teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, room: c.room,
+  teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, roomByDay: c.room_by_day ?? {},
 });
 export const mapNotification = n => ({
   id: n.id, deptId: n.dept_id, deptName: n.dept_name, type: n.type,
@@ -41,12 +41,14 @@ export async function fetchAll() {
   };
 }
 
-export async function allocateCourse(courseId, roomId) {
-  await unwrap(supabase.from('courses').update({ room: roomId }).eq('id', courseId));
-}
-
-export async function deallocateCourse(courseId) {
-  await unwrap(supabase.from('courses').update({ room: null }).eq('id', courseId));
+// Substitui o mapa dia→sala inteiro (não dá um patch parcial por dia) — quem
+// chama já monta o objeto final combinando o que quer manter/mudar/remover,
+// já que isso depende do curso inteiro (blocks, dias já alocados etc.), não
+// só do banco. Cobre tanto "alocar todos os dias na mesma sala" (ListView)
+// quanto "alocar/desalocar um dia específico" (Grade) — ver tryAllocate /
+// deallocate em Dashboard.
+export async function setCourseRoomByDay(courseId, roomByDay) {
+  await unwrap(supabase.from('courses').update({ room_by_day: roomByDay }).eq('id', courseId));
 }
 
 export async function editCourse(courseId, changes) {
@@ -55,7 +57,7 @@ export async function editCourse(courseId, changes) {
   if (changes.teacher !== undefined) patch.teacher = changes.teacher;
   if (changes.blocks !== undefined) patch.blocks = changes.blocks;
   if (changes.enroll !== undefined) patch.enroll = changes.enroll;
-  if (changes.room !== undefined) patch.room = changes.room;
+  if (changes.roomByDay !== undefined) patch.room_by_day = changes.roomByDay;
   await unwrap(supabase.from('courses').update(patch).eq('id', courseId));
 }
 
@@ -63,7 +65,7 @@ export async function createCourse(course) {
   await unwrap(supabase.from('courses').insert({
     id: course.id, code: course.code, name: course.name, sec: course.sec,
     dept_id: course.deptId, teacher: course.teacher, blocks: course.blocks,
-    enroll: course.enroll, room: null,
+    enroll: course.enroll, room_by_day: {},
   }));
 }
 
@@ -77,7 +79,7 @@ export async function replaceDeptCourses(deptId, courses) {
   if (courses.length === 0) return;
   await unwrap(supabase.from('courses').insert(courses.map(c => ({
     id: c.id, code: c.code, name: c.name, sec: c.sec, dept_id: deptId,
-    teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, room: null,
+    teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, room_by_day: {},
   }))));
 }
 
@@ -95,11 +97,16 @@ export async function removeFeatureOption(name) {
 
 // Individual updates run concurrently rather than a single upsert: an upsert
 // would require every NOT NULL column in the payload (these course rows
-// already exist — only `room` changes), so per-row updates are simpler here.
+// already exist — only `room_by_day` changes), so per-row updates are
+// simpler here. autoAllocate (classroom-allocation.jsx) only ever proposes
+// one room for a course's *entire* week — it doesn't attempt the
+// different-room-per-day split, so every scheduled day maps to that room.
 export async function applyAllocations(assignments) {
-  await Promise.all(assignments.map(({ course, room }) =>
-    unwrap(supabase.from('courses').update({ room: room.id }).eq('id', course.id))
-  ));
+  await Promise.all(assignments.map(({ course, room }) => {
+    const days = [...new Set(course.blocks.flatMap(b => b.days))];
+    const roomByDay = Object.fromEntries(days.map(d => [d, room.id]));
+    return unwrap(supabase.from('courses').update({ room_by_day: roomByDay }).eq('id', course.id));
+  }));
 }
 
 export async function finishDept(deptId, deptName, userName) {

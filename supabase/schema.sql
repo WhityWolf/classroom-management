@@ -31,9 +31,15 @@ create table courses (
   -- [{"days":["Terça","Quinta"],"sh":8,"eh":10}, {"days":["Sexta"],"sh":14,"eh":16}]
   blocks  jsonb not null default '[]',
   enroll  integer not null,
-  room    text references rooms(id) on delete set null
+  -- A disciplina pode estar em salas diferentes em dias diferentes (ex.:
+  -- Segunda na Sala A, Quarta na Sala B) — não dá pra modelar isso com uma
+  -- FK de sala única. room_by_day mapeia cada dia (string igual aos valores
+  -- em blocks[].days, ex. "Segunda") para o id da sala alocada nesse dia;
+  -- um dia ausente do mapa = ainda não alocado. Sem FK de banco pra cada
+  -- valor (jsonb não suporta isso nativamente) — aceitável para o estágio
+  -- de protótipo, como as outras FKs "soft" já documentadas neste arquivo.
+  room_by_day jsonb not null default '{}'
 );
-create index courses_room_idx on courses(room);
 create index courses_dept_idx on courses(dept_id);
 
 create table dept_statuses (
