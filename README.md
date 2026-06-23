@@ -15,6 +15,17 @@ que não pertencem a nenhum departamento específico.
 
 ## Funcionalidades
 
+- **Seleção de tela pós-login** — antes de entrar na alocação, o usuário
+  escolhe entre "Alocar Disciplinas" (o fluxo de sempre) e "Mapa de Salas
+  Alocadas", uma visão somente-leitura e mais ampla — todas as salas já
+  alocadas, de todos os departamentos, lado a lado por dia da semana.
+- **Múltiplos períodos letivos** — um seletor de período (ex. `2026.1`)
+  aparece nas duas telas acima. Só o período mais recente pode ser editado;
+  períodos passados ficam travados (inclusive pro Diretor) e, na tela de
+  Alocação, a vista em Salas é desabilitada nesse caso — só dá pra consultar
+  pela Grade, já que não há nada a alocar num período encerrado. O Diretor
+  cria um novo período letivo a qualquer momento, o que automaticamente
+  torna o anterior somente leitura.
 - **Alocação de salas** — visão em Grade (quadro de horários semanal) ou
   em Salas (cartões de disponibilidade por sala, agrupados por bloco/prédio
   e por departamento), com detecção de conflito de horário em tempo real.
@@ -22,12 +33,19 @@ que não pertencem a nenhum departamento específico.
   dias diferentes com horários diferentes dentro da mesma turma (ex.:
   Segunda 15h–18h e Sexta 17h–18h), refletindo como ofertas reais de
   disciplina costumam ser estruturadas.
-- **Importação de disciplinas** — o chefe de departamento sobe a planilha
-  do semestre (`.csv`, `.ods` ou `.xlsx`) no formato do relatório de oferta
-  de turmas do SIGAA (cabeçalho de disciplina + linhas de turma, código de
-  horário como `35M34`, capacidade como `33/50 alunos`). O sistema decodifica
-  o horário, ignora turmas com situação diferente de "Aberta", detecta
-  duplicatas e mostra uma prévia (válidas / ignoradas / com erro) antes de
+- **Sala diferente em dia diferente** — a vista em Grade aloca dia a dia: dá
+  pra colocar a mesma disciplina numa sala na Segunda e numa sala diferente
+  na Quarta. A vista em Salas continua alocando todos os dias de uma vez na
+  mesma sala, pra quem só precisa do caso comum.
+- **Importação de disciplinas** — o chefe de departamento sobe uma planilha
+  (`.ods`, `.xlsx` ou `.csv`) com uma linha por disciplina/turma (colunas
+  Código, Nome, Turma, Docente(s), Horário, Alunos Mat. — Turma é opcional e
+  nunca numerada automaticamente: fica em branco a menos que o usuário a
+  preencha, necessário só quando o mesmo código tem mais de uma turma no
+  arquivo; Horário usa o código do SIGAA, ex. `35M34`, podendo ter mais de um
+  bloco para dias diferentes). Um botão na própria tela de import baixa um
+  modelo `.ods` já preenchido com exemplos. O sistema decodifica o horário,
+  detecta duplicatas e mostra uma prévia (válidas / com erro) antes de
   confirmar a substituição completa das disciplinas do departamento.
 - **Cadastro manual de disciplinas** — formulário para criar ou corrigir
   disciplinas pontualmente, com suporte a múltiplos blocos de horário.
@@ -133,7 +151,7 @@ departamento está marcado como concluído ou bloqueado pelo Diretor.
 | Tabela | Conteúdo |
 |---|---|
 | `rooms` | Salas reais do CCN1/CCN2 — `dept_id` nulo significa sala compartilhada (só o Diretor gerencia) |
-| `courses` | Disciplinas — `blocks` (jsonb) guarda uma lista de `{dias, início, fim}`, permitindo mais de um horário por disciplina |
+| `courses` | Disciplinas — `blocks` (jsonb) guarda uma lista de `{dias, início, fim}`, permitindo mais de um horário por disciplina; `teacher` guarda o(s) docente(s) da turma; `room_by_day` (jsonb) mapeia cada dia pra sala alocada nele, permitindo salas diferentes em dias diferentes (dia ausente = ainda não alocado); `period` (ex. `"2026.1"`) marca o período letivo — só o mais recente é editável, os demais ficam somente leitura |
 | `room_features` | Catálogo de recursos selecionáveis ao editar uma sala |
 | `dept_statuses` | Status de cada departamento (`active` / `finished` / `force_finished`) |
 | `notifications` | Notificações que o Diretor recebe quando um departamento conclui sua alocação |

@@ -43,7 +43,7 @@ function generate() {
         dept_id: dept,
         blocks: [{ days: r() < .5 ? ['Segunda', 'Quarta'] : ['Terça', 'Quinta'], sh, eh }],
         enroll: 20 + Math.floor(r() * 40),
-        room: null,
+        room_by_day: {},
       });
     });
   });

@@ -17,18 +17,38 @@ create table courses (
   id      text primary key,
   code    text not null,
   name    text not null,
-  sec     integer not null,
+  -- Nullable on purpose: an ODS import with the "Turma" column left blank
+  -- (see parseFlatCourseRows in classroom-allocation.jsx) has no real turma
+  -- number to store. `sec IS NULL` is itself the "not informed" signal — the
+  -- UI shows a "Turma N" badge only when `sec` is set. Manual creation via
+  -- CourseEditModal always provides a real sec (the form requires one).
+  sec     integer,
   dept_id text not null,
+  -- "2026.1"-style string (ano.período) — qual período letivo esta disciplina
+  -- pertence a. Só o período mais recente (maior string, ordenação lexical
+  -- já funciona pro formato ano.período) é editável; os demais são somente
+  -- leitura na UI (classroom-allocation.jsx: allPeriods/currentPeriod). id
+  -- inclui o período (courseId) pra não colidir entre períodos diferentes
+  -- com o mesmo código+seção (a mesma disciplina se repete todo período).
+  period  text not null default '2026.1',
+  teacher text not null default '',
   -- A course can meet on different days at different times (real SIGAA
   -- imports have ~5% of turmas like this, e.g. Monday one time block,
   -- Friday another) — one row per meeting block:
   -- [{"days":["Terça","Quinta"],"sh":8,"eh":10}, {"days":["Sexta"],"sh":14,"eh":16}]
   blocks  jsonb not null default '[]',
   enroll  integer not null,
-  room    text references rooms(id) on delete set null
+  -- A disciplina pode estar em salas diferentes em dias diferentes (ex.:
+  -- Segunda na Sala A, Quarta na Sala B) — não dá pra modelar isso com uma
+  -- FK de sala única. room_by_day mapeia cada dia (string igual aos valores
+  -- em blocks[].days, ex. "Segunda") para o id da sala alocada nesse dia;
+  -- um dia ausente do mapa = ainda não alocado. Sem FK de banco pra cada
+  -- valor (jsonb não suporta isso nativamente) — aceitável para o estágio
+  -- de protótipo, como as outras FKs "soft" já documentadas neste arquivo.
+  room_by_day jsonb not null default '{}'
 );
-create index courses_room_idx on courses(room);
 create index courses_dept_idx on courses(dept_id);
+create index courses_dept_period_idx on courses(dept_id, period);
 
 create table dept_statuses (
   dept_id text primary key,

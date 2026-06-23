@@ -42,26 +42,69 @@ const courseOccupiesDay=(course,day)=>course.blocks.some(b=>b.days.includes(day)
 const blockForDay=(course,day)=>course.blocks.find(b=>b.days.includes(day));
 const fmtSchedule=course=>course.blocks.map(b=>`${b.days.map(d=>d.slice(0,3)).join('/')} ${fmtHour(b.sh)}–${fmtHour(b.eh)}`).join('; ');
 
-function buildAlloc(courses){const m={};courses.forEach(c=>{if(!c.room)return;c.blocks.forEach(block=>{block.days.forEach(day=>{for(let h=block.sh;h<block.eh;h++){const k=`${c.room}|${day}|${h}`;if(!m[k])m[k]=[];m[k].push(c);}});});});return m;}
-function roomFree(rid,course,alloc){for(const block of course.blocks)for(const day of block.days)for(let h=block.sh;h<block.eh;h++)if((alloc[`${rid}|${day}|${h}`]||[]).length)return false;return true;}
-function getConflicts(rid,course,alloc,courses){const ids=new Set();for(const block of course.blocks)for(const day of block.days)for(let h=block.sh;h<block.eh;h++)(alloc[`${rid}|${day}|${h}`]||[]).forEach(c=>{if(c.id!==course.id)ids.add(c.id);});return[...ids].map(id=>courses.find(c=>c.id===id)).filter(Boolean);}
+// A disciplina pode estar em salas diferentes em dias diferentes (ex.:
+// Segunda na Sala A, Quarta na Sala B) — por isso `room` não é mais um campo
+// único: course.roomByDay = {[dia]: roomId}, um dia ausente = não alocado
+// ainda. courseDays junta os dias de todos os blocos (sem repetir).
+const courseDays=course=>[...new Set(course.blocks.flatMap(b=>b.days))];
+const hasAnyAllocation=course=>Object.keys(course.roomByDay||{}).length>0;
+const isFullyAllocated=course=>{const days=courseDays(course);return days.length>0&&days.every(d=>course.roomByDay?.[d]);};
+
+function buildAlloc(courses){const m={};courses.forEach(c=>{const rbd=c.roomByDay||{};c.blocks.forEach(block=>{block.days.forEach(day=>{const rid=rbd[day];if(!rid)return;for(let h=block.sh;h<block.eh;h++){const k=`${rid}|${day}|${h}`;if(!m[k])m[k]=[];m[k].push(c);}});});});return m;}
+// `day` omitido = checa a disciplina inteira (todos os dias/blocos) — usado
+// pela ListView, que aloca todos os dias na mesma sala de uma vez. `day`
+// informado = checa só aquele dia — usado pela Grade, que aloca dia a dia.
+function roomFree(rid,course,alloc,day){for(const block of course.blocks)for(const d of block.days){if(day&&d!==day)continue;for(let h=block.sh;h<block.eh;h++)if((alloc[`${rid}|${d}|${h}`]||[]).length)return false;}return true;}
+function getConflicts(rid,course,alloc,courses,day){const ids=new Set();for(const block of course.blocks)for(const d of block.days){if(day&&d!==day)continue;for(let h=block.sh;h<block.eh;h++)(alloc[`${rid}|${d}|${h}`]||[]).forEach(c=>{if(c.id!==course.id)ids.add(c.id);});}return[...ids].map(id=>courses.find(c=>c.id===id)).filter(Boolean);}
 function rowSlots(rid,day,alloc){const slots=[];let h=HOURS[0];const maxH=HOURS[HOURS.length-1]+1;while(h<maxH){const arr=alloc[`${rid}|${day}|${h}`]||[];if(arr.length){const c=arr[0];const block=blockForDay(c,day);if(block.sh===h){slots.push({h,span:block.eh-block.sh,c,merged:arr.length-1});h=block.eh;}else h++;}else{slots.push({h,span:1,c:null,merged:0});h++;}}return slots;}
+// Texto da sala pra exibir no card da disciplina: se todos os dias já
+// alocados estão na mesma sala (o caso comum), mostra só o nome da sala;
+// senão, detalha sala por dia (curso alocado em salas diferentes, ou ainda
+// parcialmente alocado).
+function fmtRoomByDay(course,rooms){
+  const days=courseDays(course),rbd=course.roomByDay||{};
+  const allocatedDays=days.filter(d=>rbd[d]);
+  if(allocatedDays.length===0)return null;
+  const uniqueRooms=new Set(allocatedDays.map(d=>rbd[d]));
+  if(uniqueRooms.size===1&&allocatedDays.length===days.length){
+    const rid=rbd[allocatedDays[0]];
+    return rooms.find(r=>r.id===rid)?.label??rid;
+  }
+  return allocatedDays.map(d=>`${d.slice(0,3)}: ${rooms.find(r=>r.id===rbd[d])?.label??rbd[d]}`).join(' · ');
+}
 function fmtHour(h){return`${String(h).padStart(2,'0')}:00`;}
 
-// ─── Catálogo de disciplinas (criação manual + import CSV) ───────────────────
-// id derivado de dept+código+seção: dobra como detector de duplicata (colisão
-// de PK = erro claro) já que `code` não tem unicidade no schema. código/seção
-// não são editáveis após a criação (só name/days/sh/eh/enroll mudam), então o
-// id nunca precisa ser regenerado — não adicione edição de código/seção sem
-// revisitar isto.
+// ─── Catálogo de disciplinas (criação manual + import ODS) ───────────────────
+// id derivado de dept+código+seção+período: dobra como detector de duplicata
+// (colisão de PK = erro claro) já que `code` não tem unicidade no schema.
+// Período entra no id porque a mesma disciplina (código+seção) se repete a
+// cada período letivo — sem ele, importar/criar a "mesma" disciplina num
+// período novo colidiria com o registro (read-only) do período antigo.
+// código/seção não são editáveis após a criação (só name/days/sh/eh/enroll
+// mudam), então o id nunca precisa ser regenerado — não adicione edição de
+// código/seção sem revisitar isto.
 const slugify=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
-const courseId=(deptId,code,sec)=>`${deptId}-${slugify(code)}-${sec}`;
+const courseId=(deptId,code,sec,period)=>`${deptId}-${slugify(code)}-${sec}-${slugify(period)}`;
+// "2026.1" — ano.período; "o período mais recente" é só o maior valor em
+// allPeriods.sort(comparePeriods) — não existe uma tabela/flag separada pra
+// "período atual". Comparação numérica, não lexical: "2026.10" > "2026.2"
+// lexicalmente (compara caractere a caractere) mas é "2026.2" que vem depois
+// numericamente — comparePeriods evita essa pegadinha mesmo sendo um caso
+// raro na prática (a maioria dos calendários acadêmicos não passa de .1/.2/.3).
+const DEFAULT_PERIOD='2026.1';
+const PERIOD_RE=/^\d{4}\.\d+$/;
+const comparePeriods=(a,b)=>{
+  const[ay,an]=a.split('.').map(Number),[by,bn]=b.split('.').map(Number);
+  return ay!==by?ay-by:an-bn;
+};
 
-// Lê um relatório de oferta de turmas do SIGAA (.csv/.ods/.xlsx) — não é uma
-// planilha de uma disciplina por linha, é um bloco "cabeçalho de disciplina"
-// seguido de uma ou mais linhas de turma:
-//   "DMA0192 - ALGEBRA LINEAR (GRADUAÇÃO)"
-//   "2026.1","Turma 01","<docente>","REGULAR","ABERTA","35M34","Sala X","33/50 alunos"
+// Planilha (.csv/.ods/.xlsx) com uma linha por disciplina/turma — modelo
+// próprio do app (não o relatório bruto do SIGAA, que vem em blocos
+// cabeçalho+turmas e exige outra estrutura). Colunas, na ordem:
+//   Código | Nome | Turma | Docente(s) | Horário | Alunos Mat.
+// "Turma" é opcional: em branco, a linha não recebe número de turma nenhum
+// (não é inventado a partir da ordem das linhas) — só é preciso preencher
+// quando o mesmo código tem mais de uma turma no arquivo, para diferenciá-las.
 
 // Parser de CSV com suporte a campos entre aspas (a célula "Docente(s)" do
 // SIGAA costuma ter vírgulas dentro, ex. "NOME (20h), OUTRO NOME (20h)" — um
@@ -100,6 +143,18 @@ async function parseSheetRows(file){
 const SIGAA_DAY_DIGIT={2:'Segunda',3:'Terça',4:'Quarta',5:'Quinta',6:'Sexta',7:'Sábado'};
 const SIGAA_SHIFT_BASE={M:5,T:11,N:17}; // hora(slot n) = base+n — M1=6h,T1=12h,N1=18h
 
+// A célula "Docente(s)" do SIGAA traz "<matrícula> - <NOME> (<carga>h)" por
+// professor, podendo ter mais de um separado por ", " e " e " antes do
+// último (ex.: "123 - A (20h), 456 - B (20h) e 789 - C (20h)") — extrai só
+// os nomes, descartando matrícula e carga horária. Sem matches reconhecidos,
+// devolve a célula como veio em vez de descartar a informação.
+function parseTeacherNames(raw){
+  const str=(raw??'').toString().trim();
+  if(!str)return'';
+  const names=[...str.matchAll(/\d+\s*-\s*([^()]+?)\s*\(\d+h?\)/gi)].map(m=>m[1].trim()).filter(Boolean);
+  return names.length?names.join(', '):str;
+}
+
 // "35M34 (10/03/2026 - 11/07/2026)" → ignora a faixa de datas; pode ter mais
 // de um bloco separado por espaço (dias/horários diferentes na mesma turma,
 // ex. "2T456 6T56" = Segunda à tarde num horário, Sexta noutro).
@@ -118,39 +173,65 @@ function parseHorarioToBlocks(raw){
   return{blocks,errors};
 }
 
-// Agrupa as linhas em disciplinas+turmas. `rows` é um array de arrays já sem
-// a linha de título (ela é sempre a primeira e é descartada aqui).
-function groupSigaaRows(rows){
+// Lê as linhas (uma por disciplina/turma). `rows` é um array de arrays já
+// sem a linha de título (ela é sempre a primeira e é descartada aqui).
+// "Turma" em branco fica sem número de turma — a decisão de numerar (e como)
+// é do usuário; o sistema nunca inventa um número a partir da ordem das
+// linhas. Duas linhas do mesmo código sem Turma preenchida são tratadas como
+// a mesma turma (erro de duplicata), forçando quem importou a diferenciá-las.
+function parseFlatCourseRows(rows){
   const out=[];
-  let current=null;
   rows.slice(1).forEach(row=>{
-    const col1=(row[1]??'').toString().trim();
-    if(!col1){
-      const text=(row[0]??'').toString().trim();
-      const m=text.match(/^(.+?)\s-\s(.+?)\s\(([^)]*)\)\s*$/);
-      current=m?{code:m[1].trim(),name:m[2].trim()}:{code:text,name:text,headerError:`Cabeçalho de disciplina não reconhecido: "${text}"`};
-      return;
-    }
+    const code=(row[0]??'').toString().trim();
+    const name=(row[1]??'').toString().trim();
+    if(!code&&!name)return; // linha em branco
     const errors={};
-    if(!current)errors.codigo='Linha de turma sem cabeçalho de disciplina associado';
-    else if(current.headerError)errors.codigo=current.headerError;
-    const secMatch=col1.match(/Turma\s+(\d+)/i);
-    if(!secMatch)errors.secao=`Não foi possível identificar a seção em "${col1}"`;
-    const situacao=(row[4]??'').toString().trim().toUpperCase();
-    const skipped=situacao!==''&&situacao!=='ABERTA';
-    const{blocks,errors:horarioErrors}=parseHorarioToBlocks(row[5]);
+    if(!code)errors.codigo='Obrigatório';
+    if(!name)errors.nome='Obrigatório';
+    const turmaRaw=(row[2]??'').toString().trim();
+    let sec=null;
+    if(turmaRaw){
+      const explicitSec=Number(turmaRaw);
+      if(Number.isInteger(explicitSec)&&explicitSec>=1)sec=explicitSec;
+      else errors.secao=`Turma deve ser um número inteiro ≥ 1 (recebido "${turmaRaw}")`;
+    }
+    const teacher=parseTeacherNames(row[3]);
+    const{blocks,errors:horarioErrors}=parseHorarioToBlocks(row[4]);
     if(horarioErrors.length)errors.horario=horarioErrors.join('; ');
     else if(blocks.length===0)errors.horario='Horário vazio ou não reconhecido';
-    const matMatch=(row[7]??'').toString().match(/(\d+)/);
+    const matMatch=(row[5]??'').toString().match(/(\d+)/);
     const enroll=matMatch?Number(matMatch[1]):NaN;
-    if(!Number.isInteger(enroll)||enroll<0)errors.matriculados=`Matrícula não reconhecida em "${row[7]}"`;
+    if(!Number.isInteger(enroll)||enroll<0)errors.matriculados=`Matrícula não reconhecida em "${row[5]}"`;
     out.push({
-      raw:{codigo:current?.code,nome:current?.name,turma:col1,situacao:row[4],horario:row[5],matriculados:row[7]},
-      normalized:{code:current?.code,name:current?.name,sec:secMatch?Number(secMatch[1]):null,blocks,enroll},
-      errors,skipped,skipReason:skipped?`Situação: ${row[4]}`:null,
+      raw:{codigo:row[0],nome:row[1],turma:row[2],docente:row[3],horario:row[4],matriculados:row[5]},
+      normalized:{code,name,sec,teacher,blocks,enroll},
+      errors,
     });
   });
   return out;
+}
+
+// Gera e baixa um .ods de exemplo no formato esperado pelo import, com
+// disciplinas cobrindo os casos que mais geram dúvida ao preencher: professor
+// único, múltiplos docentes na mesma turma, horários em dias diferentes da
+// semana (bloco de "Horário" com mais de um código separado por espaço), e um
+// código com duas turmas — único caso em que "Turma" precisa ser preenchida,
+// pra diferenciá-las (nos demais exemplos ela fica em branco de propósito).
+async function downloadCourseTemplate(){
+  const XLSX=await import('xlsx');
+  const rows=[
+    ['Código','Nome','Turma','Docente(s)','Horário','Alunos Mat.'],
+    ['EX101','Disciplina Exemplo — Professor Único','','JOÃO DA SILVA','35M12',40],
+    ['EX205','Disciplina Exemplo — Múltiplos Docentes','','MARIA OLIVEIRA, PEDRO SANTOS','24T34',35],
+    ['EX310','Disciplina Exemplo — Horários em Dias Diferentes','','ANA PEREIRA','2T456 6T56',28],
+    ['EX415','Disciplina Exemplo — Duas Turmas',1,'CARLOS MENDES','35M34',45],
+    ['EX415','Disciplina Exemplo — Duas Turmas',2,'FERNANDA LIMA','24T12',30],
+  ];
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:10},{wch:40},{wch:7},{wch:32},{wch:14},{wch:13}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Disciplinas');
+  XLSX.writeFile(wb,'modelo-disciplinas.ods',{bookType:'ods'});
 }
 
 // ─── Algoritmo de alocação automática ────────────────────────────────────────
@@ -244,11 +325,11 @@ function Dashboard(){
 
   useRealtimeSync({setRooms,setCourses,setDeptStatuses,setNotifs,setFeatureOptions});
 
+  const[screen,         setScreen]         =useState('select'); // 'select' | 'allocate' | 'map'
   const[selId,          setSelId]          =useState(null);
   const[day,            setDay]            =useState('Segunda');
   const[viewMode,       setViewMode]       =useState('list');
   const[search,         setSearch]         =useState('');
-  const[sidebarTab,     setSidebarTab]     =useState('pending');
   const[finishConfirm,  setFinishConfirm]  =useState(false);
   const[editingCourse,  setEditingCourse]  =useState(null);
   const[creatingCourse, setCreatingCourse] =useState(false);
@@ -258,14 +339,41 @@ function Dashboard(){
   const[deptPanel,      setDeptPanel]      =useState(false);
   const[notifPanel,     setNotifPanel]     =useState(false);
   const[mergeModal,     setMergeModal]     =useState(null);
+  const[dayPickerModal, setDayPickerModal] =useState(null);
   const[showUsers,      setShowUsers]      =useState(false);
   const[toast,          setToast]          =useState(null);
+  const[newPeriodModal, setNewPeriodModal] =useState(false);
+  // null = "segue o período mais recente" (currentPeriod) — assim, quando um
+  // período novo é criado (ou os dados terminam de carregar), o usuário cai
+  // nele automaticamente em vez de ficar presa num valor calculado cedo
+  // demais (antes dos cursos carregarem). Selecionar manualmente um período
+  // existente no dropdown grava aqui; "Voltar ao período atual" limpa pra null.
+  const[periodOverride,setPeriodOverride]  =useState(null);
+  // Períodos criados nesta sessão que ainda não têm nenhuma disciplina —
+  // sem isso, "allPeriods" (abaixo) só sabe de períodos com disciplina, e um
+  // período recém-criado desaparece da lista no instante em que o usuário sai
+  // de vê-lo (periodOverride aponta pra outro valor, então o Set perde a
+  // referência). Não precisa "limpar" depois que ganha uma disciplina de
+  // verdade — o Set abaixo dedup, é inofensivo manter os dois.
+  const[createdPeriods,setCreatedPeriods]  =useState([]);
 
   const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),3200);};
 
+  // "Atual" = sempre o maior valor (comparação numérica ano.período) entre
+  // os períodos conhecidos (com disciplina OU criados nesta sessão) — só ele
+  // é editável.
+  const allPeriods=useMemo(()=>{
+    const s=new Set([...courses.map(c=>c.period),...createdPeriods]);
+    return[...s].sort(comparePeriods);
+  },[courses,createdPeriods]);
+  const currentPeriod=allPeriods[allPeriods.length-1]??DEFAULT_PERIOD;
+  const selectedPeriod=periodOverride??currentPeriod;
+  const isPastPeriod=selectedPeriod!==currentPeriod;
+  const periodCourses=useMemo(()=>courses.filter(c=>c.period===selectedPeriod),[courses,selectedPeriod]);
+
   const d         =gDept(activeDeptId);
-  const alloc     =useMemo(()=>buildAlloc(courses),[courses]);
-  const sel       =useMemo(()=>selId?courses.find(c=>c.id===selId):null,[selId,courses]);
+  const alloc     =useMemo(()=>buildAlloc(periodCourses),[periodCourses]);
+  const sel       =useMemo(()=>selId?periodCourses.find(c=>c.id===selId):null,[selId,periodCourses]);
   const ROOMS     =rooms;
   const myStatus  =isDeptHead?deptStatuses[currentUser.deptId]:null;
   const isLocked  =isDeptHead&&myStatus!==DS.ACTIVE;
@@ -277,64 +385,113 @@ function Dashboard(){
       :ROOMS.filter(r=>r.deptId===currentUser.deptId)
   ,[ROOMS,activeDeptId,isChief,currentUser.deptId]);
 
-  const allUnallocated=useMemo(()=>courses.filter(c=>!c.room),[courses]);
-  const sidebarCourses=useMemo(()=>{
-    const base=isDeptHead?allUnallocated.filter(c=>c.deptId===currentUser.deptId):allUnallocated;
-    if(!search.trim())return base;
-    const q=search.toLowerCase();
-    return base.filter(c=>c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q));
-  },[allUnallocated,isDeptHead,currentUser.deptId,search]);
+  // Lista única — sem aba Pendentes/Alocadas. Pendentes (e parciais) vêm
+  // primeiro, já alocadas (100%) depois e esmaecidas no CourseCard — sort é
+  // estável, então só reagrupa, não embaralha a ordem dentro de cada grupo.
+  const visibleSidebarCourses=useMemo(()=>{
+    const base=isDeptHead?periodCourses.filter(c=>c.deptId===currentUser.deptId):periodCourses;
+    const filtered=search.trim()
+      ?base.filter(c=>{const q=search.toLowerCase();return c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q);})
+      :base;
+    return[...filtered].sort((a,b)=>Number(isFullyAllocated(a))-Number(isFullyAllocated(b)));
+  },[periodCourses,isDeptHead,currentUser.deptId,search]);
+  const pendingCount=useMemo(()=>visibleSidebarCourses.filter(c=>!isFullyAllocated(c)).length,[visibleSidebarCourses]);
+  const allocatedCount=visibleSidebarCourses.length-pendingCount;
 
-  const allAllocated=useMemo(()=>courses.filter(c=>c.room),[courses]);
-  const allocatedSidebarCourses=useMemo(()=>{
-    const base=isDeptHead?allAllocated.filter(c=>c.deptId===currentUser.deptId):allAllocated;
-    if(!search.trim())return base;
-    const q=search.toLowerCase();
-    return base.filter(c=>c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q));
-  },[allAllocated,isDeptHead,currentUser.deptId,search]);
-  const visibleSidebarCourses=sidebarTab==='pending'?sidebarCourses:allocatedSidebarCourses;
-
-  const autoAllocInput=useMemo(()=>
-    isDeptHead?allUnallocated.filter(c=>c.deptId===currentUser.deptId):allUnallocated
-  ,[allUnallocated,isDeptHead,currentUser.deptId]);
+  // Alvo do "Alocar Automaticamente": só disciplinas com ZERO dias alocados.
+  // O algoritmo (autoAllocate) só sabe propor uma sala única pra semana toda
+  // — rodar nele uma disciplina parcial sobrescreveria silenciosamente os
+  // dias que o usuário já tinha colocado manualmente em salas diferentes.
+  const autoAllocInput=useMemo(()=>{
+    const base=isDeptHead?periodCourses.filter(c=>c.deptId===currentUser.deptId):periodCourses;
+    return base.filter(c=>!hasAnyAllocation(c));
+  },[periodCourses,isDeptHead,currentUser.deptId]);
 
   const stats=useMemo(()=>{
-    const mine=courses.filter(c=>c.deptId===activeDeptId),done=mine.filter(c=>c.room);
-    return{total:mine.length,done:done.length,pend:mine.length-done.length,cross:done.filter(c=>!c.room.startsWith(activeDeptId)).length};
-  },[courses,activeDeptId]);
+    const mine=periodCourses.filter(c=>c.deptId===activeDeptId),done=mine.filter(isFullyAllocated);
+    const cross=mine.filter(c=>Object.values(c.roomByDay||{}).some(rid=>rid&&!rid.startsWith(activeDeptId))).length;
+    return{total:mine.length,done:done.length,pend:mine.length-done.length,cross};
+  },[periodCourses,activeDeptId]);
 
-  const canAllocate   =isChief||(isDeptHead&&!isLocked);
-  const canDealloc    =isChief||(isDeptHead&&!isLocked);
+  // Período passado é somente leitura pra todo mundo, CHIEF incluso — não dá
+  // pra reescrever histórico mesmo sendo diretor.
+  const canAllocate   =!isPastPeriod&&(isChief||(isDeptHead&&!isLocked));
+  const canDealloc    =!isPastPeriod&&(isChief||(isDeptHead&&!isLocked));
   const canMerge      =canAllocate&&can(PERMS.MERGE_GROUPS);
   const canEditFeatures=isChief;
   const canEditCourse =canAllocate;
   const canManageCatalog=canAllocate;
   const targetDeptId  =isChief?activeDeptId:currentUser.deptId;
+  // Salas (ListView) é uma ferramenta de ação — clicar aloca. Sem ação
+  // possível num período passado, ela não tem valor como leitura (ao
+  // contrário da Grade, que serve bem só pra consultar onde algo ficou).
+  // Força Horários sem precisar de efeito: a UI renderiza por este valor,
+  // não pelo `viewMode` bruto, então não há "vazamento" de um clique antigo.
+  const effectiveViewMode=isPastPeriod?'grid':viewMode;
 
-  const tryAllocate=rid=>{
+  // Clique vindo da Grade — sempre um dia específico (a aba ativa). Mesclar
+  // exige saber qual bloco/horário está em conflito pra mostrar no modal, daí
+  // só fazer sentido aqui (dia único), não no fluxo "todos os dias" da Salas.
+  const tryAllocate=(rid,day)=>{
     if(!canAllocate||!sel)return;
-    if(roomFree(rid,sel,alloc))forceAllocate(rid);
-    else if(canMerge)setMergeModal({roomId:rid});
+    if(roomFree(rid,sel,alloc,day))forceAllocate(rid,day);
+    else if(canMerge)setMergeModal({roomId:rid,day});
   };
-  const forceAllocate=async rid=>{
+  // Clique vindo da vista em Salas — sem aba de dia, então primeiro confirma
+  // se a sala está livre pra disciplina inteira (se não, não há um único dia
+  // óbvio pra mesclar; manda usar a Grade). Se estiver livre e a disciplina
+  // ocorrer em mais de um dia, pergunta quais dias alocar nesta sala em vez
+  // de assumir "todos" de cara — DayPickerModal faz essa pergunta.
+  const trySalasAllocate=rid=>{
+    if(!canAllocate||!sel)return;
+    if(!roomFree(rid,sel,alloc)){
+      showToast('Sala ocupada em algum dia da semana — use a vista "Horários" para ver dia a dia e mesclar se necessário.','warn');
+      return;
+    }
+    if(courseDays(sel).length<=1)forceAllocate(rid,null);
+    else setDayPickerModal({roomId:rid});
+  };
+  // `days` aceita: undefined/null → todos os dias da disciplina (vista em
+  // Salas, "todos os dias"); uma string → um único dia (clique na Grade);
+  // um array → o subconjunto escolhido no DayPickerModal (vista em Salas,
+  // "dias específicos").
+  const forceAllocate=async(rid,days)=>{
     if(!sel)return;
     const course=sel,room=ROOMS.find(r=>r.id===rid);
-    setSelId(null);setMergeModal(null);
+    const targetDays=days==null?courseDays(course):Array.isArray(days)?days:[days];
+    const nextRoomByDay={...course.roomByDay};
+    targetDays.forEach(d=>{nextRoomByDay[d]=rid;});
+    setMergeModal(null);setDayPickerModal(null);
+    // Mantém a disciplina selecionada se ainda faltar alocar outro dia dela
+    // (fluxo da Grade: aloca Segunda, troca a aba pra Quarta, aloca de novo
+    // sem precisar reselecionar) — só desmarca quando ficar 100% alocada.
+    const stillSelected=courseDays(course).some(d=>!nextRoomByDay[d]);
+    setSelId(stillSelected?course.id:null);
     if(isChief)setActiveDeptId(course.deptId);
+    const daysLabel=days==null?'todos os dias':targetDays.join(', ');
     try{
-      await db.allocateCourse(course.id,rid);
-      showToast(`${course.code} alocada em ${room?.label??rid}.`,'ok');
+      await db.setCourseRoomByDay(course.id,nextRoomByDay);
+      showToast(`${course.code} alocada em ${room?.label??rid} (${daysLabel}).`,'ok');
     }catch(e){
       showToast(`Falha ao alocar: ${e.message}`,'err');
     }
   };
-  const deallocate=async cid=>{
+  // `day` presente = remove só a sala daquele dia (clique no chip da Grade);
+  // ausente = remove a alocação inteira (botão "remover" da barra lateral).
+  const deallocate=async(cid,day)=>{
     if(!canDealloc)return;
     const course=courses.find(c=>c.id===cid);
-    const roomLabel=course?.room?ROOMS.find(r=>r.id===course.room)?.label:null;
+    if(!course)return;
+    const oldRoomByDay=course.roomByDay||{};
+    const roomLabel=day
+      ?ROOMS.find(r=>r.id===oldRoomByDay[day])?.label
+      :fmtRoomByDay(course,ROOMS);
+    const nextRoomByDay=day
+      ?Object.fromEntries(Object.entries(oldRoomByDay).filter(([d])=>d!==day))
+      :{};
     try{
-      await db.deallocateCourse(cid);
-      showToast(`${course?.code??cid} desalocada${roomLabel?` (estava em ${roomLabel})`:''}.`,'warn');
+      await db.setCourseRoomByDay(cid,nextRoomByDay);
+      showToast(`${course.code} desalocada${day?` (${day})`:''}${roomLabel?` (estava em ${roomLabel})`:''}.`,'warn');
     }catch(e){
       showToast(`Falha ao desalocar: ${e.message}`,'err');
     }
@@ -372,27 +529,38 @@ function Dashboard(){
   };
   const handleEditCourse=async(courseId,changes)=>{
     setEditingCourse(null);
+    if(!canEditCourse)return;
     const original=courses.find(c=>c.id===courseId);
     if(!original)return;
     const updated={...original,...changes};
-    let finalRoom=updated.room;
+    let finalRoomByDay=original.roomByDay||{};
     // TODO (production): conflict check reads from local realtime-synced state,
     // not a fresh DB read — acceptable race window for this prototype's scale.
-    if(finalRoom&&changes.blocks!==undefined){
-      const others=courses.filter(c=>c.room===finalRoom&&c.id!==courseId);
-      if(!roomFree(finalRoom,updated,buildAlloc(others))){
-        finalRoom=null;
-        showToast('Horário alterado — sala removida. Por favor, realoque.','warn');
-      }
+    if(changes.blocks!==undefined){
+      const newDays=new Set(courseDays(updated));
+      // Conflito só importa dentro do mesmo período — outro período não
+      // disputa sala com este (eles nem coexistem na grade ao mesmo tempo).
+      const others=courses.filter(c=>c.id!==courseId&&c.period===original.period);
+      const othersAlloc=buildAlloc(others);
+      const next={};let droppedAny=false;
+      Object.entries(finalRoomByDay).forEach(([day,rid])=>{
+        // o dia some do novo horário, ou a sala que já tinha deixou de estar
+        // livre nele (mudou o horário pra um que colide com outra disciplina)
+        if(newDays.has(day)&&roomFree(rid,updated,othersAlloc,day))next[day]=rid;
+        else droppedAny=true;
+      });
+      finalRoomByDay=next;
+      if(droppedAny)showToast('Horário alterado — sala removida em algum dia. Por favor, realoque.','warn');
     }
     try{
-      await db.editCourse(courseId,{...changes,room:finalRoom});
+      await db.editCourse(courseId,{...changes,roomByDay:finalRoomByDay});
     }catch(e){
       showToast(`Falha ao salvar disciplina: ${e.message}`,'err');
     }
   };
   const handleCreateCourse=async course=>{
     setCreatingCourse(false);
+    if(!canManageCatalog)return;
     try{
       await db.createCourse(course);
       showToast(`${course.code} criada.`,'ok');
@@ -402,20 +570,37 @@ function Dashboard(){
   };
   const handleImportCourses=async newCourses=>{
     setImportingCourses(false);
+    if(!canManageCatalog)return;
     try{
-      await db.replaceDeptCourses(targetDeptId,newCourses);
-      showToast(`${newCourses.length} disciplina${newCourses.length!==1?'s':''} importada${newCourses.length!==1?'s':''} para ${gDept(targetDeptId)?.full}.`,'ok');
+      await db.replaceDeptCourses(targetDeptId,selectedPeriod,newCourses);
+      showToast(`${newCourses.length} disciplina${newCourses.length!==1?'s':''} importada${newCourses.length!==1?'s':''} para ${gDept(targetDeptId)?.full} (${selectedPeriod}).`,'ok');
     }catch(e){
       showToast(`Falha ao importar disciplinas: ${e.message}`,'err');
     }
   };
 
+  // Período é só uma string carimbada em cada disciplina — não existe uma
+  // tabela de períodos. "Criar" um período é só passar a selecioná-lo
+  // (periodOverride); ele só persiste de fato quando algo é criado/importado
+  // nele. Só o Diretor decide quando um novo período letivo começa.
+  const handleCreatePeriod=newPeriod=>{
+    const trimmed=newPeriod.trim();
+    if(!PERIOD_RE.test(trimmed)){showToast('Período deve seguir o formato AAAA.N, ex.: 2026.2.','err');return;}
+    if(comparePeriods(trimmed,currentPeriod)<=0){showToast(`O novo período precisa ser posterior a ${currentPeriod}.`,'err');return;}
+    setNewPeriodModal(false);
+    setCreatedPeriods(prev=>prev.includes(trimmed)?prev:[...prev,trimmed]);
+    setPeriodOverride(trimmed);
+    setSelId(null);
+    showToast(`Período ${trimmed} criado e selecionado.`,'ok');
+  };
+
   const handleAutoAllocate=()=>{
+    if(!canManageCatalog)return;
     if(autoAllocInput.length===0){showToast('Não há disciplinas para alocar.','warn');return;}
     setAutoAllocResult(autoAllocate(autoAllocInput,visRooms,alloc));
   };
   const handleApplyAllocation=async()=>{
-    if(!autoAllocResult)return;
+    if(!autoAllocResult||!canManageCatalog)return;
     const{assignments}=autoAllocResult;
     setAutoAllocResult(null);setSelId(null);
     try{
@@ -427,6 +612,7 @@ function Dashboard(){
   };
 
   const handleFinish=async()=>{
+    if(isPastPeriod)return;
     setSelId(null);setFinishConfirm(false);
     try{
       await db.finishDept(currentUser.deptId,gDept(currentUser.deptId)?.full,currentUser.name);
@@ -446,7 +632,7 @@ function Dashboard(){
   const markNotifsRead=()=>{db.markAllNotificationsRead().catch(()=>{});};
 
   const mergeRoom  =mergeModal?ROOMS.find(r=>r.id===mergeModal.roomId):null;
-  const mergeCons  =(mergeModal&&sel)?getConflicts(mergeModal.roomId,sel,alloc,courses):[];
+  const mergeCons  =(mergeModal&&sel)?getConflicts(mergeModal.roomId,sel,alloc,courses,mergeModal.day):[];
   const mergeTotal =sel?mergeCons.reduce((s,c)=>s+c.enroll,0)+sel.enroll:0;
   const dClr       =dtc(d,theme);
   const selBannerBg=dbg(d,theme);
@@ -454,6 +640,8 @@ function Dashboard(){
 
   if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Carregando dados…</div>;
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
+  if(screen==='select')return<ScreenSelector onPick={setScreen}/>;
+  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} onBack={()=>setScreen('select')}/>;
 
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -467,6 +655,7 @@ function Dashboard(){
         .cc:hover{background:${T.hover}!important;}
         .cc.sel{background:${selBannerBg}!important;border-color:${d.clr}!important;}
         .cc.locked{opacity:.5;cursor:default!important;}
+        .cc.done:not(.sel){opacity:.5;}
         .gridcell-hl:hover{background:${d.clr}44!important;}
         .gridcell-merge:hover{background:#F59E0B33!important;}
         .chip-own:hover{filter:brightness(${theme==='light'?'.92':'1.15'});}
@@ -482,6 +671,8 @@ function Dashboard(){
 
       {/* Cabeçalho */}
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+        <button className="icon-btn" onClick={()=>setScreen('select')} title="Voltar ao menu"
+          style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>☰</button>
         {isChief?(
           <select value={activeDeptId} onChange={e=>{setActiveDeptId(e.target.value);setSelId(null);}}
             style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:dClr,fontSize:12,fontWeight:600,outline:'none',cursor:'pointer'}}>
@@ -493,6 +684,13 @@ function Dashboard(){
             <span style={{fontSize:12,fontWeight:600,color:dClr}}>{d.full}</span>
           </div>
         )}
+        <div style={{width:1,height:20,background:T.bdr2}}/>
+        <select value={selectedPeriod} onChange={e=>{setPeriodOverride(e.target.value===currentPeriod?null:e.target.value);setSelId(null);}}
+          title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:isPastPeriod?T.muted:dClr,fontSize:11,fontWeight:600,outline:'none',cursor:'pointer'}}>
+          {allPeriods.map(p=><option key={p} value={p}>{p}{p===currentPeriod?' (atual)':' — somente leitura'}</option>)}
+        </select>
+        {isChief&&<button className="icon-btn" onClick={()=>setNewPeriodModal(true)} title="Criar novo período letivo" style={{padding:'5px 9px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,fontWeight:700,cursor:'pointer',lineHeight:1}}>+</button>}
+        {isPastPeriod&&<span style={{...mono,fontSize:8,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'3px 7px',whiteSpace:'nowrap'}}>🔒 PERÍODO PASSADO — SOMENTE LEITURA</span>}
         <div style={{flex:1}}/>
         {[['Total',stats.total,T.muted],['Alocadas',stats.done,theme==='light'?'#059669':'#34D399'],['Pendentes',stats.pend,theme==='light'?'#b45309':'#FBBF24'],['Outro Depto',stats.cross,theme==='light'?'#5b21b6':'#A78BFA']].map(([l,v,c])=>(
           <div key={l} style={{textAlign:'center',padding:'0 12px',borderLeft:`1px solid ${T.bdr}`}}>
@@ -524,19 +722,11 @@ function Dashboard(){
         {/* Barra lateral */}
         <aside style={{width:274,borderRight:`1px solid ${T.bdr}`,display:'flex',flexDirection:'column',overflow:'hidden',background:theme==='light'?T.surface:T.card}}>
           <div style={{padding:'10px 12px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
-            <div style={{display:'flex',gap:2,border:`1px solid ${T.bdr2}`,borderRadius:6,overflow:'hidden',marginBottom:8}}>
-              {[['pending','Pendentes'],['allocated','Alocadas']].map(([k,lbl])=>(
-                <button key={k} className={`viewbtn${sidebarTab===k?' active':''}`} onClick={()=>setSidebarTab(k)}
-                  style={{flex:1,padding:'4px 8px',fontSize:10,fontWeight:500,background:'transparent',border:'none',color:sidebarTab===k?dClr:T.muted,transition:'all .12s',cursor:'pointer'}}>{lbl}</button>
-              ))}
-            </div>
             <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Buscar disciplinas…" disabled={isLocked}
               style={{width:'100%',padding:'5px 9px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:11,outline:'none',opacity:isLocked?.6:1}}/>
             <div style={{fontSize:10,color:T.muted,marginTop:5}}>
-              {sidebarTab==='pending'
-                ?<>{sidebarCourses.length} pendentes · {autoAllocInput.length} total não alocadas</>
-                :<>{allocatedSidebarCourses.length} alocadas</>}
+              {pendingCount} pendente{pendingCount!==1?'s':''} · {allocatedCount} alocada{allocatedCount!==1?'s':''}
             </div>
           </div>
 
@@ -554,20 +744,20 @@ function Dashboard(){
           <div style={{flex:1,overflowY:'auto',padding:'5px'}}>
             {visibleSidebarCourses.length===0?(
               <div style={{textAlign:'center',padding:32,color:T.dim}}>
-                <div style={{fontSize:24,marginBottom:8}}>{search?'∅':sidebarTab==='pending'?'✓':'—'}</div>
-                <div style={{fontSize:12}}>{search?'Nenhum resultado':sidebarTab==='pending'?'Todas as disciplinas alocadas':'Nenhuma disciplina alocada ainda'}</div>
+                <div style={{fontSize:24,marginBottom:8}}>{search?'∅':'—'}</div>
+                <div style={{fontSize:12}}>{search?'Nenhum resultado':'Nenhuma disciplina cadastrada ainda'}</div>
               </div>
             ):visibleSidebarCourses.map(c=>(
               <CourseCard key={c.id} course={c} activeDept={gDept(activeDeptId)} showDeptBadge={isChief}
                 selected={selId===c.id} locked={isLocked}
-                roomLabel={sidebarTab==='allocated'?ROOMS.find(r=>r.id===c.room)?.label:undefined}
-                onSelect={sidebarTab==='pending'?()=>selectCourse(c):undefined}
-                onEdit={sidebarTab==='pending'&&canEditCourse?()=>setEditingCourse(c):null}
-                onRemove={sidebarTab==='allocated'&&canDealloc&&!isLocked?()=>deallocate(c.id):null}/>
+                roomLabel={fmtRoomByDay(c,ROOMS)}
+                onSelect={()=>selectCourse(c)}
+                onEdit={canEditCourse?()=>setEditingCourse(c):null}
+                onRemove={hasAnyAllocation(c)&&canDealloc&&!isLocked?()=>deallocate(c.id):null}/>
             ))}
           </div>
 
-          {!isLocked&&(isDeptHead||isChief)&&(
+          {!isLocked&&!isPastPeriod&&(isDeptHead||isChief)&&(
             <div style={{padding:'10px 12px',borderTop:`1px solid ${T.bdr}`,flexShrink:0,display:'flex',flexDirection:'column',gap:6}}>
               {canManageCatalog&&(
                 <div style={{display:'flex',gap:6}}>
@@ -579,7 +769,7 @@ function Dashboard(){
                   <button onClick={()=>setImportingCourses(true)}
                     style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:11,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
                     onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
-                    ⇪ Importar CSV
+                    ⇪ Importar ODS
                   </button>
                 </div>
               )}
@@ -607,13 +797,17 @@ function Dashboard(){
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 16px',borderBottom:`1px solid ${T.bdr}`,background:theme==='light'?T.surface:T.card,flexShrink:0}}>
             <div style={{display:'flex',gap:2,border:`1px solid ${T.bdr2}`,borderRadius:6,overflow:'hidden'}}>
-              {[['list','≡ Salas'],['grid','⊞ Horários']].map(([m,lbl])=>(
-                <button key={m} className={`viewbtn${viewMode===m?' active':''}`} onClick={()=>setViewMode(m)}
-                  style={{padding:'4px 12px',fontSize:10,fontWeight:500,background:'transparent',border:'none',color:viewMode===m?dClr:T.muted,transition:'all .12s',cursor:'pointer'}}>{lbl}</button>
-              ))}
+              {[['list','≡ Salas'],['grid','⊞ Horários']].map(([m,lbl])=>{
+                const disabled=m==='list'&&isPastPeriod;
+                return(
+                  <button key={m} disabled={disabled} title={disabled?'Período passado é somente leitura — use Horários para consultar.':undefined}
+                    className={`viewbtn${effectiveViewMode===m?' active':''}`} onClick={()=>!disabled&&setViewMode(m)}
+                    style={{padding:'4px 12px',fontSize:10,fontWeight:500,background:'transparent',border:'none',color:disabled?T.dim:(effectiveViewMode===m?dClr:T.muted),transition:'all .12s',cursor:disabled?'not-allowed':'pointer',opacity:disabled?.5:1}}>{lbl}</button>
+                );
+              })}
             </div>
             <div style={{width:1,height:16,background:T.bdr2}}/>
-            {viewMode==='grid'&&DAYS.map(dy=>(
+            {effectiveViewMode==='grid'&&DAYS.map(dy=>(
               <button key={dy} onClick={()=>setDay(dy)} style={{padding:'4px 10px',borderRadius:5,fontSize:10,fontWeight:500,background:day===dy?d.clr:'transparent',color:day===dy?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${day===dy?d.clr:T.bdr2}`,transition:'all .12s',cursor:'pointer'}}>{dy.slice(0,3)}</button>
             ))}
             <div style={{flex:1}}/>
@@ -627,21 +821,21 @@ function Dashboard(){
               <span style={{fontSize:11,color:T.txt2,maxWidth:200,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{sel.name}</span>
               <span style={{...mono,fontSize:10,color:T.muted}}>{fmtSchedule(sel)} · {sel.enroll} alunos</span>
               <div style={{flex:1}}/>
-              {viewMode==='grid'&&!courseOccupiesDay(sel,day)&&<span style={{fontSize:9,color:theme==='light'?'#b45309':'#FBBF24'}}>Não ocorre na {day} — mude para {sel.blocks.flatMap(b=>b.days)[0]?.slice(0,3)}</span>}
-              {viewMode==='grid'&&courseOccupiesDay(sel,day)&&<span style={{fontSize:9,color:T.muted}}><span style={{color:d.clr}}>●</span> livre {canMerge&&<><span style={{color:'#F59E0B'}}>●</span> mesclar</>}</span>}
+              {effectiveViewMode==='grid'&&!courseOccupiesDay(sel,day)&&<span style={{fontSize:9,color:theme==='light'?'#b45309':'#FBBF24'}}>Não ocorre na {day} — mude para {sel.blocks.flatMap(b=>b.days)[0]?.slice(0,3)}</span>}
+              {effectiveViewMode==='grid'&&courseOccupiesDay(sel,day)&&<span style={{fontSize:9,color:T.muted}}><span style={{color:d.clr}}>●</span> livre {canMerge&&<><span style={{color:'#F59E0B'}}>●</span> mesclar</>}</span>}
               <button onClick={()=>setSelId(null)} style={{padding:'2px 8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:9,cursor:'pointer'}}>✕</button>
             </div>
           )}
 
           <div style={{flex:1,overflow:'auto',background:T.bg}}>
-            {viewMode==='grid'?(
-              <Grid rooms={visRooms} day={day} alloc={alloc} courses={courses} sel={sel} deptId={activeDeptId} dept={d}
+            {effectiveViewMode==='grid'?(
+              <Grid rooms={visRooms} day={day} alloc={alloc} courses={periodCourses} sel={sel} deptId={activeDeptId} dept={d}
                 canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse}
-                onTryAlloc={tryAllocate} onDealloc={deallocate} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
+                onTryAlloc={rid=>tryAllocate(rid,day)} onDealloc={cid=>deallocate(cid,day)} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
             ):(
-              <ListView rooms={visRooms} alloc={alloc} courses={courses} sel={sel} deptId={activeDeptId} dept={d}
+              <ListView rooms={visRooms} alloc={alloc} courses={periodCourses} sel={sel} deptId={activeDeptId} dept={d}
                 canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse}
-                onTryAlloc={tryAllocate} onDealloc={deallocate} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
+                onTryAlloc={trySalasAllocate} onDealloc={cid=>deallocate(cid,null)} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
             )}
           </div>
         </div>
@@ -651,14 +845,16 @@ function Dashboard(){
       {finishConfirm&&<FinishConfirmModal deptName={gDept(currentUser.deptId)?.full} remaining={autoAllocInput.length} onConfirm={handleFinish} onCancel={()=>setFinishConfirm(false)}/>}
       {deptPanel&&<DeptStatusPanel deptStatuses={deptStatuses} notifications={notifications} onReopen={handleReopen} onForceFinish={handleForceFinish} onClose={()=>setDeptPanel(false)}/>}
       {notifPanel&&<NotifPanel notifications={notifications} onClose={()=>setNotifPanel(false)}/>}
-      {(editingCourse||creatingCourse)&&<CourseEditModal course={editingCourse} isChief={isChief} targetDeptId={targetDeptId} courses={courses}
+      {(editingCourse||creatingCourse)&&<CourseEditModal course={editingCourse} isChief={isChief} targetDeptId={targetDeptId} courses={courses} period={selectedPeriod}
         onSave={handleEditCourse} onCreate={handleCreateCourse} onCancel={()=>{setEditingCourse(null);setCreatingCourse(false);}}/>}
-      {importingCourses&&<CourseImportModal targetDeptId={targetDeptId} deptName={gDept(targetDeptId)?.full}
-        existingCourses={courses.filter(c=>c.deptId===targetDeptId)}
+      {importingCourses&&<CourseImportModal targetDeptId={targetDeptId} deptName={gDept(targetDeptId)?.full} period={selectedPeriod}
+        existingCourses={courses.filter(c=>c.deptId===targetDeptId&&c.period===selectedPeriod)}
         onConfirm={handleImportCourses} onCancel={()=>setImportingCourses(false)}/>}
+      {newPeriodModal&&<NewPeriodModal currentPeriod={currentPeriod} onConfirm={handleCreatePeriod} onCancel={()=>setNewPeriodModal(false)}/>}
       {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
       {autoAllocResult&&<AutoAllocModal result={autoAllocResult} dept={d} onApply={handleApplyAllocation} onCancel={()=>setAutoAllocResult(null)}/>}
-      {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={day} onConfirm={()=>forceAllocate(mergeModal.roomId)} onCancel={()=>setMergeModal(null)}/>}
+      {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={mergeModal.day} onConfirm={()=>forceAllocate(mergeModal.roomId,mergeModal.day)} onCancel={()=>setMergeModal(null)}/>}
+      {dayPickerModal&&sel&&<DayPickerModal room={ROOMS.find(r=>r.id===dayPickerModal.roomId)} course={sel} dept={d} onConfirm={days=>forceAllocate(dayPickerModal.roomId,days)} onCancel={()=>setDayPickerModal(null)}/>}
       {showUsers&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'stretch',justifyContent:'flex-end',zIndex:200}}>
           <div style={{width:'min(900px,95vw)',background:T.surface,borderLeft:`1px solid ${T.bdr}`,display:'flex',flexDirection:'column',animation:'slideIn .2s ease'}}>
@@ -678,17 +874,238 @@ function Dashboard(){
   );
 }
 
+// ─── Seleção de tela inicial ───────────────────────────────────────────────────
+// Tela intermediária pós-login: o usuário escolhe entre o fluxo de alocação
+// (Dashboard de sempre) e o mapa somente-leitura de salas já alocadas, em vez
+// de cair direto na alocação. Não usa nenhum estado do Dashboard — só precisa
+// do callback pra trocar a tela.
+function ScreenSelector({onPick}){
+  const{currentUser,logout}=useAuth();
+  const{T,theme,toggleTheme}=useT();
+  const isChief=currentUser.role===ROLES.CHIEF;
+  const mono={fontFamily:"'DM Mono',monospace"};
+  const cards=[
+    {key:'allocate',icon:'📋',title:'Alocar Disciplinas',desc:'Cadastre disciplinas e aloque-as nas salas do seu departamento.'},
+    {key:'map',icon:'🗺',title:'Mapa de Salas Alocadas',desc:'Veja uma visão ampla de todas as salas já alocadas, por dia e horário.'},
+  ];
+  return(
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        button{font-family:inherit;}
+        .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+      `}</style>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
+        <div style={{flex:1}}/>
+        <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
+          <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
+          <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{isChief?'Diretor':'Chefe de Depto.'}</span>
+        </div>
+        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Sair</button>
+      </div>
+      <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,animation:'fadeIn .2s ease'}}>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontSize:20,fontWeight:700,marginBottom:4}}>O que você quer fazer?</div>
+          <div style={{...mono,fontSize:11,color:T.dim}}>Sistema de Alocação de Salas — CCN/UFPI</div>
+        </div>
+        <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center'}}>
+          {cards.map(c=>(
+            <button key={c.key} onClick={()=>onPick(c.key)}
+              style={{width:260,padding:'28px 24px',background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,cursor:'pointer',textAlign:'left',transition:'all .15s',boxShadow:T.shadowSm}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;e.currentTarget.style.boxShadow=T.shadowMd;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr;e.currentTarget.style.boxShadow=T.shadowSm;}}>
+              <div style={{fontSize:30,marginBottom:14}}>{c.icon}</div>
+              <div style={{fontSize:15,fontWeight:700,color:T.txt,marginBottom:6}}>{c.title}</div>
+              <div style={{fontSize:11,color:T.muted,lineHeight:1.5}}>{c.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tela: mapa de salas alocadas ──────────────────────────────────────────────
+// Visão somente-leitura, sem seleção de disciplina nem ações de alocar/editar —
+// mostra, para todos os departamentos de uma vez, quais salas já têm
+// disciplinas alocadas e em que horário. Reaproveita rowSlots/blockForDay (os
+// mesmos helpers da Grade de alocação) só que sem nenhum callback de clique.
+function RoomMapScreen({rooms,courses,onBack}){
+  const{currentUser,logout}=useAuth();
+  const{T,theme,toggleTheme}=useT();
+  const isChief=currentUser.role===ROLES.CHIEF;
+  const mono={fontFamily:"'DM Mono',monospace"};
+  const[day,setDay]=useState('Segunda');
+  // Período próprio, independente do que está selecionado na tela de
+  // Alocação (são telas-irmãs, não pai/filho) — sempre cai no mais recente.
+  const allPeriods=useMemo(()=>[...new Set(courses.map(c=>c.period))].sort(comparePeriods),[courses]);
+  const currentPeriod=allPeriods[allPeriods.length-1]??DEFAULT_PERIOD;
+  const[periodOverride,setPeriodOverride]=useState(null);
+  const selectedPeriod=periodOverride??currentPeriod;
+  const periodCourses=useMemo(()=>courses.filter(c=>c.period===selectedPeriod),[courses,selectedPeriod]);
+  const alloc=useMemo(()=>buildAlloc(periodCourses),[periodCourses]);
+  const allocatedRoomIds=useMemo(()=>new Set(periodCourses.flatMap(c=>Object.values(c.roomByDay||{}))),[periodCourses]);
+  const allocatedRooms=useMemo(()=>rooms.filter(r=>allocatedRoomIds.has(r.id)),[rooms,allocatedRoomIds]);
+  const deptOrder=id=>{const i=DEPTS.findIndex(d=>d.id===id);return i===-1?DEPTS.length:i;};
+  const presentDepts=useMemo(()=>
+    [...new Set(allocatedRooms.map(r=>r.deptId))].map(gDept).sort((a,b)=>deptOrder(a.id)-deptOrder(b.id))
+  ,[allocatedRooms]);
+  return(
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        button{font-family:inherit;}
+        ::-webkit-scrollbar{width:4px;height:4px;}
+        ::-webkit-scrollbar-track{background:${T.scrollTrack};}
+        ::-webkit-scrollbar-thumb{background:${T.scrollThumb};border-radius:4px;}
+        .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
+        .daybtn:hover{border-color:${T.muted}!important;}
+      `}</style>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+        <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>☰</button>
+        <span style={{fontSize:13,fontWeight:700,color:T.txt}}>🗺 Mapa de Salas Alocadas</span>
+        <div style={{width:1,height:16,background:T.bdr2}}/>
+        <select value={selectedPeriod} onChange={e=>setPeriodOverride(e.target.value===currentPeriod?null:e.target.value)}
+          title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,fontWeight:600,outline:'none',cursor:'pointer'}}>
+          {allPeriods.map(p=><option key={p} value={p}>{p}{p===currentPeriod?' (atual)':''}</option>)}
+        </select>
+        <div style={{width:1,height:16,background:T.bdr2}}/>
+        {DAYS.map(dy=>(
+          <button key={dy} className="daybtn" onClick={()=>setDay(dy)}
+            style={{padding:'4px 10px',borderRadius:5,fontSize:10,fontWeight:500,background:day===dy?T.muted:'transparent',color:day===dy?T.bg:T.muted,border:`1px solid ${day===dy?T.muted:T.bdr2}`,transition:'all .12s',cursor:'pointer'}}>{dy.slice(0,3)}</button>
+        ))}
+        <div style={{flex:1}}/>
+        <span style={{...mono,fontSize:9,color:T.dim}}>{allocatedRooms.length} sala{allocatedRooms.length!==1?'s':''} alocada{allocatedRooms.length!==1?'s':''}</span>
+        <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
+          <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
+          <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{isChief?'Diretor':'Chefe de Depto.'}</span>
+        </div>
+        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Sair</button>
+      </div>
+      {presentDepts.length>0&&(
+        <div style={{display:'flex',alignItems:'center',gap:14,padding:'7px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,flexWrap:'wrap'}}>
+          <span style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>Legenda</span>
+          {presentDepts.map(dp=>(
+            <div key={dp.id??'shared'} style={{display:'flex',alignItems:'center',gap:5}}>
+              <div style={{width:8,height:8,borderRadius:2,background:dp.clr,flexShrink:0}}/>
+              <span style={{...mono,fontSize:9,color:T.muted}}>{dp.full}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{flex:1,overflow:'auto',background:T.bg,padding:16}}>
+        <RoomMapGrid rooms={allocatedRooms} day={day} alloc={alloc}/>
+      </div>
+    </div>
+  );
+}
+
+// Grade somente-leitura usada pelo RoomMapScreen — mesma estrutura de tabela
+// da Grade de alocação, mas agrupada por departamento (não "meu/outro depto")
+// e sem nenhuma interação (sem clique, sem editar, sem mesclar). Linhas de
+// grade verticais + zebra nas linhas + cabeçalho fixo (sticky no topo) ajudam
+// a ler uma tabela larga. Só o cabeçalho é sticky — sticky simultâneo na
+// coluna de sala (left+top juntos) quebra em tabelas com border-collapse:
+// collapse (o cabeçalho passa a renderizar atrás da primeira linha ao rolar
+// horizontalmente), então a coluna de sala rola normalmente.
+function RoomMapGrid({rooms,day,alloc}){
+  const{T,theme}=useT();
+  const CW=76,RH=33,LW=150;
+  const deptOrder=id=>{const i=DEPTS.findIndex(d=>d.id===id);return i===-1?DEPTS.length:i;};
+  const byDeptBuildingLabel=(a,b)=>deptOrder(a.deptId)-deptOrder(b.deptId)||a.building.localeCompare(b.building)||a.label.localeCompare(b.label,undefined,{numeric:true});
+  const sorted=useMemo(()=>[...rooms].sort(byDeptBuildingLabel),[rooms]);
+  const deptCounts=useMemo(()=>{const m={};sorted.forEach(r=>{m[r.deptId]=(m[r.deptId]||0)+1;});return m;},[sorted]);
+  if(sorted.length===0)return(
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',flexDirection:'column',gap:10,padding:40}}>
+      <div style={{fontSize:32,opacity:.15}}>🗺</div>
+      <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Nenhuma sala alocada ainda.</div>
+    </div>
+  );
+  // Marca o início de cada turno (M/T/N — mesma divisão do SIGAA usada em
+  // SIGAA_SHIFT_BASE) com uma linha vertical mais forte, pra cortar visualmente
+  // a tabela larga em Manhã/Tarde/Noite sem precisar de sombreamento extra.
+  const shiftEdge=h=>(h===12||h===18)?`2px solid ${T.bdr2}`:`1px solid ${T.bdr}`;
+  return(
+    <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:LW+CW*HOURS.length,border:`1px solid ${T.bdr}`}}>
+      <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
+      <thead>
+        <tr style={{position:'sticky',top:0,zIndex:5,background:T.surface,boxShadow:theme==='light'?'0 1px 2px rgba(0,0,0,.06)':'none'}}>
+          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,background:T.surface,borderBottom:`1px solid ${T.bdr}`,borderRight:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
+          {HOURS.map(h=><th key={h} style={{padding:'7px 0 7px 5px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,background:T.surface,borderBottom:`1px solid ${T.bdr}`,borderLeft:shiftEdge(h)}}>{h}:00</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {sorted.map((room,idx)=>{
+          const rd=gDept(room.deptId),rdClr=dtc(rd,theme);
+          const slots=rowSlots(room.id,day,alloc);
+          const showDeptSep=idx===0||sorted[idx-1].deptId!==room.deptId;
+          const showBuildingSep=showDeptSep||sorted[idx-1].building!==room.building;
+          const rowBg=idx%2===0?T.bg:(theme==='light'?T.faint:T.inner);
+          return(
+            <Fragment key={room.id}>
+              {showDeptSep&&(
+                <tr><td colSpan={HOURS.length+1} style={{padding:0,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:`${rd.clr}${theme==='light'?'14':'10'}`}}>
+                    <div style={{width:3,height:14,borderRadius:1,background:rd.clr,flexShrink:0}}/>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:rdClr,letterSpacing:1,textTransform:'uppercase'}}>{rd.full}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>· {deptCounts[room.deptId]} sala{deptCounts[room.deptId]!==1?'s':''}</span>
+                  </div>
+                </td></tr>
+              )}
+              {showBuildingSep&&(
+                <tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 21px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5,borderBottom:`1px solid ${T.bdr}`}}>{room.building}</td></tr>
+              )}
+              <tr style={{borderBottom:`1px solid ${T.bdr}`}}>
+                <td style={{padding:'0 6px 0 10px',height:RH,background:rowBg,borderRight:`1px solid ${T.bdr}`}}>
+                  <div style={{display:'flex',alignItems:'center',gap:4}}>
+                    <div style={{width:2,height:18,borderRadius:1,background:rd.clr}}/>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:rdClr,whiteSpace:'nowrap'}}>{room.label}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>{room.cap}</span>
+                  </div>
+                </td>
+                {slots.map((slot,si)=>{
+                  if(slot.c){
+                    const cd=gDept(slot.c.deptId),cdClr=dtc(cd,theme);
+                    const slotBlock=blockForDay(slot.c,day);
+                    return(
+                      <td key={si} colSpan={slot.span} style={{padding:'2px 2px',height:RH,verticalAlign:'middle',background:rowBg,borderLeft:shiftEdge(slot.h),borderRight:`1px solid ${T.bdr}`}}>
+                        <div title={`${slot.c.name}${slot.c.sec!=null?` · Turma ${slot.c.sec}`:''}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos`}
+                          style={{height:'100%',padding:'0 5px',borderRadius:3,background:`${cd.clr}${theme==='light'?'28':'22'}`,borderLeft:`2px solid ${cd.clr}`,display:'flex',alignItems:'center',gap:4,overflow:'hidden'}}>
+                          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:cdClr,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{slot.c.code}</span>
+                          {slot.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:'#d97706',background:'#F59E0B22',borderRadius:2,padding:'0 3px',flexShrink:0}}>+{slot.merged}</span>}
+                        </div>
+                      </td>
+                    );
+                  }
+                  return<td key={si} style={{height:RH,background:rowBg,borderLeft:shiftEdge(slot.h),borderRight:`1px solid ${T.bdr}`}}/>;
+                })}
+              </tr>
+            </Fragment>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 // ─── Card de disciplina ───────────────────────────────────────────────────────
 function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,onSelect,onEdit,onRemove}){
   const{T,theme}=useT();
   const cd=gDept(course.deptId),badgeClr=dtc(cd,theme);
+  const done=isFullyAllocated(course);
   return(
-    <div className={`cc${selected?' sel':''}${locked?' locked':''}`}
-      style={{padding:'8px 10px',borderRadius:6,marginBottom:2,cursor:(locked||!onSelect)?'default':'pointer',background:'transparent',border:`1px solid ${selected?activeDept.clr:T.bdr}`,transition:'background .1s, border-color .1s'}}>
+    <div className={`cc${selected?' sel':''}${locked?' locked':''}${done?' done':''}`}
+      style={{padding:'8px 10px',borderRadius:6,marginBottom:2,cursor:(locked||!onSelect)?'default':'pointer',background:'transparent',border:`1px solid ${selected?activeDept.clr:T.bdr}`,transition:'background .1s, border-color .1s, opacity .15s'}}>
       <div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}>
         <div style={{display:'flex',alignItems:'center',gap:5}}>
           {showDeptBadge&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.id}</span>}
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:showDeptBadge?badgeClr:dtc(activeDept,theme)}} onClick={onSelect}>{course.code}</span>
+          {course.sec!=null&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:3,padding:'1px 4px'}} onClick={onSelect}>Turma {course.sec}</span>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:4}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{course.enroll} alunos</span>
@@ -708,6 +1125,7 @@ function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,o
       </div>
       <div style={{fontSize:11,fontWeight:500,color:T.txt,marginBottom:2,lineHeight:1.3}} onClick={onSelect}>{course.name}</div>
       <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}} onClick={onSelect}>{fmtSchedule(course)}</div>
+      {course.teacher&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} onClick={onSelect} title={course.teacher}>👤 {course.teacher}</div>}
       {roomLabel&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:badgeClr,marginTop:2}}>📍 {roomLabel}</div>}
     </div>
   );
@@ -728,13 +1146,13 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
       <thead>
         <tr style={{position:'sticky',top:0,zIndex:5,background:T.surface,boxShadow:theme==='light'?'0 1px 2px rgba(0,0,0,.06)':'none'}}>
           <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
-          {HOURS.map(h=><th key={h} style={{padding:'7px 0',textAlign:'center',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`}}>{h}:00</th>)}
+          {HOURS.map(h=><th key={h} style={{padding:'7px 0 7px 5px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`}}>{h}:00</th>)}
         </tr>
       </thead>
       <tbody>
         {sorted.map((room,idx)=>{
           const isOwn=room.deptId===deptId,rd=gDept(room.deptId),rdClr=dtc(rd,theme);
-          const free=canAllocate&&sel?roomFree(room.id,sel,alloc):false;
+          const free=canAllocate&&sel?roomFree(room.id,sel,alloc,day):false;
           const hasCon=canAllocate&&sel?!free:false;
           const slots=rowSlots(room.id,day,alloc);
           const selBlock=sel?blockForDay(sel,day):null;
@@ -768,7 +1186,7 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
                     return(
                       <td key={si} colSpan={slot.span} style={{padding:'2px 2px',height:RH,verticalAlign:'middle',background:isMergeZone?(theme==='light'?'#fffbeb':'#F59E0B0f'):'transparent',cursor:isMergeZone?'pointer':'default',transition:'background .1s'}} className={isMergeZone?'gridcell-merge':''} onClick={()=>isMergeZone&&onTryAlloc(room.id)}>
                         <div onClick={e=>{if(isMine&&canDealloc&&!isMergeZone){e.stopPropagation();onDealloc(slot.c.id);}}} className={isMine&&canDealloc?'chip-own':''}
-                          title={`${slot.c.name} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos${isMine&&canDealloc?'\nClique para desalocar':''}${isMergeZone?'\nClique para mesclar':''}`}
+                          title={`${slot.c.name}${slot.c.sec!=null?` · Turma ${slot.c.sec}`:''}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos${isMine&&canDealloc?'\nClique para desalocar':''}${isMergeZone?'\nClique para mesclar':''}`}
                           style={{height:'100%',padding:'0 5px',borderRadius:3,background:isMine?`${cd.clr}${theme==='light'?'28':'22'}`:`${cd.clr}${theme==='light'?'18':'0e'}`,borderLeft:`2px solid ${isMergeZone?'#F59E0B':cd.clr}`,display:'flex',alignItems:'center',gap:4,overflow:'hidden',cursor:isMergeZone?'pointer':isMine&&canDealloc?'pointer':'default',transition:'filter .12s'}}>
                           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:isMergeZone?'#d97706':cdClr,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{slot.c.code}</span>
                           {slot.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:'#d97706',background:'#F59E0B22',borderRadius:2,padding:'0 3px',flexShrink:0}}>+{slot.merged}</span>}
@@ -898,7 +1316,7 @@ function RoomCard({room,sel,alloc,courses,deptId,dept,status,canAllocate,canDeal
           {conflicts.map(c=>{
             const cd=gDept(c.deptId),cdClr=dtc(cd,theme),isMine=c.deptId===deptId;
             return(
-              <div key={c.id} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 6px',background:`${cd.clr}${theme==='light'?'18':'0e'}`,borderRadius:4,marginBottom:2}}>
+              <div key={c.id} title={[c.sec!=null?`Turma ${c.sec}`:null,c.teacher].filter(Boolean).join(' · ')||undefined} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 6px',background:`${cd.clr}${theme==='light'?'18':'0e'}`,borderRadius:4,marginBottom:2}}>
                 <div style={{width:2,height:10,borderRadius:1,background:cd.clr}}/>
                 <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:cdClr,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.code}</span>
                 <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.muted}}>{c.enroll} al.</span>
@@ -1162,6 +1580,49 @@ function FinishConfirmModal({deptName,remaining,onConfirm,onCancel}){
   );
 }
 
+// ─── Modal de novo período letivo (só Diretor) ────────────────────────────────
+// Período não tem tabela própria — é só a string carimbada em cada
+// disciplina (courses.period). "Criar" um aqui só seleciona o valor
+// (Dashboard.handleCreatePeriod); ele só persiste de verdade quando algo é
+// criado/importado nele. Por isso a validação aqui é só de formato e de ser
+// estritamente posterior ao período atual, não uma checagem de unicidade.
+function NewPeriodModal({currentPeriod,onConfirm,onCancel}){
+  const{T,theme}=useT();
+  const mono={fontFamily:"'DM Mono',monospace"};
+  const[value,setValue]=useState('');
+  const[error,setError]=useState(null);
+  const submit=()=>{
+    const trimmed=value.trim();
+    if(!PERIOD_RE.test(trimmed)){setError('Use o formato AAAA.N, ex.: 2026.2.');return;}
+    if(comparePeriods(trimmed,currentPeriod)<=0){setError(`Precisa ser posterior ao período atual (${currentPeriod}).`);return;}
+    onConfirm(trimmed);
+  };
+  return(
+    <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:380,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+          <div style={{fontSize:14,fontWeight:700,color:T.txt}}>Novo Período Letivo</div>
+          <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
+        </div>
+        <div style={{fontSize:11,color:T.txt2,lineHeight:1.6,marginBottom:14}}>
+          O período atual ({currentPeriod}) vira somente leitura assim que um período posterior existir. Disciplinas novas (criadas ou importadas) entram no período selecionado.
+        </div>
+        <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Período (AAAA.N)</label>
+        <input autoFocus value={value} onChange={e=>{setValue(e.target.value);setError(null);}} onKeyDown={e=>e.key==='Enter'&&submit()}
+          placeholder={`ex.: ${currentPeriod.split('.')[0]}.${Number(currentPeriod.split('.')[1]||1)+1}`}
+          style={{width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none',marginBottom:6}}/>
+        {error&&<div style={{fontSize:10,color:'#ef4444',marginBottom:10}}>{error}</div>}
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:14}}>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={submit} style={{padding:'8px 20px',borderRadius:7,fontSize:11,fontWeight:700,background:'#60A5FA',border:'none',color:'#000',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
+            Criar e Selecionar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Painel de status dos departamentos ──────────────────────────────────────
 function DeptStatusPanel({deptStatuses,notifications,onReopen,onForceFinish,onClose}){
   const{T,theme}=useT();
@@ -1239,7 +1700,7 @@ function NotifPanel({notifications,onClose}){
 }
 
 // ─── Modal de edição de disciplina ────────────────────────────────────────────
-function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,onCancel}){
+function CourseEditModal({course,isChief,targetDeptId,courses,period,onSave,onCreate,onCancel}){
   const{T,theme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
   const[code,setCode]=useState(course?.code??'');
@@ -1248,6 +1709,7 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
   const effectiveDeptId=course?course.deptId:deptId;
   const cd=gDept(effectiveDeptId),cdClr=dtc(cd,theme);
   const[name,setName]=useState(course?.name??'');
+  const[teacher,setTeacher]=useState(course?.teacher??'');
   const[blocks,setBlocks]=useState(()=>course?course.blocks.map(b=>({days:[...b.days],sh:b.sh,eh:b.eh})):[{days:[],sh:8,eh:9}]);
   const[enroll,setEnroll]=useState(course?.enroll??1);
   const[errors,setErrors]=useState({});
@@ -1262,8 +1724,8 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
       if(!code.trim())e.code='Obrigatório';
       const secNum=Number(sec);
       if(!Number.isInteger(secNum)||secNum<1)e.sec='Deve ser um número inteiro ≥ 1';
-      else if(courses.some(c=>c.deptId===effectiveDeptId&&c.code.trim().toUpperCase()===code.trim().toUpperCase()&&c.sec===secNum))
-        e.sec='Já existe uma disciplina com este código e seção neste departamento';
+      else if(courses.some(c=>c.deptId===effectiveDeptId&&c.period===period&&c.code.trim().toUpperCase()===code.trim().toUpperCase()&&c.sec===secNum))
+        e.sec='Já existe uma disciplina com este código e seção neste departamento e período';
     }
     if(!name.trim())e.name='Obrigatório';
     if(enroll<1||enroll>1000)e.enroll='Entre 1 e 1000';
@@ -1284,9 +1746,9 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
   const handleSave=()=>{
     if(!validate())return;
     if(course){
-      onSave(course.id,{name:name.trim(),blocks,enroll:Number(enroll)});
+      onSave(course.id,{name:name.trim(),teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }else{
-      onCreate({id:courseId(effectiveDeptId,code.trim(),Number(sec)),code:code.trim(),name:name.trim(),sec:Number(sec),deptId:effectiveDeptId,blocks,enroll:Number(enroll)});
+      onCreate({id:courseId(effectiveDeptId,code.trim(),Number(sec),period),code:code.trim(),name:name.trim(),sec:Number(sec),deptId:effectiveDeptId,period,teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }
   };
   const inp={width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'};
@@ -1297,8 +1759,9 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
           <div style={{width:3,height:20,borderRadius:1,background:cd.clr}}/>
           {course&&<span style={{...mono,fontSize:10,color:cdClr,fontWeight:500}}>{course.code}</span>}
           <span style={{fontSize:14,fontWeight:700,color:T.txt}}>{course?'Editar Disciplina':'Nova Disciplina'}</span>
-          {course?.room&&<span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fef3c7':'#3a1a0a',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'2px 6px',marginLeft:'auto'}}>⚠ Alteração de horário remove a sala</span>}
-          <button onClick={onCancel} style={{background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer',marginLeft:course?.room?0:'auto'}}>✕</button>
+          {!course&&<span style={{...mono,fontSize:9,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:4,padding:'2px 6px'}}>{period}</span>}
+          {course&&hasAnyAllocation(course)&&<span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fef3c7':'#3a1a0a',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'2px 6px',marginLeft:'auto'}}>⚠ Alteração de horário pode remover a sala de algum dia</span>}
+          <button onClick={onCancel} style={{background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer',marginLeft:course&&hasAnyAllocation(course)?0:'auto'}}>✕</button>
         </div>
         {!course&&isChief&&(
           <div style={{marginBottom:12}}>
@@ -1326,6 +1789,10 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
           <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Nome da Disciplina</label>
           <input value={name} onChange={e=>setName(e.target.value)} style={inp}/>
           {errors.name&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.name}</div>}
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Docente(s)</label>
+          <input value={teacher} onChange={e=>setTeacher(e.target.value)} placeholder="A definir" style={inp}/>
         </div>
         {errors.blocks&&<div style={{fontSize:10,color:'#ef4444',marginBottom:8}}>{errors.blocks}</div>}
         {blocks.map((block,i)=>(
@@ -1374,8 +1841,8 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
   );
 }
 
-// ─── Modal de import de disciplinas (CSV) ─────────────────────────────────────
-function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCancel}){
+// ─── Modal de import de disciplinas (ODS) ─────────────────────────────────────
+function CourseImportModal({targetDeptId,deptName,existingCourses,period,onConfirm,onCancel}){
   const{T,theme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
   const dept=gDept(targetDeptId),dClr=dtc(dept,theme);
@@ -1390,12 +1857,12 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
       const isSpreadsheet=/\.(ods|xlsx|xls)$/i.test(file.name);
       const tableRows=isSpreadsheet?await parseSheetRows(file):parseCsvRows(await file.text());
       if(tableRows.length<2){setParseError('Arquivo vazio ou sem linhas de dados.');return;}
-      const parsed=groupSigaaRows(tableRows);
+      const parsed=parseFlatCourseRows(tableRows);
       const rowKey=r=>`${String(r.normalized.code??'').trim().toUpperCase()}__${r.normalized.sec}`;
       const groups={};
-      parsed.forEach(r=>{if(!r.skipped&&Object.keys(r.errors).length===0)(groups[rowKey(r)]=groups[rowKey(r)]||[]).push(r);});
+      parsed.forEach(r=>{if(Object.keys(r.errors).length===0)(groups[rowKey(r)]=groups[rowKey(r)]||[]).push(r);});
       parsed.forEach(r=>{
-        if(r.skipped||Object.keys(r.errors).length>0)return;
+        if(Object.keys(r.errors).length>0)return;
         if(groups[rowKey(r)].length>1)r.errors.secao='Código + seção duplicados neste arquivo';
       });
       setRows(parsed);setTab('valid');setStep('preview');
@@ -1404,15 +1871,14 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
     }
   };
 
-  const validRows=rows.filter(r=>!r.skipped&&Object.keys(r.errors).length===0);
-  const skippedRows=rows.filter(r=>r.skipped);
-  const invalidRows=rows.filter(r=>!r.skipped&&Object.keys(r.errors).length>0);
-  const allocatedExisting=existingCourses.filter(c=>c.room).length;
+  const validRows=rows.filter(r=>Object.keys(r.errors).length===0);
+  const invalidRows=rows.filter(r=>Object.keys(r.errors).length>0);
+  const allocatedExisting=existingCourses.filter(c=>hasAnyAllocation(c)).length;
 
   const handleConfirmImport=()=>onConfirm(validRows.map(r=>({
-    id:courseId(targetDeptId,r.normalized.code,r.normalized.sec),
-    code:r.normalized.code,name:r.normalized.name,sec:r.normalized.sec,deptId:targetDeptId,
-    blocks:r.normalized.blocks,enroll:r.normalized.enroll,
+    id:courseId(targetDeptId,r.normalized.code,r.normalized.sec,period),
+    code:r.normalized.code,name:r.normalized.name,sec:r.normalized.sec,deptId:targetDeptId,period,
+    teacher:r.normalized.teacher,blocks:r.normalized.blocks,enroll:r.normalized.enroll,
   })));
 
   return(
@@ -1425,15 +1891,20 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
                 <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>⇪</div>
                 <div>
-                  <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Importar Disciplinas — {deptName}</div>
-                  <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>Substitui todas as disciplinas atuais do departamento</div>
+                  <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Importar Disciplinas — {deptName} <span style={{color:T.dim,fontWeight:400}}>({period})</span></div>
+                  <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>Substitui as disciplinas do departamento neste período — outros períodos não são afetados</div>
                 </div>
                 <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
               </div>
               <div style={{background:T.inner,borderRadius:8,padding:'12px 14px',marginBottom:16,border:`1px solid ${T.bdr}`,fontSize:11,color:T.txt2,lineHeight:1.7}}>
-                Arquivo <strong>.csv, .ods ou .xlsx</strong> no formato do relatório de oferta de turmas do SIGAA: uma linha de cabeçalho por disciplina (<span style={{...mono,background:T.faint,padding:'1px 4px',borderRadius:3}}>"CÓDIGO - NOME (NÍVEL)"</span>) seguida de uma linha por turma, com as colunas Ano Período, Turma, Docente(s), Tipo, Situação, Horário e Mat./Cap.
-                <br/>Turmas com Situação diferente de "ABERTA" são ignoradas. O Horário usa o código do SIGAA (ex.: <span style={mono}>35M34</span>, podendo ter mais de um bloco separado por espaço para dias com horários diferentes).
+                Arquivo <strong>.ods, .xlsx ou .csv</strong> com <strong>uma linha por disciplina/turma</strong>, nas colunas: Código, Nome, Turma, Docente(s), Horário, Alunos Mat.
+                <br/>"Turma" pode ficar em branco — só é necessário preencher se o mesmo código tiver mais de uma turma no arquivo, para diferenciá-las (o sistema nunca numera automaticamente).
+                <br/>Horário usa o código do SIGAA (ex.: <span style={mono}>35M34</span>), podendo ter mais de um bloco separado por espaço quando a turma tem dias/horários diferentes (ex.: <span style={mono}>2T456 6T56</span>).
               </div>
+              <button type="button" onClick={downloadCourseTemplate} style={{display:'flex',alignItems:'center',gap:6,width:'100%',padding:'9px 12px',marginBottom:16,background:'transparent',border:`1px dashed ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:11,fontWeight:600,cursor:'pointer'}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
+                ⇩ Baixar modelo (.ods) com exemplos preenchidos
+              </button>
               <input type="file" accept=".csv,.ods,.xlsx,.xls" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}} style={{...mono,fontSize:11,color:T.txt}}/>
               {parseError&&<div style={{fontSize:11,color:'#ef4444',marginTop:10}}>{parseError}</div>}
             </div>
@@ -1459,12 +1930,6 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
                   <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#15803d':'#34D399',lineHeight:1}}>{validRows.length}</div>
                   <div style={{...mono,fontSize:8,color:T.dim,marginTop:2}}>VÁLIDAS</div>
                 </div>
-                {skippedRows.length>0&&(
-                  <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:7,textAlign:'center'}}>
-                    <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#b45309':'#FBBF24',lineHeight:1}}>{skippedRows.length}</div>
-                    <div style={{...mono,fontSize:8,color:T.dim,marginTop:2}}>IGNORADAS</div>
-                  </div>
-                )}
                 {invalidRows.length>0&&(
                   <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:7,textAlign:'center'}}>
                     <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1}}>{invalidRows.length}</div>
@@ -1474,8 +1939,8 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
               </div>
             </div>
             <div style={{display:'flex',gap:0,borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
-              {[['valid',`✓ Válidas (${validRows.length})`],['skipped',`— Ignoradas (${skippedRows.length})`],['invalid',`⚠ Com erro (${invalidRows.length})`]].map(([key,label])=>(
-                key!=='valid'&&rows.filter(r=>key==='skipped'?r.skipped:(!r.skipped&&Object.keys(r.errors).length>0)).length===0?null:(
+              {[['valid',`✓ Válidas (${validRows.length})`],['invalid',`⚠ Com erro (${invalidRows.length})`]].map(([key,label])=>(
+                key!=='valid'&&invalidRows.length===0?null:(
                   <button key={key} onClick={()=>setTab(key)} style={{flex:1,padding:'9px',fontSize:11,fontWeight:500,cursor:'pointer',background:'transparent',border:'none',borderBottom:`2px solid ${tab===key?dept.clr:'transparent'}`,color:tab===key?dClr:T.muted,transition:'all .12s'}}>{label}</button>
                 )
               ))}
@@ -1488,20 +1953,11 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
                     <div style={{width:2,height:30,borderRadius:1,background:dept.clr,flexShrink:0}}/>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
-                        <span style={{...mono,fontSize:9,color:dClr}}>{r.normalized.code} · sec {r.normalized.sec}</span>
+                        <span style={{...mono,fontSize:9,color:dClr}}>{r.normalized.code}{r.normalized.sec!=null?` · Turma ${r.normalized.sec}`:''}</span>
                         <span style={{fontSize:11,color:T.txt,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.normalized.name}</span>
                       </div>
                       <div style={{...mono,fontSize:9,color:T.dim}}>{fmtSchedule({blocks:r.normalized.blocks})} · {r.normalized.enroll} alunos</div>
-                    </div>
-                  </div>
-                ))
-              ):tab==='skipped'?(
-                skippedRows.map((r,i)=>(
-                  <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 20px',borderBottom:`1px solid ${T.bdr}`}}>
-                    <div style={{width:2,height:30,borderRadius:1,background:'#F59E0B',flexShrink:0,marginTop:2}}/>
-                    <div>
-                      <div style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:2}}>{r.raw.codigo||'(sem código)'}{r.raw.nome?` · ${r.raw.nome}`:''} {r.raw.turma?`· ${r.raw.turma}`:''}</div>
-                      <div style={{fontSize:10,color:theme==='light'?'#b45309':'#FBBF24',lineHeight:1.4}}>{r.skipReason}</div>
+                      {r.normalized.teacher&&<div style={{fontSize:9,color:T.muted,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>👤 {r.normalized.teacher}</div>}
                     </div>
                   </div>
                 ))
@@ -1510,7 +1966,7 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
                   <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 20px',borderBottom:`1px solid ${T.bdr}`}}>
                     <div style={{width:2,height:30,borderRadius:1,background:'#ef4444',flexShrink:0,marginTop:2}}/>
                     <div>
-                      <div style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:2}}>{r.raw.codigo||'(sem código)'}{r.raw.nome?` · ${r.raw.nome}`:''} {r.raw.turma?`· ${r.raw.turma}`:''}</div>
+                      <div style={{fontSize:11,color:T.txt,fontWeight:500,marginBottom:2}}>{r.raw.codigo||'(sem código)'}{r.raw.nome?` · ${r.raw.nome}`:''} {r.raw.turma?`· Turma ${r.raw.turma}`:''}</div>
                       {Object.entries(r.errors).map(([field,msg])=>(
                         <div key={field} style={{fontSize:10,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.4}}>{field}: {msg}</div>
                       ))}
@@ -1537,7 +1993,7 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
               <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
             </div>
             <div style={{background:theme==='light'?'#fef2f2':'#1a0505',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444433'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:12,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.7}}>
-              Isso vai <strong>excluir permanentemente {existingCourses.length} disciplina{existingCourses.length!==1?'s':''} existente{existingCourses.length!==1?'s':''}</strong> do {deptName}{allocatedExisting>0?<>, incluindo <strong>{allocatedExisting} já alocada{allocatedExisting!==1?'s':''} em sala{allocatedExisting!==1?'s':''}</strong> (essas alocações serão perdidas)</>:''}. As <strong>{validRows.length} novas disciplinas</strong> do arquivo serão inseridas em seguida. Esta ação não pode ser desfeita.
+              Isso vai <strong>excluir permanentemente {existingCourses.length} disciplina{existingCourses.length!==1?'s':''} existente{existingCourses.length!==1?'s':''}</strong> do {deptName} no período <strong>{period}</strong>{allocatedExisting>0?<>, incluindo <strong>{allocatedExisting} já alocada{allocatedExisting!==1?'s':''} em sala{allocatedExisting!==1?'s':''}</strong> (essas alocações serão perdidas)</>:''}. Outros períodos não são afetados. As <strong>{validRows.length} novas disciplinas</strong> do arquivo serão inseridas em seguida. Esta ação não pode ser desfeita.
             </div>
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
               <button onClick={()=>setStep('preview')} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Voltar</button>
@@ -1615,6 +2071,60 @@ function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,day,onConfir
           <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background=T.inner} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>Cancelar</button>
           <button onClick={onConfirm} disabled={over&&!confirmed} style={{padding:'8px 20px',borderRadius:7,fontSize:11,fontWeight:700,transition:'all .15s',background:over?(confirmed?'#ef4444':theme==='light'?'#f3f4f6':'#1a0505'):'#F59E0B',border:over?`1px solid ${confirmed?'#ef4444':T.bdr}`:'none',color:over?(confirmed?'#fff':T.dim):'#000',cursor:over&&!confirmed?'not-allowed':'pointer'}} onMouseEnter={e=>{if(!(over&&!confirmed))e.currentTarget.style.filter='brightness(1.08)';}} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
             {over?'⚠ Confirmar Mesclagem':'⇄ Confirmar Mesclagem'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal de escolha de dias (vista em Salas) ────────────────────────────────
+// Só aparece quando a sala está livre pra disciplina inteira E ela ocorre em
+// mais de um dia — pergunta se é pra alocar todos os dias nesta sala (o caso
+// comum, um clique) ou só um subconjunto específico (marca os dias e confirma).
+function DayPickerModal({room,course,dept,onConfirm,onCancel}){
+  const{T,theme}=useT();
+  const mono={fontFamily:"'DM Mono',monospace"};
+  const dClr=dtc(dept,theme);
+  const days=useMemo(()=>courseDays(course).sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b)),[course]);
+  const[selectedDays,setSelectedDays]=useState(days);
+  const toggleDay=d=>setSelectedDays(prev=>prev.includes(d)?prev.filter(x=>x!==d):[...prev,d].sort((a,b)=>DAYS.indexOf(a)-DAYS.indexOf(b)));
+  const allDays=selectedDays.length===days.length;
+  return(
+    <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:400,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+          <div style={{width:3,height:20,borderRadius:1,background:dept.clr}}/>
+          <div>
+            <div style={{fontSize:14,fontWeight:700,color:T.txt}}>Em quais dias alocar?</div>
+            <div style={{...mono,fontSize:9,color:dClr,marginTop:2}}>{course.code} → {room?.label}</div>
+          </div>
+          <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
+        </div>
+        <div style={{fontSize:11,color:T.txt2,lineHeight:1.6,marginBottom:16}}>
+          Esta disciplina ocorre em mais de um dia ({days.map(d=>d.slice(0,3)).join('/')}). Esta sala está livre em todos eles — quer alocá-la para a semana toda, ou só para alguns dias (deixando o resto pendente, pra alocar em outra sala depois)?
+        </div>
+        <button onClick={()=>onConfirm(null)} style={{width:'100%',padding:'10px',marginBottom:14,background:dept.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:11,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
+          Todos os dias ({days.map(d=>d.slice(0,3)).join('/')})
+        </button>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+          <div style={{flex:1,height:1,background:T.bdr}}/>
+          <span style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>ou escolha os dias</span>
+          <div style={{flex:1,height:1,background:T.bdr}}/>
+        </div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:18}}>
+          {days.map(d=>(
+            <button key={d} type="button" onClick={()=>toggleDay(d)}
+              style={{padding:'6px 12px',borderRadius:6,fontSize:11,fontWeight:500,cursor:'pointer',transition:'all .1s',background:selectedDays.includes(d)?dept.clr:'transparent',color:selectedDays.includes(d)?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${selectedDays.includes(d)?dept.clr:T.bdr2}`}}>
+              {d}
+            </button>
+          ))}
+        </div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={()=>onConfirm(selectedDays)} disabled={selectedDays.length===0}
+            style={{padding:'8px 20px',borderRadius:7,fontSize:11,fontWeight:700,cursor:selectedDays.length===0?'not-allowed':'pointer',background:selectedDays.length===0?T.inner:dept.clr,border:'none',color:selectedDays.length===0?T.dim:(theme==='light'?'#fff':'#000')}}>
+            {allDays?'Confirmar (todos os dias)':`Confirmar (${selectedDays.length} dia${selectedDays.length!==1?'s':''})`}
           </button>
         </div>
       </div>

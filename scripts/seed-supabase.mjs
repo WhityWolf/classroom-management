@@ -48,7 +48,7 @@ function generate() {
         id: `${d.id}-C${n++}`, code: `${d.id}${(Math.floor(i / ns.length) + 1) * 100 + (i % ns.length) + 1}`,
         name: ns[i % ns.length] + (Math.floor(i / ns.length) > 0 ? ` ${Math.floor(i / ns.length) + 1}` : ''),
         sec: Math.floor(r() * 4) + 1, dept_id: d.id, blocks: [{ days, sh, eh }],
-        enroll: Math.floor(r() * 90) + 10, room: null,
+        enroll: Math.floor(r() * 90) + 10, room_by_day: {},
       });
     }
   });
