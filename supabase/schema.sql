@@ -24,6 +24,13 @@ create table courses (
   -- CourseEditModal always provides a real sec (the form requires one).
   sec     integer,
   dept_id text not null,
+  -- "2026.1"-style string (ano.período) — qual período letivo esta disciplina
+  -- pertence a. Só o período mais recente (maior string, ordenação lexical
+  -- já funciona pro formato ano.período) é editável; os demais são somente
+  -- leitura na UI (classroom-allocation.jsx: allPeriods/currentPeriod). id
+  -- inclui o período (courseId) pra não colidir entre períodos diferentes
+  -- com o mesmo código+seção (a mesma disciplina se repete todo período).
+  period  text not null default '2026.1',
   teacher text not null default '',
   -- A course can meet on different days at different times (real SIGAA
   -- imports have ~5% of turmas like this, e.g. Monday one time block,
@@ -41,6 +48,7 @@ create table courses (
   room_by_day jsonb not null default '{}'
 );
 create index courses_dept_idx on courses(dept_id);
+create index courses_dept_period_idx on courses(dept_id, period);
 
 create table dept_statuses (
   dept_id text primary key,

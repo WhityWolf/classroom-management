@@ -19,6 +19,13 @@ que não pertencem a nenhum departamento específico.
   escolhe entre "Alocar Disciplinas" (o fluxo de sempre) e "Mapa de Salas
   Alocadas", uma visão somente-leitura e mais ampla — todas as salas já
   alocadas, de todos os departamentos, lado a lado por dia da semana.
+- **Múltiplos períodos letivos** — um seletor de período (ex. `2026.1`)
+  aparece nas duas telas acima. Só o período mais recente pode ser editado;
+  períodos passados ficam travados (inclusive pro Diretor) e, na tela de
+  Alocação, a vista em Salas é desabilitada nesse caso — só dá pra consultar
+  pela Grade, já que não há nada a alocar num período encerrado. O Diretor
+  cria um novo período letivo a qualquer momento, o que automaticamente
+  torna o anterior somente leitura.
 - **Alocação de salas** — visão em Grade (quadro de horários semanal) ou
   em Salas (cartões de disponibilidade por sala, agrupados por bloco/prédio
   e por departamento), com detecção de conflito de horário em tempo real.
@@ -144,7 +151,7 @@ departamento está marcado como concluído ou bloqueado pelo Diretor.
 | Tabela | Conteúdo |
 |---|---|
 | `rooms` | Salas reais do CCN1/CCN2 — `dept_id` nulo significa sala compartilhada (só o Diretor gerencia) |
-| `courses` | Disciplinas — `blocks` (jsonb) guarda uma lista de `{dias, início, fim}`, permitindo mais de um horário por disciplina; `teacher` guarda o(s) docente(s) da turma; `room_by_day` (jsonb) mapeia cada dia pra sala alocada nele, permitindo salas diferentes em dias diferentes (dia ausente = ainda não alocado) |
+| `courses` | Disciplinas — `blocks` (jsonb) guarda uma lista de `{dias, início, fim}`, permitindo mais de um horário por disciplina; `teacher` guarda o(s) docente(s) da turma; `room_by_day` (jsonb) mapeia cada dia pra sala alocada nele, permitindo salas diferentes em dias diferentes (dia ausente = ainda não alocado); `period` (ex. `"2026.1"`) marca o período letivo — só o mais recente é editável, os demais ficam somente leitura |
 | `room_features` | Catálogo de recursos selecionáveis ao editar uma sala |
 | `dept_statuses` | Status de cada departamento (`active` / `finished` / `force_finished`) |
 | `notifications` | Notificações que o Diretor recebe quando um departamento conclui sua alocação |

@@ -9,8 +9,12 @@ export const mapRoom = r => ({
   id: r.id, deptId: r.dept_id, label: r.label, cap: r.cap, type: r.type,
   features: r.features, building: r.building, floor: r.floor, desc: r.description,
 });
+// '2026.1' fallback mirrors DEFAULT_PERIOD in classroom-allocation.jsx —
+// only hit if the `period` migration hasn't run yet on this Supabase project
+// (column missing from the row). Without it, comparePeriods()'s `.split('.')`
+// would throw on `undefined` and crash the whole app, not just degrade.
 export const mapCourse = c => ({
-  id: c.id, code: c.code, name: c.name, sec: c.sec, deptId: c.dept_id,
+  id: c.id, code: c.code, name: c.name, sec: c.sec, deptId: c.dept_id, period: c.period ?? '2026.1',
   teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, roomByDay: c.room_by_day ?? {},
 });
 export const mapNotification = n => ({
@@ -64,21 +68,24 @@ export async function editCourse(courseId, changes) {
 export async function createCourse(course) {
   await unwrap(supabase.from('courses').insert({
     id: course.id, code: course.code, name: course.name, sec: course.sec,
-    dept_id: course.deptId, teacher: course.teacher, blocks: course.blocks,
+    dept_id: course.deptId, period: course.period, teacher: course.teacher, blocks: course.blocks,
     enroll: course.enroll, room_by_day: {},
   }));
 }
 
-// Destructive: deletes every existing row for deptId (allocated or not),
-// then bulk-inserts the new set. Not transactional — known/accepted
-// limitation for this prototype stage. If insert fails after delete
-// succeeds, the dept is left with zero courses; the import modal keeps
-// parsed rows in state so retrying doesn't require re-uploading the file.
-export async function replaceDeptCourses(deptId, courses) {
-  await unwrap(supabase.from('courses').delete().eq('dept_id', deptId));
+// Destructive, but only within `period` — deletes existing rows for
+// dept_id+period (allocated or not), then bulk-inserts the new set. Past
+// periods are read-only in the UI and never reach this function, but the
+// scoping lives here too so a bug upstream can't wipe another period's
+// history. Not transactional — known/accepted limitation for this
+// prototype stage. If insert fails after delete succeeds, the dept+period
+// is left empty; the import modal keeps parsed rows in state so retrying
+// doesn't require re-uploading the file.
+export async function replaceDeptCourses(deptId, period, courses) {
+  await unwrap(supabase.from('courses').delete().eq('dept_id', deptId).eq('period', period));
   if (courses.length === 0) return;
   await unwrap(supabase.from('courses').insert(courses.map(c => ({
-    id: c.id, code: c.code, name: c.name, sec: c.sec, dept_id: deptId,
+    id: c.id, code: c.code, name: c.name, sec: c.sec, dept_id: deptId, period,
     teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, room_by_day: {},
   }))));
 }

@@ -75,13 +75,28 @@ function fmtRoomByDay(course,rooms){
 function fmtHour(h){return`${String(h).padStart(2,'0')}:00`;}
 
 // ─── Catálogo de disciplinas (criação manual + import ODS) ───────────────────
-// id derivado de dept+código+seção: dobra como detector de duplicata (colisão
-// de PK = erro claro) já que `code` não tem unicidade no schema. código/seção
-// não são editáveis após a criação (só name/days/sh/eh/enroll mudam), então o
-// id nunca precisa ser regenerado — não adicione edição de código/seção sem
-// revisitar isto.
+// id derivado de dept+código+seção+período: dobra como detector de duplicata
+// (colisão de PK = erro claro) já que `code` não tem unicidade no schema.
+// Período entra no id porque a mesma disciplina (código+seção) se repete a
+// cada período letivo — sem ele, importar/criar a "mesma" disciplina num
+// período novo colidiria com o registro (read-only) do período antigo.
+// código/seção não são editáveis após a criação (só name/days/sh/eh/enroll
+// mudam), então o id nunca precisa ser regenerado — não adicione edição de
+// código/seção sem revisitar isto.
 const slugify=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
-const courseId=(deptId,code,sec)=>`${deptId}-${slugify(code)}-${sec}`;
+const courseId=(deptId,code,sec,period)=>`${deptId}-${slugify(code)}-${sec}-${slugify(period)}`;
+// "2026.1" — ano.período; "o período mais recente" é só o maior valor em
+// allPeriods.sort(comparePeriods) — não existe uma tabela/flag separada pra
+// "período atual". Comparação numérica, não lexical: "2026.10" > "2026.2"
+// lexicalmente (compara caractere a caractere) mas é "2026.2" que vem depois
+// numericamente — comparePeriods evita essa pegadinha mesmo sendo um caso
+// raro na prática (a maioria dos calendários acadêmicos não passa de .1/.2/.3).
+const DEFAULT_PERIOD='2026.1';
+const PERIOD_RE=/^\d{4}\.\d+$/;
+const comparePeriods=(a,b)=>{
+  const[ay,an]=a.split('.').map(Number),[by,bn]=b.split('.').map(Number);
+  return ay!==by?ay-by:an-bn;
+};
 
 // Planilha (.csv/.ods/.xlsx) com uma linha por disciplina/turma — modelo
 // próprio do app (não o relatório bruto do SIGAA, que vem em blocos
@@ -327,12 +342,38 @@ function Dashboard(){
   const[dayPickerModal, setDayPickerModal] =useState(null);
   const[showUsers,      setShowUsers]      =useState(false);
   const[toast,          setToast]          =useState(null);
+  const[newPeriodModal, setNewPeriodModal] =useState(false);
+  // null = "segue o período mais recente" (currentPeriod) — assim, quando um
+  // período novo é criado (ou os dados terminam de carregar), o usuário cai
+  // nele automaticamente em vez de ficar presa num valor calculado cedo
+  // demais (antes dos cursos carregarem). Selecionar manualmente um período
+  // existente no dropdown grava aqui; "Voltar ao período atual" limpa pra null.
+  const[periodOverride,setPeriodOverride]  =useState(null);
+  // Períodos criados nesta sessão que ainda não têm nenhuma disciplina —
+  // sem isso, "allPeriods" (abaixo) só sabe de períodos com disciplina, e um
+  // período recém-criado desaparece da lista no instante em que o usuário sai
+  // de vê-lo (periodOverride aponta pra outro valor, então o Set perde a
+  // referência). Não precisa "limpar" depois que ganha uma disciplina de
+  // verdade — o Set abaixo dedup, é inofensivo manter os dois.
+  const[createdPeriods,setCreatedPeriods]  =useState([]);
 
   const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),3200);};
 
+  // "Atual" = sempre o maior valor (comparação numérica ano.período) entre
+  // os períodos conhecidos (com disciplina OU criados nesta sessão) — só ele
+  // é editável.
+  const allPeriods=useMemo(()=>{
+    const s=new Set([...courses.map(c=>c.period),...createdPeriods]);
+    return[...s].sort(comparePeriods);
+  },[courses,createdPeriods]);
+  const currentPeriod=allPeriods[allPeriods.length-1]??DEFAULT_PERIOD;
+  const selectedPeriod=periodOverride??currentPeriod;
+  const isPastPeriod=selectedPeriod!==currentPeriod;
+  const periodCourses=useMemo(()=>courses.filter(c=>c.period===selectedPeriod),[courses,selectedPeriod]);
+
   const d         =gDept(activeDeptId);
-  const alloc     =useMemo(()=>buildAlloc(courses),[courses]);
-  const sel       =useMemo(()=>selId?courses.find(c=>c.id===selId):null,[selId,courses]);
+  const alloc     =useMemo(()=>buildAlloc(periodCourses),[periodCourses]);
+  const sel       =useMemo(()=>selId?periodCourses.find(c=>c.id===selId):null,[selId,periodCourses]);
   const ROOMS     =rooms;
   const myStatus  =isDeptHead?deptStatuses[currentUser.deptId]:null;
   const isLocked  =isDeptHead&&myStatus!==DS.ACTIVE;
@@ -344,18 +385,16 @@ function Dashboard(){
       :ROOMS.filter(r=>r.deptId===currentUser.deptId)
   ,[ROOMS,activeDeptId,isChief,currentUser.deptId]);
 
-  // "Pendentes" inclui disciplinas parcialmente alocadas (ex.: Segunda já
-  // tem sala, Quarta não) — ainda há trabalho a fazer. "Alocadas" inclui
   // Lista única — sem aba Pendentes/Alocadas. Pendentes (e parciais) vêm
   // primeiro, já alocadas (100%) depois e esmaecidas no CourseCard — sort é
   // estável, então só reagrupa, não embaralha a ordem dentro de cada grupo.
   const visibleSidebarCourses=useMemo(()=>{
-    const base=isDeptHead?courses.filter(c=>c.deptId===currentUser.deptId):courses;
+    const base=isDeptHead?periodCourses.filter(c=>c.deptId===currentUser.deptId):periodCourses;
     const filtered=search.trim()
       ?base.filter(c=>{const q=search.toLowerCase();return c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q);})
       :base;
     return[...filtered].sort((a,b)=>Number(isFullyAllocated(a))-Number(isFullyAllocated(b)));
-  },[courses,isDeptHead,currentUser.deptId,search]);
+  },[periodCourses,isDeptHead,currentUser.deptId,search]);
   const pendingCount=useMemo(()=>visibleSidebarCourses.filter(c=>!isFullyAllocated(c)).length,[visibleSidebarCourses]);
   const allocatedCount=visibleSidebarCourses.length-pendingCount;
 
@@ -364,23 +403,31 @@ function Dashboard(){
   // — rodar nele uma disciplina parcial sobrescreveria silenciosamente os
   // dias que o usuário já tinha colocado manualmente em salas diferentes.
   const autoAllocInput=useMemo(()=>{
-    const base=isDeptHead?courses.filter(c=>c.deptId===currentUser.deptId):courses;
+    const base=isDeptHead?periodCourses.filter(c=>c.deptId===currentUser.deptId):periodCourses;
     return base.filter(c=>!hasAnyAllocation(c));
-  },[courses,isDeptHead,currentUser.deptId]);
+  },[periodCourses,isDeptHead,currentUser.deptId]);
 
   const stats=useMemo(()=>{
-    const mine=courses.filter(c=>c.deptId===activeDeptId),done=mine.filter(isFullyAllocated);
+    const mine=periodCourses.filter(c=>c.deptId===activeDeptId),done=mine.filter(isFullyAllocated);
     const cross=mine.filter(c=>Object.values(c.roomByDay||{}).some(rid=>rid&&!rid.startsWith(activeDeptId))).length;
     return{total:mine.length,done:done.length,pend:mine.length-done.length,cross};
-  },[courses,activeDeptId]);
+  },[periodCourses,activeDeptId]);
 
-  const canAllocate   =isChief||(isDeptHead&&!isLocked);
-  const canDealloc    =isChief||(isDeptHead&&!isLocked);
+  // Período passado é somente leitura pra todo mundo, CHIEF incluso — não dá
+  // pra reescrever histórico mesmo sendo diretor.
+  const canAllocate   =!isPastPeriod&&(isChief||(isDeptHead&&!isLocked));
+  const canDealloc    =!isPastPeriod&&(isChief||(isDeptHead&&!isLocked));
   const canMerge      =canAllocate&&can(PERMS.MERGE_GROUPS);
   const canEditFeatures=isChief;
   const canEditCourse =canAllocate;
   const canManageCatalog=canAllocate;
   const targetDeptId  =isChief?activeDeptId:currentUser.deptId;
+  // Salas (ListView) é uma ferramenta de ação — clicar aloca. Sem ação
+  // possível num período passado, ela não tem valor como leitura (ao
+  // contrário da Grade, que serve bem só pra consultar onde algo ficou).
+  // Força Horários sem precisar de efeito: a UI renderiza por este valor,
+  // não pelo `viewMode` bruto, então não há "vazamento" de um clique antigo.
+  const effectiveViewMode=isPastPeriod?'grid':viewMode;
 
   // Clique vindo da Grade — sempre um dia específico (a aba ativa). Mesclar
   // exige saber qual bloco/horário está em conflito pra mostrar no modal, daí
@@ -482,6 +529,7 @@ function Dashboard(){
   };
   const handleEditCourse=async(courseId,changes)=>{
     setEditingCourse(null);
+    if(!canEditCourse)return;
     const original=courses.find(c=>c.id===courseId);
     if(!original)return;
     const updated={...original,...changes};
@@ -490,7 +538,9 @@ function Dashboard(){
     // not a fresh DB read — acceptable race window for this prototype's scale.
     if(changes.blocks!==undefined){
       const newDays=new Set(courseDays(updated));
-      const others=courses.filter(c=>c.id!==courseId);
+      // Conflito só importa dentro do mesmo período — outro período não
+      // disputa sala com este (eles nem coexistem na grade ao mesmo tempo).
+      const others=courses.filter(c=>c.id!==courseId&&c.period===original.period);
       const othersAlloc=buildAlloc(others);
       const next={};let droppedAny=false;
       Object.entries(finalRoomByDay).forEach(([day,rid])=>{
@@ -510,6 +560,7 @@ function Dashboard(){
   };
   const handleCreateCourse=async course=>{
     setCreatingCourse(false);
+    if(!canManageCatalog)return;
     try{
       await db.createCourse(course);
       showToast(`${course.code} criada.`,'ok');
@@ -519,20 +570,37 @@ function Dashboard(){
   };
   const handleImportCourses=async newCourses=>{
     setImportingCourses(false);
+    if(!canManageCatalog)return;
     try{
-      await db.replaceDeptCourses(targetDeptId,newCourses);
-      showToast(`${newCourses.length} disciplina${newCourses.length!==1?'s':''} importada${newCourses.length!==1?'s':''} para ${gDept(targetDeptId)?.full}.`,'ok');
+      await db.replaceDeptCourses(targetDeptId,selectedPeriod,newCourses);
+      showToast(`${newCourses.length} disciplina${newCourses.length!==1?'s':''} importada${newCourses.length!==1?'s':''} para ${gDept(targetDeptId)?.full} (${selectedPeriod}).`,'ok');
     }catch(e){
       showToast(`Falha ao importar disciplinas: ${e.message}`,'err');
     }
   };
 
+  // Período é só uma string carimbada em cada disciplina — não existe uma
+  // tabela de períodos. "Criar" um período é só passar a selecioná-lo
+  // (periodOverride); ele só persiste de fato quando algo é criado/importado
+  // nele. Só o Diretor decide quando um novo período letivo começa.
+  const handleCreatePeriod=newPeriod=>{
+    const trimmed=newPeriod.trim();
+    if(!PERIOD_RE.test(trimmed)){showToast('Período deve seguir o formato AAAA.N, ex.: 2026.2.','err');return;}
+    if(comparePeriods(trimmed,currentPeriod)<=0){showToast(`O novo período precisa ser posterior a ${currentPeriod}.`,'err');return;}
+    setNewPeriodModal(false);
+    setCreatedPeriods(prev=>prev.includes(trimmed)?prev:[...prev,trimmed]);
+    setPeriodOverride(trimmed);
+    setSelId(null);
+    showToast(`Período ${trimmed} criado e selecionado.`,'ok');
+  };
+
   const handleAutoAllocate=()=>{
+    if(!canManageCatalog)return;
     if(autoAllocInput.length===0){showToast('Não há disciplinas para alocar.','warn');return;}
     setAutoAllocResult(autoAllocate(autoAllocInput,visRooms,alloc));
   };
   const handleApplyAllocation=async()=>{
-    if(!autoAllocResult)return;
+    if(!autoAllocResult||!canManageCatalog)return;
     const{assignments}=autoAllocResult;
     setAutoAllocResult(null);setSelId(null);
     try{
@@ -544,6 +612,7 @@ function Dashboard(){
   };
 
   const handleFinish=async()=>{
+    if(isPastPeriod)return;
     setSelId(null);setFinishConfirm(false);
     try{
       await db.finishDept(currentUser.deptId,gDept(currentUser.deptId)?.full,currentUser.name);
@@ -572,7 +641,7 @@ function Dashboard(){
   if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Carregando dados…</div>;
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
   if(screen==='select')return<ScreenSelector onPick={setScreen}/>;
-  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} alloc={alloc} onBack={()=>setScreen('select')}/>;
+  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} onBack={()=>setScreen('select')}/>;
 
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -615,6 +684,13 @@ function Dashboard(){
             <span style={{fontSize:12,fontWeight:600,color:dClr}}>{d.full}</span>
           </div>
         )}
+        <div style={{width:1,height:20,background:T.bdr2}}/>
+        <select value={selectedPeriod} onChange={e=>{setPeriodOverride(e.target.value===currentPeriod?null:e.target.value);setSelId(null);}}
+          title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:isPastPeriod?T.muted:dClr,fontSize:11,fontWeight:600,outline:'none',cursor:'pointer'}}>
+          {allPeriods.map(p=><option key={p} value={p}>{p}{p===currentPeriod?' (atual)':' — somente leitura'}</option>)}
+        </select>
+        {isChief&&<button className="icon-btn" onClick={()=>setNewPeriodModal(true)} title="Criar novo período letivo" style={{padding:'5px 9px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,fontWeight:700,cursor:'pointer',lineHeight:1}}>+</button>}
+        {isPastPeriod&&<span style={{...mono,fontSize:8,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'3px 7px',whiteSpace:'nowrap'}}>🔒 PERÍODO PASSADO — SOMENTE LEITURA</span>}
         <div style={{flex:1}}/>
         {[['Total',stats.total,T.muted],['Alocadas',stats.done,theme==='light'?'#059669':'#34D399'],['Pendentes',stats.pend,theme==='light'?'#b45309':'#FBBF24'],['Outro Depto',stats.cross,theme==='light'?'#5b21b6':'#A78BFA']].map(([l,v,c])=>(
           <div key={l} style={{textAlign:'center',padding:'0 12px',borderLeft:`1px solid ${T.bdr}`}}>
@@ -681,7 +757,7 @@ function Dashboard(){
             ))}
           </div>
 
-          {!isLocked&&(isDeptHead||isChief)&&(
+          {!isLocked&&!isPastPeriod&&(isDeptHead||isChief)&&(
             <div style={{padding:'10px 12px',borderTop:`1px solid ${T.bdr}`,flexShrink:0,display:'flex',flexDirection:'column',gap:6}}>
               {canManageCatalog&&(
                 <div style={{display:'flex',gap:6}}>
@@ -721,13 +797,17 @@ function Dashboard(){
         <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden'}}>
           <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 16px',borderBottom:`1px solid ${T.bdr}`,background:theme==='light'?T.surface:T.card,flexShrink:0}}>
             <div style={{display:'flex',gap:2,border:`1px solid ${T.bdr2}`,borderRadius:6,overflow:'hidden'}}>
-              {[['list','≡ Salas'],['grid','⊞ Horários']].map(([m,lbl])=>(
-                <button key={m} className={`viewbtn${viewMode===m?' active':''}`} onClick={()=>setViewMode(m)}
-                  style={{padding:'4px 12px',fontSize:10,fontWeight:500,background:'transparent',border:'none',color:viewMode===m?dClr:T.muted,transition:'all .12s',cursor:'pointer'}}>{lbl}</button>
-              ))}
+              {[['list','≡ Salas'],['grid','⊞ Horários']].map(([m,lbl])=>{
+                const disabled=m==='list'&&isPastPeriod;
+                return(
+                  <button key={m} disabled={disabled} title={disabled?'Período passado é somente leitura — use Horários para consultar.':undefined}
+                    className={`viewbtn${effectiveViewMode===m?' active':''}`} onClick={()=>!disabled&&setViewMode(m)}
+                    style={{padding:'4px 12px',fontSize:10,fontWeight:500,background:'transparent',border:'none',color:disabled?T.dim:(effectiveViewMode===m?dClr:T.muted),transition:'all .12s',cursor:disabled?'not-allowed':'pointer',opacity:disabled?.5:1}}>{lbl}</button>
+                );
+              })}
             </div>
             <div style={{width:1,height:16,background:T.bdr2}}/>
-            {viewMode==='grid'&&DAYS.map(dy=>(
+            {effectiveViewMode==='grid'&&DAYS.map(dy=>(
               <button key={dy} onClick={()=>setDay(dy)} style={{padding:'4px 10px',borderRadius:5,fontSize:10,fontWeight:500,background:day===dy?d.clr:'transparent',color:day===dy?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${day===dy?d.clr:T.bdr2}`,transition:'all .12s',cursor:'pointer'}}>{dy.slice(0,3)}</button>
             ))}
             <div style={{flex:1}}/>
@@ -741,19 +821,19 @@ function Dashboard(){
               <span style={{fontSize:11,color:T.txt2,maxWidth:200,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{sel.name}</span>
               <span style={{...mono,fontSize:10,color:T.muted}}>{fmtSchedule(sel)} · {sel.enroll} alunos</span>
               <div style={{flex:1}}/>
-              {viewMode==='grid'&&!courseOccupiesDay(sel,day)&&<span style={{fontSize:9,color:theme==='light'?'#b45309':'#FBBF24'}}>Não ocorre na {day} — mude para {sel.blocks.flatMap(b=>b.days)[0]?.slice(0,3)}</span>}
-              {viewMode==='grid'&&courseOccupiesDay(sel,day)&&<span style={{fontSize:9,color:T.muted}}><span style={{color:d.clr}}>●</span> livre {canMerge&&<><span style={{color:'#F59E0B'}}>●</span> mesclar</>}</span>}
+              {effectiveViewMode==='grid'&&!courseOccupiesDay(sel,day)&&<span style={{fontSize:9,color:theme==='light'?'#b45309':'#FBBF24'}}>Não ocorre na {day} — mude para {sel.blocks.flatMap(b=>b.days)[0]?.slice(0,3)}</span>}
+              {effectiveViewMode==='grid'&&courseOccupiesDay(sel,day)&&<span style={{fontSize:9,color:T.muted}}><span style={{color:d.clr}}>●</span> livre {canMerge&&<><span style={{color:'#F59E0B'}}>●</span> mesclar</>}</span>}
               <button onClick={()=>setSelId(null)} style={{padding:'2px 8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:9,cursor:'pointer'}}>✕</button>
             </div>
           )}
 
           <div style={{flex:1,overflow:'auto',background:T.bg}}>
-            {viewMode==='grid'?(
-              <Grid rooms={visRooms} day={day} alloc={alloc} courses={courses} sel={sel} deptId={activeDeptId} dept={d}
+            {effectiveViewMode==='grid'?(
+              <Grid rooms={visRooms} day={day} alloc={alloc} courses={periodCourses} sel={sel} deptId={activeDeptId} dept={d}
                 canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse}
                 onTryAlloc={rid=>tryAllocate(rid,day)} onDealloc={cid=>deallocate(cid,day)} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
             ):(
-              <ListView rooms={visRooms} alloc={alloc} courses={courses} sel={sel} deptId={activeDeptId} dept={d}
+              <ListView rooms={visRooms} alloc={alloc} courses={periodCourses} sel={sel} deptId={activeDeptId} dept={d}
                 canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse}
                 onTryAlloc={trySalasAllocate} onDealloc={cid=>deallocate(cid,null)} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
             )}
@@ -765,11 +845,12 @@ function Dashboard(){
       {finishConfirm&&<FinishConfirmModal deptName={gDept(currentUser.deptId)?.full} remaining={autoAllocInput.length} onConfirm={handleFinish} onCancel={()=>setFinishConfirm(false)}/>}
       {deptPanel&&<DeptStatusPanel deptStatuses={deptStatuses} notifications={notifications} onReopen={handleReopen} onForceFinish={handleForceFinish} onClose={()=>setDeptPanel(false)}/>}
       {notifPanel&&<NotifPanel notifications={notifications} onClose={()=>setNotifPanel(false)}/>}
-      {(editingCourse||creatingCourse)&&<CourseEditModal course={editingCourse} isChief={isChief} targetDeptId={targetDeptId} courses={courses}
+      {(editingCourse||creatingCourse)&&<CourseEditModal course={editingCourse} isChief={isChief} targetDeptId={targetDeptId} courses={courses} period={selectedPeriod}
         onSave={handleEditCourse} onCreate={handleCreateCourse} onCancel={()=>{setEditingCourse(null);setCreatingCourse(false);}}/>}
-      {importingCourses&&<CourseImportModal targetDeptId={targetDeptId} deptName={gDept(targetDeptId)?.full}
-        existingCourses={courses.filter(c=>c.deptId===targetDeptId)}
+      {importingCourses&&<CourseImportModal targetDeptId={targetDeptId} deptName={gDept(targetDeptId)?.full} period={selectedPeriod}
+        existingCourses={courses.filter(c=>c.deptId===targetDeptId&&c.period===selectedPeriod)}
         onConfirm={handleImportCourses} onCancel={()=>setImportingCourses(false)}/>}
+      {newPeriodModal&&<NewPeriodModal currentPeriod={currentPeriod} onConfirm={handleCreatePeriod} onCancel={()=>setNewPeriodModal(false)}/>}
       {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
       {autoAllocResult&&<AutoAllocModal result={autoAllocResult} dept={d} onApply={handleApplyAllocation} onCancel={()=>setAutoAllocResult(null)}/>}
       {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={mergeModal.day} onConfirm={()=>forceAllocate(mergeModal.roomId,mergeModal.day)} onCancel={()=>setMergeModal(null)}/>}
@@ -852,13 +933,21 @@ function ScreenSelector({onPick}){
 // mostra, para todos os departamentos de uma vez, quais salas já têm
 // disciplinas alocadas e em que horário. Reaproveita rowSlots/blockForDay (os
 // mesmos helpers da Grade de alocação) só que sem nenhum callback de clique.
-function RoomMapScreen({rooms,courses,alloc,onBack}){
+function RoomMapScreen({rooms,courses,onBack}){
   const{currentUser,logout}=useAuth();
   const{T,theme,toggleTheme}=useT();
   const isChief=currentUser.role===ROLES.CHIEF;
   const mono={fontFamily:"'DM Mono',monospace"};
   const[day,setDay]=useState('Segunda');
-  const allocatedRoomIds=useMemo(()=>new Set(courses.flatMap(c=>Object.values(c.roomByDay||{}))),[courses]);
+  // Período próprio, independente do que está selecionado na tela de
+  // Alocação (são telas-irmãs, não pai/filho) — sempre cai no mais recente.
+  const allPeriods=useMemo(()=>[...new Set(courses.map(c=>c.period))].sort(comparePeriods),[courses]);
+  const currentPeriod=allPeriods[allPeriods.length-1]??DEFAULT_PERIOD;
+  const[periodOverride,setPeriodOverride]=useState(null);
+  const selectedPeriod=periodOverride??currentPeriod;
+  const periodCourses=useMemo(()=>courses.filter(c=>c.period===selectedPeriod),[courses,selectedPeriod]);
+  const alloc=useMemo(()=>buildAlloc(periodCourses),[periodCourses]);
+  const allocatedRoomIds=useMemo(()=>new Set(periodCourses.flatMap(c=>Object.values(c.roomByDay||{}))),[periodCourses]);
   const allocatedRooms=useMemo(()=>rooms.filter(r=>allocatedRoomIds.has(r.id)),[rooms,allocatedRoomIds]);
   const deptOrder=id=>{const i=DEPTS.findIndex(d=>d.id===id);return i===-1?DEPTS.length:i;};
   const presentDepts=useMemo(()=>
@@ -879,6 +968,11 @@ function RoomMapScreen({rooms,courses,alloc,onBack}){
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>☰</button>
         <span style={{fontSize:13,fontWeight:700,color:T.txt}}>🗺 Mapa de Salas Alocadas</span>
+        <div style={{width:1,height:16,background:T.bdr2}}/>
+        <select value={selectedPeriod} onChange={e=>setPeriodOverride(e.target.value===currentPeriod?null:e.target.value)}
+          title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,fontWeight:600,outline:'none',cursor:'pointer'}}>
+          {allPeriods.map(p=><option key={p} value={p}>{p}{p===currentPeriod?' (atual)':''}</option>)}
+        </select>
         <div style={{width:1,height:16,background:T.bdr2}}/>
         {DAYS.map(dy=>(
           <button key={dy} className="daybtn" onClick={()=>setDay(dy)}
@@ -1486,6 +1580,49 @@ function FinishConfirmModal({deptName,remaining,onConfirm,onCancel}){
   );
 }
 
+// ─── Modal de novo período letivo (só Diretor) ────────────────────────────────
+// Período não tem tabela própria — é só a string carimbada em cada
+// disciplina (courses.period). "Criar" um aqui só seleciona o valor
+// (Dashboard.handleCreatePeriod); ele só persiste de verdade quando algo é
+// criado/importado nele. Por isso a validação aqui é só de formato e de ser
+// estritamente posterior ao período atual, não uma checagem de unicidade.
+function NewPeriodModal({currentPeriod,onConfirm,onCancel}){
+  const{T,theme}=useT();
+  const mono={fontFamily:"'DM Mono',monospace"};
+  const[value,setValue]=useState('');
+  const[error,setError]=useState(null);
+  const submit=()=>{
+    const trimmed=value.trim();
+    if(!PERIOD_RE.test(trimmed)){setError('Use o formato AAAA.N, ex.: 2026.2.');return;}
+    if(comparePeriods(trimmed,currentPeriod)<=0){setError(`Precisa ser posterior ao período atual (${currentPeriod}).`);return;}
+    onConfirm(trimmed);
+  };
+  return(
+    <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:380,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
+          <div style={{fontSize:14,fontWeight:700,color:T.txt}}>Novo Período Letivo</div>
+          <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
+        </div>
+        <div style={{fontSize:11,color:T.txt2,lineHeight:1.6,marginBottom:14}}>
+          O período atual ({currentPeriod}) vira somente leitura assim que um período posterior existir. Disciplinas novas (criadas ou importadas) entram no período selecionado.
+        </div>
+        <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Período (AAAA.N)</label>
+        <input autoFocus value={value} onChange={e=>{setValue(e.target.value);setError(null);}} onKeyDown={e=>e.key==='Enter'&&submit()}
+          placeholder={`ex.: ${currentPeriod.split('.')[0]}.${Number(currentPeriod.split('.')[1]||1)+1}`}
+          style={{width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none',marginBottom:6}}/>
+        {error&&<div style={{fontSize:10,color:'#ef4444',marginBottom:10}}>{error}</div>}
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:14}}>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={submit} style={{padding:'8px 20px',borderRadius:7,fontSize:11,fontWeight:700,background:'#60A5FA',border:'none',color:'#000',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
+            Criar e Selecionar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Painel de status dos departamentos ──────────────────────────────────────
 function DeptStatusPanel({deptStatuses,notifications,onReopen,onForceFinish,onClose}){
   const{T,theme}=useT();
@@ -1563,7 +1700,7 @@ function NotifPanel({notifications,onClose}){
 }
 
 // ─── Modal de edição de disciplina ────────────────────────────────────────────
-function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,onCancel}){
+function CourseEditModal({course,isChief,targetDeptId,courses,period,onSave,onCreate,onCancel}){
   const{T,theme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
   const[code,setCode]=useState(course?.code??'');
@@ -1587,8 +1724,8 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
       if(!code.trim())e.code='Obrigatório';
       const secNum=Number(sec);
       if(!Number.isInteger(secNum)||secNum<1)e.sec='Deve ser um número inteiro ≥ 1';
-      else if(courses.some(c=>c.deptId===effectiveDeptId&&c.code.trim().toUpperCase()===code.trim().toUpperCase()&&c.sec===secNum))
-        e.sec='Já existe uma disciplina com este código e seção neste departamento';
+      else if(courses.some(c=>c.deptId===effectiveDeptId&&c.period===period&&c.code.trim().toUpperCase()===code.trim().toUpperCase()&&c.sec===secNum))
+        e.sec='Já existe uma disciplina com este código e seção neste departamento e período';
     }
     if(!name.trim())e.name='Obrigatório';
     if(enroll<1||enroll>1000)e.enroll='Entre 1 e 1000';
@@ -1611,7 +1748,7 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
     if(course){
       onSave(course.id,{name:name.trim(),teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }else{
-      onCreate({id:courseId(effectiveDeptId,code.trim(),Number(sec)),code:code.trim(),name:name.trim(),sec:Number(sec),deptId:effectiveDeptId,teacher:teacher.trim(),blocks,enroll:Number(enroll)});
+      onCreate({id:courseId(effectiveDeptId,code.trim(),Number(sec),period),code:code.trim(),name:name.trim(),sec:Number(sec),deptId:effectiveDeptId,period,teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }
   };
   const inp={width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'};
@@ -1622,6 +1759,7 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
           <div style={{width:3,height:20,borderRadius:1,background:cd.clr}}/>
           {course&&<span style={{...mono,fontSize:10,color:cdClr,fontWeight:500}}>{course.code}</span>}
           <span style={{fontSize:14,fontWeight:700,color:T.txt}}>{course?'Editar Disciplina':'Nova Disciplina'}</span>
+          {!course&&<span style={{...mono,fontSize:9,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:4,padding:'2px 6px'}}>{period}</span>}
           {course&&hasAnyAllocation(course)&&<span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fef3c7':'#3a1a0a',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'2px 6px',marginLeft:'auto'}}>⚠ Alteração de horário pode remover a sala de algum dia</span>}
           <button onClick={onCancel} style={{background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer',marginLeft:course&&hasAnyAllocation(course)?0:'auto'}}>✕</button>
         </div>
@@ -1704,7 +1842,7 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
 }
 
 // ─── Modal de import de disciplinas (ODS) ─────────────────────────────────────
-function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCancel}){
+function CourseImportModal({targetDeptId,deptName,existingCourses,period,onConfirm,onCancel}){
   const{T,theme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
   const dept=gDept(targetDeptId),dClr=dtc(dept,theme);
@@ -1738,8 +1876,8 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
   const allocatedExisting=existingCourses.filter(c=>hasAnyAllocation(c)).length;
 
   const handleConfirmImport=()=>onConfirm(validRows.map(r=>({
-    id:courseId(targetDeptId,r.normalized.code,r.normalized.sec),
-    code:r.normalized.code,name:r.normalized.name,sec:r.normalized.sec,deptId:targetDeptId,
+    id:courseId(targetDeptId,r.normalized.code,r.normalized.sec,period),
+    code:r.normalized.code,name:r.normalized.name,sec:r.normalized.sec,deptId:targetDeptId,period,
     teacher:r.normalized.teacher,blocks:r.normalized.blocks,enroll:r.normalized.enroll,
   })));
 
@@ -1753,8 +1891,8 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
                 <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>⇪</div>
                 <div>
-                  <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Importar Disciplinas — {deptName}</div>
-                  <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>Substitui todas as disciplinas atuais do departamento</div>
+                  <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Importar Disciplinas — {deptName} <span style={{color:T.dim,fontWeight:400}}>({period})</span></div>
+                  <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>Substitui as disciplinas do departamento neste período — outros períodos não são afetados</div>
                 </div>
                 <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
               </div>
@@ -1855,7 +1993,7 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
               <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
             </div>
             <div style={{background:theme==='light'?'#fef2f2':'#1a0505',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444433'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:12,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.7}}>
-              Isso vai <strong>excluir permanentemente {existingCourses.length} disciplina{existingCourses.length!==1?'s':''} existente{existingCourses.length!==1?'s':''}</strong> do {deptName}{allocatedExisting>0?<>, incluindo <strong>{allocatedExisting} já alocada{allocatedExisting!==1?'s':''} em sala{allocatedExisting!==1?'s':''}</strong> (essas alocações serão perdidas)</>:''}. As <strong>{validRows.length} novas disciplinas</strong> do arquivo serão inseridas em seguida. Esta ação não pode ser desfeita.
+              Isso vai <strong>excluir permanentemente {existingCourses.length} disciplina{existingCourses.length!==1?'s':''} existente{existingCourses.length!==1?'s':''}</strong> do {deptName} no período <strong>{period}</strong>{allocatedExisting>0?<>, incluindo <strong>{allocatedExisting} já alocada{allocatedExisting!==1?'s':''} em sala{allocatedExisting!==1?'s':''}</strong> (essas alocações serão perdidas)</>:''}. Outros períodos não são afetados. As <strong>{validRows.length} novas disciplinas</strong> do arquivo serão inseridas em seguida. Esta ação não pode ser desfeita.
             </div>
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
               <button onClick={()=>setStep('preview')} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Voltar</button>
