@@ -170,12 +170,12 @@ function parseFlatCourseRows(rows){
   return out;
 }
 
-// Gera e baixa um .ods de exemplo no formato esperado pelo import, com 3
+// Gera e baixa um .ods de exemplo no formato esperado pelo import, com
 // disciplinas cobrindo os casos que mais geram dúvida ao preencher: professor
-// único, múltiplos docentes na mesma turma, e horários em dias diferentes da
-// semana (bloco de "Horário" com mais de um código separado por espaço).
-// Turma fica em branco nos exemplos — nenhum dos 3 precisa de mais de uma
-// turma para o mesmo código.
+// único, múltiplos docentes na mesma turma, horários em dias diferentes da
+// semana (bloco de "Horário" com mais de um código separado por espaço), e um
+// código com duas turmas — único caso em que "Turma" precisa ser preenchida,
+// pra diferenciá-las (nos demais exemplos ela fica em branco de propósito).
 async function downloadCourseTemplate(){
   const XLSX=await import('xlsx');
   const rows=[
@@ -183,6 +183,8 @@ async function downloadCourseTemplate(){
     ['EX101','Disciplina Exemplo — Professor Único','','JOÃO DA SILVA','35M12',40],
     ['EX205','Disciplina Exemplo — Múltiplos Docentes','','MARIA OLIVEIRA, PEDRO SANTOS','24T34',35],
     ['EX310','Disciplina Exemplo — Horários em Dias Diferentes','','ANA PEREIRA','2T456 6T56',28],
+    ['EX415','Disciplina Exemplo — Duas Turmas',1,'CARLOS MENDES','35M34',45],
+    ['EX415','Disciplina Exemplo — Duas Turmas',2,'FERNANDA LIMA','24T12',30],
   ];
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:10},{wch:40},{wch:7},{wch:32},{wch:14},{wch:13}];
