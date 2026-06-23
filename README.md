@@ -133,7 +133,7 @@ departamento está marcado como concluído ou bloqueado pelo Diretor.
 | Tabela | Conteúdo |
 |---|---|
 | `rooms` | Salas reais do CCN1/CCN2 — `dept_id` nulo significa sala compartilhada (só o Diretor gerencia) |
-| `courses` | Disciplinas — `blocks` (jsonb) guarda uma lista de `{dias, início, fim}`, permitindo mais de um horário por disciplina |
+| `courses` | Disciplinas — `blocks` (jsonb) guarda uma lista de `{dias, início, fim}`, permitindo mais de um horário por disciplina; `teacher` guarda o(s) docente(s) da turma |
 | `room_features` | Catálogo de recursos selecionáveis ao editar uma sala |
 | `dept_statuses` | Status de cada departamento (`active` / `finished` / `force_finished`) |
 | `notifications` | Notificações que o Diretor recebe quando um departamento conclui sua alocação |

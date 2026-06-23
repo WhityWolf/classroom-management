@@ -144,9 +144,10 @@ function groupSigaaRows(rows){
     const matMatch=(row[7]??'').toString().match(/(\d+)/);
     const enroll=matMatch?Number(matMatch[1]):NaN;
     if(!Number.isInteger(enroll)||enroll<0)errors.matriculados=`Matrícula não reconhecida em "${row[7]}"`;
+    const teacher=(row[2]??'').toString().trim();
     out.push({
-      raw:{codigo:current?.code,nome:current?.name,turma:col1,situacao:row[4],horario:row[5],matriculados:row[7]},
-      normalized:{code:current?.code,name:current?.name,sec:secMatch?Number(secMatch[1]):null,blocks,enroll},
+      raw:{codigo:current?.code,nome:current?.name,turma:col1,situacao:row[4],horario:row[5],matriculados:row[7],docente:row[2]},
+      normalized:{code:current?.code,name:current?.name,sec:secMatch?Number(secMatch[1]):null,blocks,enroll,teacher},
       errors,skipped,skipReason:skipped?`Situação: ${row[4]}`:null,
     });
   });
@@ -689,6 +690,7 @@ function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,o
         <div style={{display:'flex',alignItems:'center',gap:5}}>
           {showDeptBadge&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.id}</span>}
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:showDeptBadge?badgeClr:dtc(activeDept,theme)}} onClick={onSelect}>{course.code}</span>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:3,padding:'1px 4px'}} onClick={onSelect}>Turma {course.sec}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:4}}>
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{course.enroll} alunos</span>
@@ -708,6 +710,7 @@ function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,o
       </div>
       <div style={{fontSize:11,fontWeight:500,color:T.txt,marginBottom:2,lineHeight:1.3}} onClick={onSelect}>{course.name}</div>
       <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}} onClick={onSelect}>{fmtSchedule(course)}</div>
+      {course.teacher&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} onClick={onSelect} title={course.teacher}>👤 {course.teacher}</div>}
       {roomLabel&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:badgeClr,marginTop:2}}>📍 {roomLabel}</div>}
     </div>
   );
@@ -768,7 +771,7 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
                     return(
                       <td key={si} colSpan={slot.span} style={{padding:'2px 2px',height:RH,verticalAlign:'middle',background:isMergeZone?(theme==='light'?'#fffbeb':'#F59E0B0f'):'transparent',cursor:isMergeZone?'pointer':'default',transition:'background .1s'}} className={isMergeZone?'gridcell-merge':''} onClick={()=>isMergeZone&&onTryAlloc(room.id)}>
                         <div onClick={e=>{if(isMine&&canDealloc&&!isMergeZone){e.stopPropagation();onDealloc(slot.c.id);}}} className={isMine&&canDealloc?'chip-own':''}
-                          title={`${slot.c.name} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos${isMine&&canDealloc?'\nClique para desalocar':''}${isMergeZone?'\nClique para mesclar':''}`}
+                          title={`${slot.c.name} · Turma ${slot.c.sec}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos${isMine&&canDealloc?'\nClique para desalocar':''}${isMergeZone?'\nClique para mesclar':''}`}
                           style={{height:'100%',padding:'0 5px',borderRadius:3,background:isMine?`${cd.clr}${theme==='light'?'28':'22'}`:`${cd.clr}${theme==='light'?'18':'0e'}`,borderLeft:`2px solid ${isMergeZone?'#F59E0B':cd.clr}`,display:'flex',alignItems:'center',gap:4,overflow:'hidden',cursor:isMergeZone?'pointer':isMine&&canDealloc?'pointer':'default',transition:'filter .12s'}}>
                           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:isMergeZone?'#d97706':cdClr,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{slot.c.code}</span>
                           {slot.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:'#d97706',background:'#F59E0B22',borderRadius:2,padding:'0 3px',flexShrink:0}}>+{slot.merged}</span>}
@@ -898,7 +901,7 @@ function RoomCard({room,sel,alloc,courses,deptId,dept,status,canAllocate,canDeal
           {conflicts.map(c=>{
             const cd=gDept(c.deptId),cdClr=dtc(cd,theme),isMine=c.deptId===deptId;
             return(
-              <div key={c.id} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 6px',background:`${cd.clr}${theme==='light'?'18':'0e'}`,borderRadius:4,marginBottom:2}}>
+              <div key={c.id} title={c.teacher?`Turma ${c.sec} · ${c.teacher}`:`Turma ${c.sec}`} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 6px',background:`${cd.clr}${theme==='light'?'18':'0e'}`,borderRadius:4,marginBottom:2}}>
                 <div style={{width:2,height:10,borderRadius:1,background:cd.clr}}/>
                 <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:cdClr,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.code}</span>
                 <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.muted}}>{c.enroll} al.</span>
@@ -1248,6 +1251,7 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
   const effectiveDeptId=course?course.deptId:deptId;
   const cd=gDept(effectiveDeptId),cdClr=dtc(cd,theme);
   const[name,setName]=useState(course?.name??'');
+  const[teacher,setTeacher]=useState(course?.teacher??'');
   const[blocks,setBlocks]=useState(()=>course?course.blocks.map(b=>({days:[...b.days],sh:b.sh,eh:b.eh})):[{days:[],sh:8,eh:9}]);
   const[enroll,setEnroll]=useState(course?.enroll??1);
   const[errors,setErrors]=useState({});
@@ -1284,9 +1288,9 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
   const handleSave=()=>{
     if(!validate())return;
     if(course){
-      onSave(course.id,{name:name.trim(),blocks,enroll:Number(enroll)});
+      onSave(course.id,{name:name.trim(),teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }else{
-      onCreate({id:courseId(effectiveDeptId,code.trim(),Number(sec)),code:code.trim(),name:name.trim(),sec:Number(sec),deptId:effectiveDeptId,blocks,enroll:Number(enroll)});
+      onCreate({id:courseId(effectiveDeptId,code.trim(),Number(sec)),code:code.trim(),name:name.trim(),sec:Number(sec),deptId:effectiveDeptId,teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }
   };
   const inp={width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'};
@@ -1326,6 +1330,10 @@ function CourseEditModal({course,isChief,targetDeptId,courses,onSave,onCreate,on
           <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Nome da Disciplina</label>
           <input value={name} onChange={e=>setName(e.target.value)} style={inp}/>
           {errors.name&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.name}</div>}
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Docente(s)</label>
+          <input value={teacher} onChange={e=>setTeacher(e.target.value)} placeholder="A definir" style={inp}/>
         </div>
         {errors.blocks&&<div style={{fontSize:10,color:'#ef4444',marginBottom:8}}>{errors.blocks}</div>}
         {blocks.map((block,i)=>(
@@ -1412,7 +1420,7 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
   const handleConfirmImport=()=>onConfirm(validRows.map(r=>({
     id:courseId(targetDeptId,r.normalized.code,r.normalized.sec),
     code:r.normalized.code,name:r.normalized.name,sec:r.normalized.sec,deptId:targetDeptId,
-    blocks:r.normalized.blocks,enroll:r.normalized.enroll,
+    teacher:r.normalized.teacher,blocks:r.normalized.blocks,enroll:r.normalized.enroll,
   })));
 
   return(
@@ -1488,10 +1496,11 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,onConfirm,onCa
                     <div style={{width:2,height:30,borderRadius:1,background:dept.clr,flexShrink:0}}/>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
-                        <span style={{...mono,fontSize:9,color:dClr}}>{r.normalized.code} · sec {r.normalized.sec}</span>
+                        <span style={{...mono,fontSize:9,color:dClr}}>{r.normalized.code} · Turma {r.normalized.sec}</span>
                         <span style={{fontSize:11,color:T.txt,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.normalized.name}</span>
                       </div>
                       <div style={{...mono,fontSize:9,color:T.dim}}>{fmtSchedule({blocks:r.normalized.blocks})} · {r.normalized.enroll} alunos</div>
+                      {r.normalized.teacher&&<div style={{fontSize:9,color:T.muted,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>👤 {r.normalized.teacher}</div>}
                     </div>
                   </div>
                 ))

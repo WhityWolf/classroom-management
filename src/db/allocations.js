@@ -11,7 +11,7 @@ export const mapRoom = r => ({
 });
 export const mapCourse = c => ({
   id: c.id, code: c.code, name: c.name, sec: c.sec, deptId: c.dept_id,
-  blocks: c.blocks, enroll: c.enroll, room: c.room,
+  teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, room: c.room,
 });
 export const mapNotification = n => ({
   id: n.id, deptId: n.dept_id, deptName: n.dept_name, type: n.type,
@@ -52,6 +52,7 @@ export async function deallocateCourse(courseId) {
 export async function editCourse(courseId, changes) {
   const patch = {};
   if (changes.name !== undefined) patch.name = changes.name;
+  if (changes.teacher !== undefined) patch.teacher = changes.teacher;
   if (changes.blocks !== undefined) patch.blocks = changes.blocks;
   if (changes.enroll !== undefined) patch.enroll = changes.enroll;
   if (changes.room !== undefined) patch.room = changes.room;
@@ -61,7 +62,7 @@ export async function editCourse(courseId, changes) {
 export async function createCourse(course) {
   await unwrap(supabase.from('courses').insert({
     id: course.id, code: course.code, name: course.name, sec: course.sec,
-    dept_id: course.deptId, blocks: course.blocks,
+    dept_id: course.deptId, teacher: course.teacher, blocks: course.blocks,
     enroll: course.enroll, room: null,
   }));
 }
@@ -76,7 +77,7 @@ export async function replaceDeptCourses(deptId, courses) {
   if (courses.length === 0) return;
   await unwrap(supabase.from('courses').insert(courses.map(c => ({
     id: c.id, code: c.code, name: c.name, sec: c.sec, dept_id: deptId,
-    blocks: c.blocks, enroll: c.enroll, room: null,
+    teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, room: null,
   }))));
 }
 

@@ -19,6 +19,7 @@ create table courses (
   name    text not null,
   sec     integer not null,
   dept_id text not null,
+  teacher text not null default '',
   -- A course can meet on different days at different times (real SIGAA
   -- imports have ~5% of turmas like this, e.g. Monday one time block,
   -- Friday another) — one row per meeting block:
