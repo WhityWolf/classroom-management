@@ -15,6 +15,10 @@ que não pertencem a nenhum departamento específico.
 
 ## Funcionalidades
 
+- **Seleção de tela pós-login** — antes de entrar na alocação, o usuário
+  escolhe entre "Alocar Disciplinas" (o fluxo de sempre) e "Mapa de Salas
+  Alocadas", uma visão somente-leitura e mais ampla — todas as salas já
+  alocadas, de todos os departamentos, lado a lado por dia da semana.
 - **Alocação de salas** — visão em Grade (quadro de horários semanal) ou
   em Salas (cartões de disponibilidade por sala, agrupados por bloco/prédio
   e por departamento), com detecção de conflito de horário em tempo real.

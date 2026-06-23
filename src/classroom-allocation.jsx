@@ -284,6 +284,7 @@ function Dashboard(){
 
   useRealtimeSync({setRooms,setCourses,setDeptStatuses,setNotifs,setFeatureOptions});
 
+  const[screen,         setScreen]         =useState('select'); // 'select' | 'allocate' | 'map'
   const[selId,          setSelId]          =useState(null);
   const[day,            setDay]            =useState('Segunda');
   const[viewMode,       setViewMode]       =useState('list');
@@ -494,6 +495,8 @@ function Dashboard(){
 
   if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Carregando dados…</div>;
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
+  if(screen==='select')return<ScreenSelector onPick={setScreen}/>;
+  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} alloc={alloc} onBack={()=>setScreen('select')}/>;
 
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -522,6 +525,8 @@ function Dashboard(){
 
       {/* Cabeçalho */}
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+        <button className="icon-btn" onClick={()=>setScreen('select')} title="Voltar ao menu"
+          style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>☰</button>
         {isChief?(
           <select value={activeDeptId} onChange={e=>{setActiveDeptId(e.target.value);setSelId(null);}}
             style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:dClr,fontSize:12,fontWeight:600,outline:'none',cursor:'pointer'}}>
@@ -715,6 +720,180 @@ function Dashboard(){
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Seleção de tela inicial ───────────────────────────────────────────────────
+// Tela intermediária pós-login: o usuário escolhe entre o fluxo de alocação
+// (Dashboard de sempre) e o mapa somente-leitura de salas já alocadas, em vez
+// de cair direto na alocação. Não usa nenhum estado do Dashboard — só precisa
+// do callback pra trocar a tela.
+function ScreenSelector({onPick}){
+  const{currentUser,logout}=useAuth();
+  const{T,theme,toggleTheme}=useT();
+  const isChief=currentUser.role===ROLES.CHIEF;
+  const mono={fontFamily:"'DM Mono',monospace"};
+  const cards=[
+    {key:'allocate',icon:'📋',title:'Alocar Disciplinas',desc:'Cadastre disciplinas e aloque-as nas salas do seu departamento.'},
+    {key:'map',icon:'🗺',title:'Mapa de Salas Alocadas',desc:'Veja uma visão ampla de todas as salas já alocadas, por dia e horário.'},
+  ];
+  return(
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        button{font-family:inherit;}
+        .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+      `}</style>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
+        <div style={{flex:1}}/>
+        <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
+          <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
+          <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{isChief?'Diretor':'Chefe de Depto.'}</span>
+        </div>
+        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Sair</button>
+      </div>
+      <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,animation:'fadeIn .2s ease'}}>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontSize:20,fontWeight:700,marginBottom:4}}>O que você quer fazer?</div>
+          <div style={{...mono,fontSize:11,color:T.dim}}>Sistema de Alocação de Salas — CCN/UFPI</div>
+        </div>
+        <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center'}}>
+          {cards.map(c=>(
+            <button key={c.key} onClick={()=>onPick(c.key)}
+              style={{width:260,padding:'28px 24px',background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,cursor:'pointer',textAlign:'left',transition:'all .15s',boxShadow:T.shadowSm}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;e.currentTarget.style.boxShadow=T.shadowMd;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr;e.currentTarget.style.boxShadow=T.shadowSm;}}>
+              <div style={{fontSize:30,marginBottom:14}}>{c.icon}</div>
+              <div style={{fontSize:15,fontWeight:700,color:T.txt,marginBottom:6}}>{c.title}</div>
+              <div style={{fontSize:11,color:T.muted,lineHeight:1.5}}>{c.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tela: mapa de salas alocadas ──────────────────────────────────────────────
+// Visão somente-leitura, sem seleção de disciplina nem ações de alocar/editar —
+// mostra, para todos os departamentos de uma vez, quais salas já têm
+// disciplinas alocadas e em que horário. Reaproveita rowSlots/blockForDay (os
+// mesmos helpers da Grade de alocação) só que sem nenhum callback de clique.
+function RoomMapScreen({rooms,courses,alloc,onBack}){
+  const{currentUser,logout}=useAuth();
+  const{T,theme,toggleTheme}=useT();
+  const isChief=currentUser.role===ROLES.CHIEF;
+  const mono={fontFamily:"'DM Mono',monospace"};
+  const[day,setDay]=useState('Segunda');
+  const allocatedRoomIds=useMemo(()=>new Set(courses.filter(c=>c.room).map(c=>c.room)),[courses]);
+  const allocatedRooms=useMemo(()=>rooms.filter(r=>allocatedRoomIds.has(r.id)),[rooms,allocatedRoomIds]);
+  return(
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        button{font-family:inherit;}
+        ::-webkit-scrollbar{width:4px;height:4px;}
+        ::-webkit-scrollbar-track{background:${T.scrollTrack};}
+        ::-webkit-scrollbar-thumb{background:${T.scrollThumb};border-radius:4px;}
+        .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
+        .daybtn:hover{border-color:${T.muted}!important;}
+      `}</style>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+        <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>☰</button>
+        <span style={{fontSize:13,fontWeight:700,color:T.txt}}>🗺 Mapa de Salas Alocadas</span>
+        <div style={{width:1,height:16,background:T.bdr2}}/>
+        {DAYS.map(dy=>(
+          <button key={dy} className="daybtn" onClick={()=>setDay(dy)}
+            style={{padding:'4px 10px',borderRadius:5,fontSize:10,fontWeight:500,background:day===dy?T.muted:'transparent',color:day===dy?T.bg:T.muted,border:`1px solid ${day===dy?T.muted:T.bdr2}`,transition:'all .12s',cursor:'pointer'}}>{dy.slice(0,3)}</button>
+        ))}
+        <div style={{flex:1}}/>
+        <span style={{...mono,fontSize:9,color:T.dim}}>{allocatedRooms.length} sala{allocatedRooms.length!==1?'s':''} alocada{allocatedRooms.length!==1?'s':''}</span>
+        <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
+          <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
+          <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{isChief?'Diretor':'Chefe de Depto.'}</span>
+        </div>
+        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Sair</button>
+      </div>
+      <div style={{flex:1,overflow:'auto',background:T.bg}}>
+        <RoomMapGrid rooms={allocatedRooms} day={day} alloc={alloc}/>
+      </div>
+    </div>
+  );
+}
+
+// Grade somente-leitura usada pelo RoomMapScreen — mesma estrutura de tabela
+// da Grade de alocação, mas agrupada por departamento (não "meu/outro depto")
+// e sem nenhuma interação (sem clique, sem editar, sem mesclar).
+function RoomMapGrid({rooms,day,alloc}){
+  const{T,theme}=useT();
+  const CW=76,RH=33,LW=150;
+  const deptOrder=id=>{const i=DEPTS.findIndex(d=>d.id===id);return i===-1?DEPTS.length:i;};
+  const byDeptBuildingLabel=(a,b)=>deptOrder(a.deptId)-deptOrder(b.deptId)||a.building.localeCompare(b.building)||a.label.localeCompare(b.label,undefined,{numeric:true});
+  const sorted=useMemo(()=>[...rooms].sort(byDeptBuildingLabel),[rooms]);
+  if(sorted.length===0)return(
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',flexDirection:'column',gap:10,padding:40}}>
+      <div style={{fontSize:32,opacity:.15}}>🗺</div>
+      <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Nenhuma sala alocada ainda.</div>
+    </div>
+  );
+  return(
+    <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:LW+CW*HOURS.length}}>
+      <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
+      <thead>
+        <tr style={{position:'sticky',top:0,zIndex:5,background:T.surface,boxShadow:theme==='light'?'0 1px 2px rgba(0,0,0,.06)':'none'}}>
+          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
+          {HOURS.map(h=><th key={h} style={{padding:'7px 0',textAlign:'center',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`}}>{h}:00</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {sorted.map((room,idx)=>{
+          const rd=gDept(room.deptId),rdClr=dtc(rd,theme);
+          const slots=rowSlots(room.id,day,alloc);
+          const showDeptSep=idx===0||sorted[idx-1].deptId!==room.deptId;
+          const showBuildingSep=showDeptSep||sorted[idx-1].building!==room.building;
+          return(
+            <Fragment key={room.id}>
+              {showDeptSep&&(
+                <tr><td colSpan={HOURS.length+1} style={{padding:'6px 10px',fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:rdClr,background:`${rd.clr}${theme==='light'?'14':'10'}`,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>{rd.full}</td></tr>
+              )}
+              {showBuildingSep&&(
+                <tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{room.building}</td></tr>
+              )}
+              <tr style={{borderBottom:`1px solid ${T.bdr}`}}>
+                <td style={{padding:'0 6px 0 10px',height:RH}}>
+                  <div style={{display:'flex',alignItems:'center',gap:4}}>
+                    <div style={{width:2,height:18,borderRadius:1,background:rd.clr}}/>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:rdClr,whiteSpace:'nowrap'}}>{room.label}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>{room.cap}</span>
+                  </div>
+                </td>
+                {slots.map((slot,si)=>{
+                  if(slot.c){
+                    const cd=gDept(slot.c.deptId),cdClr=dtc(cd,theme);
+                    const slotBlock=blockForDay(slot.c,day);
+                    return(
+                      <td key={si} colSpan={slot.span} style={{padding:'2px 2px',height:RH,verticalAlign:'middle'}}>
+                        <div title={`${slot.c.name}${slot.c.sec!=null?` · Turma ${slot.c.sec}`:''}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos`}
+                          style={{height:'100%',padding:'0 5px',borderRadius:3,background:`${cd.clr}${theme==='light'?'28':'22'}`,borderLeft:`2px solid ${cd.clr}`,display:'flex',alignItems:'center',gap:4,overflow:'hidden'}}>
+                          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:cdClr,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{slot.c.code}</span>
+                          {slot.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:'#d97706',background:'#F59E0B22',borderRadius:2,padding:'0 3px',flexShrink:0}}>+{slot.merged}</span>}
+                        </div>
+                      </td>
+                    );
+                  }
+                  return<td key={si} style={{height:RH}}/>;
+                })}
+              </tr>
+            </Fragment>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 
