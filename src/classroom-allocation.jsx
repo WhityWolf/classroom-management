@@ -23,6 +23,13 @@ const SHARED_ROOM_ROLE = { id:null, full:'Sala Compartilhada (gerida pela Direç
 
 const DS = { ACTIVE:'active', FINISHED:'finished', FORCE_FINISHED:'force_finished' };
 
+// Sentinela pro seletor de função ativa de quem tem visão institucional —
+// "Todas" não é uma função real, é o único valor desse seletor que faz a
+// barra lateral mostrar disciplinas de qualquer função (com o rótulo de
+// dona aparecendo em cada uma); qualquer função real ali filtra a lista só
+// pras disciplinas daquela função, sem o rótulo (já fica implícito).
+const ALL_ROLES = '__ALL__';
+
 // ─── Sub-unidades/funções/blocos: dados dinâmicos, não mais enums fixos ──────
 // roles/subUnits/blocks chegam do banco (db.fetchAll(), ver Dashboard) — os
 // helpers abaixo fecham sobre essas listas em vez de uma constante de módulo
@@ -422,13 +429,18 @@ function Dashboard(){
   // Lista única — sem aba Pendentes/Alocadas. Pendentes (e parciais) vêm
   // primeiro, já alocadas (100%) depois e esmaecidas no CourseCard — sort é
   // estável, então só reagrupa, não embaralha a ordem dentro de cada grupo.
+  // Visão institucional: o seletor de função no topo decide o que aparece
+  // aqui — uma função específica mostra só as disciplinas dela, "Todas"
+  // mostra de qualquer função (com o rótulo de dona em cada uma).
   const visibleSidebarCourses=useMemo(()=>{
-    const base=!isInstitutional?periodCourses.filter(c=>c.roleId===currentUser.roleId):periodCourses;
+    const base=!isInstitutional
+      ?periodCourses.filter(c=>c.roleId===currentUser.roleId)
+      :activeRoleId===ALL_ROLES?periodCourses:periodCourses.filter(c=>c.roleId===activeRoleId);
     const filtered=search.trim()
       ?base.filter(c=>{const q=search.toLowerCase();return c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q);})
       :base;
     return[...filtered].sort((a,b)=>Number(isFullyAllocated(a))-Number(isFullyAllocated(b)));
-  },[periodCourses,isInstitutional,currentUser.roleId,search]);
+  },[periodCourses,isInstitutional,currentUser.roleId,activeRoleId,search]);
   const pendingCount=useMemo(()=>visibleSidebarCourses.filter(c=>!isFullyAllocated(c)).length,[visibleSidebarCourses]);
   const allocatedCount=visibleSidebarCourses.length-pendingCount;
 
@@ -442,8 +454,12 @@ function Dashboard(){
   },[periodCourses,isInstitutional,currentUser.roleId]);
 
   const stats=useMemo(()=>{
-    const mine=periodCourses.filter(c=>c.roleId===activeRoleId),done=mine.filter(isFullyAllocated);
-    const cross=mine.filter(c=>Object.values(c.roomByDay||{}).some(rid=>{
+    const viewingAll=activeRoleId===ALL_ROLES;
+    const mine=viewingAll?periodCourses:periodCourses.filter(c=>c.roleId===activeRoleId);
+    const done=mine.filter(isFullyAllocated);
+    // "Outra Função" não tem sentido olhando "Todas" de uma vez — não há um
+    // único "próprio" pra comparar contra.
+    const cross=viewingAll?0:mine.filter(c=>Object.values(c.roomByDay||{}).some(rid=>{
       const room=ROOMS.find(r=>r.id===rid);return room&&room.roleId&&room.roleId!==activeRoleId;
     })).length;
     return{total:mine.length,done:done.length,pend:mine.length-done.length,cross};
@@ -713,7 +729,9 @@ function Dashboard(){
           style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>☰</button>
         {isInstitutional?(
           <select value={activeRoleId??''} onChange={e=>{setActiveRoleId(e.target.value);setSelId(null);}}
+            title="Função em exibição — filtra as disciplinas da barra lateral"
             style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:dClr,fontSize:12,fontWeight:600,outline:'none',cursor:'pointer'}}>
+            <option value={ALL_ROLES}>Todas</option>
             {subUnits.map(su=>(
               <optgroup key={su.id} label={su.fullName}>
                 {roles.filter(r=>r.subUnitId===su.id).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
@@ -790,7 +808,7 @@ function Dashboard(){
                 <div style={{fontSize:12}}>{search?'Nenhum resultado':'Nenhuma disciplina cadastrada ainda'}</div>
               </div>
             ):visibleSidebarCourses.map(c=>(
-              <CourseCard key={c.id} course={c} activeRole={gRole(activeRoleId)} showRoleBadge={isInstitutional}
+              <CourseCard key={c.id} course={c} activeRole={gRole(activeRoleId)} showRoleBadge={isInstitutional&&activeRoleId===ALL_ROLES}
                 selected={selId===c.id} locked={isLocked}
                 roomLabel={fmtRoomByDay(c,ROOMS)}
                 onSelect={()=>selectCourse(c)}
@@ -801,7 +819,7 @@ function Dashboard(){
 
           {!isLocked&&!isPastPeriod&&(
             <div style={{padding:'10px 12px',borderTop:`1px solid ${T.bdr}`,flexShrink:0,display:'flex',flexDirection:'column',gap:6}}>
-              {canManageCatalog&&(
+              {canManageCatalog&&activeRoleId!==ALL_ROLES&&(
                 <div style={{display:'flex',gap:6}}>
                   <button onClick={()=>setCreatingCourse(true)}
                     style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:11,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
@@ -1153,9 +1171,13 @@ function CourseCard({course,activeRole,showRoleBadge,selected,locked,roomLabel,o
   return(
     <div className={`cc${selected?' sel':''}${locked?' locked':''}${done?' done':''}`}
       style={{padding:'8px 10px',borderRadius:6,marginBottom:2,cursor:(locked||!onSelect)?'default':'pointer',background:'transparent',border:`1px solid ${selected?activeRole.clr:T.bdr}`,transition:'background .1s, border-color .1s, opacity .15s'}}>
+      {showRoleBadge&&(
+        <div style={{marginBottom:4}} onClick={onSelect}>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.full}</span>
+        </div>
+      )}
       <div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}>
         <div style={{display:'flex',alignItems:'center',gap:5}}>
-          {showRoleBadge&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.full}</span>}
           <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:showRoleBadge?badgeClr:dtc(activeRole,theme)}} onClick={onSelect}>{course.code}</span>
           {course.sec!=null&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:3,padding:'1px 4px'}} onClick={onSelect}>Turma {course.sec}</span>}
         </div>
