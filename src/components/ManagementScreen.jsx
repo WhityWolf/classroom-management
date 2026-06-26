@@ -294,6 +294,7 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
   const [editing, setEditing] = useState(null); // role | 'new' | null
   const [form, setForm] = useState(null);
   const [advOpen, setAdvOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // {role, courseCount} | null
 
   const startCreate = () => { setForm({ id:'', name:'', subUnitId:subUnits[0]?.id??'', permissions:[] }); setEditing('new'); setAdvOpen(false); };
   const startEdit = r => { setForm({ id:r.id, name:r.name, subUnitId:r.subUnitId??'', permissions:[...r.permissions] }); setEditing(r); setAdvOpen(false); };
@@ -314,13 +315,17 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
     if (linkedRooms.length) { flash('err',`Ainda há ${linkedRooms.length} sala(s) vinculada(s) a esta função. Desvincule-as antes de excluir.`); return; }
     const linkedUsers = users.filter(u=>u.roleId===r.id);
     if (linkedUsers.length) { flash('err',`Ainda há ${linkedUsers.length} usuário(s) vinculado(s) a esta função (incluindo desativados). Edite cada um e atribua outra função antes de excluir.`); return; }
-    try { await mgmt.deleteRole(r.id); flash('ok','Função excluída.'); reloadDomain(); }
-    catch (e) {
-      const msg = e.message.includes('courses_role_id_fkey')
-        ? 'Esta função ainda possui disciplinas associadas. Remova ou realoque as disciplinas antes de excluí-la.'
-        : `Não foi possível excluir: ${e.message}`;
-      flash('err', msg);
-    }
+    try {
+      const courseCount = await mgmt.countRoleCourses(r.id);
+      if (courseCount > 0) { setConfirmDelete({ role:r, courseCount }); return; }
+      await mgmt.deleteRole(r.id); flash('ok','Função excluída.'); reloadDomain();
+    } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+  };
+  const confirmRemove = async () => {
+    try {
+      await mgmt.deleteRoleAndCourses(confirmDelete.role.id);
+      flash('ok','Função e disciplinas associadas excluídas.'); setConfirmDelete(null); reloadDomain();
+    } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); setConfirmDelete(null); }
   };
   const roomsOfRole = id => rooms.filter(r=>r.roleId===id);
   const toggleRoom = async (room, checked) => {
@@ -349,7 +354,19 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
           })}
         </div>
       </>
-    )} panel={editing&&(
+    )} panel={confirmDelete?(
+      <div>
+        <div style={{fontSize:13,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+        <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:12,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+          A função <strong>{confirmDelete.role.name}</strong> possui <strong>{confirmDelete.courseCount} disciplina(s)</strong> associada(s) em todos os períodos. Ao excluir, todas serão removidas permanentemente.
+        </div>
+        <div style={{fontSize:12,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>
+        <div style={{display:'flex',gap:8}}>
+          <button type="button" onClick={()=>setConfirmDelete(null)} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
+          <button type="button" onClick={confirmRemove} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:600,cursor:'pointer'}}>Excluir tudo</button>
+        </div>
+      </div>
+    ):editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
         <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Nova Função':'Editar Função'}</div>
         {editing==='new'&&<div style={{marginBottom:12}}><label style={lblStyle(T)}>Identificador (slug, ex.: MATH_GRAD_COORD)</label><input value={form.id} onChange={e=>setForm({...form,id:e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g,'_')})} style={inpStyle(T)}/></div>}

@@ -78,7 +78,18 @@ export async function updateRole(id, changes) {
   await unwrap(supabase.from('roles').update(patch).eq('id', id));
 }
 
+export async function countRoleCourses(id) {
+  const { count, error } = await supabase.from('courses').select('id', { count:'exact', head:true }).eq('role_id', id);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function deleteRole(id) {
+  await unwrap(supabase.from('roles').delete().eq('id', id));
+}
+
+export async function deleteRoleAndCourses(id) {
+  await unwrap(supabase.from('courses').delete().eq('role_id', id));
   await unwrap(supabase.from('roles').delete().eq('id', id));
 }
 
