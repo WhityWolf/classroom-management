@@ -1036,7 +1036,8 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
     const sorted=[...allocatedRooms].sort((a,b)=>groupOrder(groupOf(a))-groupOrder(groupOf(b))||gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true}));
     const groupCounts={};sorted.forEach(r=>{const g=groupOf(r);groupCounts[g]=(groupCounts[g]||0)+1;});
     const thHours=HOURS.map(h=>`<th>${h}h</th>`).join('');
-    const daysSections=DAYS.map(d=>{
+    const dateStr=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const daysSections=DAYS.map((d,dIdx)=>{
       const rows=sorted.map((room,idx)=>{
         const rd=gRole(room.roleId);
         const slots=rowSlots(room.id,d,alloc);
@@ -1055,14 +1056,12 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
         }).join('');
         return`${groupRow}${blockRow}<tr><td class="room-cell" style="border-left:3px solid ${rd.clr}"><span style="color:${rd.textClr};font-weight:600">${room.label}</span><span class="cap">${room.cap}</span></td>${cells}</tr>`;
       }).join('');
-      return`<div class="day"><div class="day-title">${d}</div><div class="scroll"><table><thead><tr><th>Sala / Cap.</th>${thHours}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      const hdr=dIdx===0?`<div style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;margin-bottom:2px">Mapa de Salas Alocadas</div><div style="font-size:8px;color:#64748b">Período ${selectedPeriod} · ${allocatedRooms.length} sala${allocatedRooms.length!==1?'s':''} alocada${allocatedRooms.length!==1?'s':''} · Gerado em ${dateStr}</div></div>`:'';
+      return`<div class="day">${hdr}<div class="day-title">${d}</div><div class="scroll"><table><thead><tr><th>Sala / Cap.</th>${thHours}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
     }).join('');
-    const dateStr=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
     const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>Mapa de Salas — ${selectedPeriod}</title><style>
       *{box-sizing:border-box;margin:0;padding:0;}
       body{font-family:Arial,sans-serif;font-size:9px;color:#1e293b;padding:8mm;}
-      h1{font-size:13px;font-weight:700;margin-bottom:2px;}
-      .meta{font-size:8px;color:#64748b;margin-bottom:12px;}
       .day{margin-bottom:14px;}
       .day-title{font-size:10px;font-weight:700;padding:3px 8px;background:#f1f5f9;border-left:3px solid #3b82f6;margin-bottom:4px;}
       .scroll{overflow-x:auto;}
@@ -1074,11 +1073,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
       .group-row td{background:#f1f5f9;font-weight:700;font-size:8px;text-transform:uppercase;letter-spacing:.5px;padding:3px 8px;}
       .block-row td{background:#f8fafc;font-size:7px;color:#64748b;padding:2px 8px 2px 18px;}
       @media print{@page{size:A4 landscape;margin:8mm;}.day{page-break-before:always;}.day:first-child{page-break-before:avoid;}}
-    </style></head><body>
-      <h1>Mapa de Salas Alocadas</h1>
-      <div class="meta">Período ${selectedPeriod} · ${allocatedRooms.length} sala${allocatedRooms.length!==1?'s':''} alocada${allocatedRooms.length!==1?'s':''} · Gerado em ${dateStr}</div>
-      ${daysSections}
-    </body></html>`;
+    </style></head><body>${daysSections}</body></html>`;
     const w=window.open('','_blank');
     w.document.write(html);
     w.document.close();
