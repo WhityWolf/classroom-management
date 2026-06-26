@@ -138,7 +138,7 @@ export default function ManagementScreen({ onBack }) {
         ):(
           <>
             {tab==='users'&&<UsersTab users={users} roles={roles} subUnits={subUnits} can={can} currentUser={currentUser} reloadUsers={reloadUsers} flash={flash} gRole={gRole}/>}
-            {tab==='roles'&&<RolesTab roles={roles} subUnits={subUnits} rooms={rooms} can={can} reloadDomain={reloadDomain} flash={flash}/>}
+            {tab==='roles'&&<RolesTab roles={roles} subUnits={subUnits} rooms={rooms} blocks={blocks} can={can} reloadDomain={reloadDomain} flash={flash}/>}
             {tab==='subunits'&&<SubUnitsTab subUnits={subUnits} roles={roles} can={can} reloadDomain={reloadDomain} flash={flash}/>}
             {tab==='rooms'&&<RoomsBlocksTab rooms={rooms} blocks={blocks} roles={roles} subUnits={subUnits} can={can} reloadDomain={reloadDomain} flash={flash} gRole={gRole}/>}
           </>
@@ -257,7 +257,7 @@ function UsersTab({ users, roles, can, currentUser, reloadUsers, flash, gRole })
 }
 
 // ─── Aba Funções ──────────────────────────────────────────────────────────────
-function RolesTab({ roles, subUnits, rooms, can, reloadDomain, flash }) {
+function RolesTab({ roles, subUnits, rooms, blocks, can, reloadDomain, flash }) {
   const { T } = useT();
   const [editing, setEditing] = useState(null); // role | 'new' | null
   const [form, setForm] = useState(null);
@@ -331,11 +331,20 @@ function RolesTab({ roles, subUnits, rooms, can, reloadDomain, flash }) {
           <>
             <label style={lblStyle(T)}>Salas desta função</label>
             <div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:14,maxHeight:160,overflow:'auto'}}>
-              {rooms.map(room=>(
-                <label key={room.id} style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:T.txt2,cursor:'pointer'}}>
-                  <input type="checkbox" checked={room.roleId===editing.id} onChange={e=>toggleRoom(room,e.target.checked)}/> {room.label}
-                </label>
-              ))}
+              {blocks.map(b=>{
+                const bRooms=rooms.filter(r=>r.blockId===b.id);
+                if(!bRooms.length) return null;
+                return(
+                  <div key={b.id}>
+                    <div style={{fontSize:9,fontWeight:600,color:T.dim,textTransform:'uppercase',padding:'4px 0 2px'}}>{b.local} — {b.name}</div>
+                    {bRooms.map(room=>(
+                      <label key={room.id} style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:T.txt2,cursor:'pointer',paddingLeft:8}}>
+                        <input type="checkbox" checked={room.roleId===editing.id} onChange={e=>toggleRoom(room,e.target.checked)}/> {room.label}
+                      </label>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           </>
         )}
@@ -413,7 +422,7 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
 }
 
 // ─── Aba Salas e Blocos ───────────────────────────────────────────────────────
-function RoomsBlocksTab({ rooms, blocks, roles, can, reloadDomain, flash, gRole }) {
+function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, flash, gRole }) {
   const { T } = useT();
   const [sub, setSub] = useState('rooms'); // 'rooms' | 'blocks'
   const [editingRoom, setEditingRoom] = useState(null);
@@ -526,7 +535,11 @@ function RoomsBlocksTab({ rooms, blocks, roles, can, reloadDomain, flash, gRole 
             <label style={lblStyle(T)}>Função dona (vazio = compartilhada)</label>
             <select value={roomForm.roleId} onChange={e=>setRoomForm({...roomForm,roleId:e.target.value})} style={{...inpStyle(T),cursor:'pointer'}}>
               <option value="">— Compartilhada/institucional —</option>
-              {roles.filter(r=>r.subUnitId).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+              {subUnits.map(su=>{
+                const suRoles=roles.filter(r=>r.subUnitId===su.id);
+                if(!suRoles.length) return null;
+                return(<optgroup key={su.id} label={su.fullName}>{suRoles.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</optgroup>);
+              })}
             </select>
           </div>
           <div style={{display:'flex',gap:8}}>
