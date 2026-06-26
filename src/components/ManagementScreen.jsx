@@ -151,7 +151,7 @@ export default function ManagementScreen({ onBack }) {
         ):(
           <>
             {tab==='users'&&<UsersTab users={users} roles={roles} subUnits={subUnits} can={can} currentUser={currentUser} reloadUsers={reloadUsers} flash={flash} gRole={gRole}/>}
-            {tab==='roles'&&<RolesTab roles={roles} subUnits={subUnits} rooms={rooms} blocks={blocks} can={can} reloadDomain={reloadDomain} flash={flash}/>}
+            {tab==='roles'&&<RolesTab roles={roles} subUnits={subUnits} rooms={rooms} blocks={blocks} users={users} can={can} reloadDomain={reloadDomain} flash={flash}/>}
             {tab==='subunits'&&<SubUnitsTab subUnits={subUnits} roles={roles} can={can} reloadDomain={reloadDomain} flash={flash}/>}
             {tab==='rooms'&&<RoomsBlocksTab rooms={rooms} blocks={blocks} roles={roles} subUnits={subUnits} can={can} reloadDomain={reloadDomain} flash={flash} gRole={gRole}/>}
           </>
@@ -275,7 +275,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
 }
 
 // ─── Aba Funções ──────────────────────────────────────────────────────────────
-function RolesTab({ roles, subUnits, rooms, blocks, can, reloadDomain, flash }) {
+function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, flash }) {
   const { T } = useT();
   const [editing, setEditing] = useState(null); // role | 'new' | null
   const [form, setForm] = useState(null);
@@ -296,8 +296,17 @@ function RolesTab({ roles, subUnits, rooms, blocks, can, reloadDomain, flash }) 
   };
   const remove = async r => {
     if (r.isSystem) { flash('err','Esta função é protegida e não pode ser excluída.'); return; }
+    const linkedRooms = rooms.filter(rm=>rm.roleId===r.id);
+    if (linkedRooms.length) { flash('err',`Ainda há ${linkedRooms.length} sala(s) vinculada(s) a esta função. Desvincule-as antes de excluir.`); return; }
+    const linkedUsers = users.filter(u=>u.roleId===r.id);
+    if (linkedUsers.length) { flash('err',`Ainda há ${linkedUsers.length} usuário(s) com esta função. Reatribua-os antes de excluir.`); return; }
     try { await mgmt.deleteRole(r.id); flash('ok','Função excluída.'); reloadDomain(); }
-    catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+    catch (e) {
+      const msg = e.message.includes('courses_role_id_fkey')
+        ? 'Esta função ainda possui disciplinas associadas. Remova ou realoque as disciplinas antes de excluí-la.'
+        : `Não foi possível excluir: ${e.message}`;
+      flash('err', msg);
+    }
   };
   const roomsOfRole = id => rooms.filter(r=>r.roleId===id);
   const toggleRoom = async (room, checked) => {
