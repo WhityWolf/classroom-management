@@ -175,7 +175,7 @@ const inpStyle = T => ({width:'100%',padding:'7px 10px',background:T.inputBg,bor
 const lblStyle = T => ({fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4});
 
 // ─── Aba Usuários ─────────────────────────────────────────────────────────────
-function UsersTab({ users, roles, can, currentUser, reloadUsers, flash, gRole }) {
+function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash, gRole }) {
   const { T, theme } = useT();
   const [editing, setEditing] = useState(null); // user object | 'new' | null
   const [form, setForm] = useState(null);
@@ -252,7 +252,12 @@ function UsersTab({ users, roles, can, currentUser, reloadUsers, flash, gRole })
         <div style={{marginBottom:12}}>
           <label style={lblStyle(T)}>Função</label>
           <select value={form.roleId} onChange={e=>setForm({...form,roleId:e.target.value})} style={{...inpStyle(T),cursor:'pointer'}}>
-            {roles.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+            {subUnits.map(su=>{
+              const suRoles=roles.filter(r=>r.subUnitId===su.id);
+              if(!suRoles.length) return null;
+              return(<optgroup key={su.id} label={su.fullName}>{suRoles.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</optgroup>);
+            })}
+            {roles.filter(r=>!r.subUnitId).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </div>
         {editing!=='new'&&(
