@@ -692,7 +692,7 @@ function Dashboard(){
 
   if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Carregando dados…</div>;
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
-  if(screen==='select')return<ScreenSelector onPick={setScreen}/>;
+  if(screen==='select')return<ScreenSelector onPick={setScreen} subUnits={subUnits}/>;
   if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} onBack={()=>setScreen('select')}/>;
   if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')}/>;
 
@@ -762,6 +762,7 @@ function Dashboard(){
           <div style={{width:5,height:5,borderRadius:'50%',background:isInstitutional?(theme==='light'?'#5b21b6':'#A78BFA'):dClr}}/>
           <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
           <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
+          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         {isInstitutional&&(
           <>
@@ -940,7 +941,7 @@ function Dashboard(){
 // (Dashboard de sempre) e o mapa somente-leitura de salas já alocadas, em vez
 // de cair direto na alocação. Não usa nenhum estado do Dashboard — só precisa
 // do callback pra trocar a tela.
-function ScreenSelector({onPick}){
+function ScreenSelector({onPick,subUnits}){
   const{currentUser,logout,can}=useAuth();
   const{T,theme,toggleTheme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
@@ -967,6 +968,7 @@ function ScreenSelector({onPick}){
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
           <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
           <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
+          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Sair</button>
@@ -1051,6 +1053,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
           <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
           <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
+          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Sair</button>
