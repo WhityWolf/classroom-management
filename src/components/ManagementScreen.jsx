@@ -33,6 +33,7 @@ const PERM_LABELS = {
   [PERMS.CREATE_ANY_USER]: 'Criar usuários',
   [PERMS.EDIT_ANY_USER]: 'Editar usuários',
   [PERMS.DEACTIVATE_USER]: 'Desativar usuários',
+  [PERMS.DELETE_USER]:     'Excluir usuários permanentemente',
   [PERMS.ASSIGN_ROLES]: 'Atribuir funções a usuários',
   [PERMS.MANAGE_SUB_UNITS]: 'Gerenciar sub-unidades',
   [PERMS.MANAGE_ROLES]: 'Gerenciar funções',
@@ -180,6 +181,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
   const [editing, setEditing] = useState(null); // user object | 'new' | null
   const [form, setForm] = useState(null);
   const [search, setSearch] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(null); // user id | null
 
   const startCreate = () => { setEditing('new'); setForm({ name:'', username:'', email:'', roleId:roles[0]?.id??'', password:'' }); };
   const startEdit = u => { setEditing(u); setForm({ name:u.name, username:u.username, email:u.email, roleId:u.roleId, password:'', isActive:u.isActive }); };
@@ -209,6 +211,10 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
     try { await authApi.deactivateUser(u.id); flash('ok', `${u.name} foi desativado(a).`); reloadUsers(); }
     catch (e) { flash('err', e.message); }
   };
+  const deleteUser = async u => {
+    try { await authApi.deleteUser(u.id); flash('ok', `${u.name} foi excluído(a) permanentemente.`); setConfirmDelete(null); reloadUsers(); }
+    catch (e) { flash('err', e.message); setConfirmDelete(null); }
+  };
 
   return (
     <PanelLayout T={T} list={(
@@ -231,9 +237,17 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
                   <td style={{padding:'8px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:role.textClr,background:`${role.clr}22`,border:`1px solid ${role.clr}44`,borderRadius:4,padding:'2px 7px'}}>{role.full}</span></td>
                   <td style={{padding:'8px 10px',fontSize:10,color:u.isActive?(theme==='light'?'#15803d':'#34d399'):T.dim}}>{u.isActive?'Ativo':'Inativo'}</td>
                   <td style={{padding:'8px 10px'}}>
-                    <div style={{display:'flex',gap:6}}>
+                    <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                       {can(PERMS.EDIT_ANY_USER)&&<button onClick={()=>startEdit(u)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:10,cursor:'pointer'}}>Editar</button>}
                       {can(PERMS.DEACTIVATE_USER)&&u.isActive&&u.id!==currentUser.id&&<button onClick={()=>deactivate(u)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:10,cursor:'pointer'}}>Desativar</button>}
+                      {can(PERMS.DELETE_USER)&&!u.isActive&&u.id!==currentUser.id&&(
+                        confirmDelete===u.id
+                          ? <>
+                              <button onClick={()=>deleteUser(u)} style={{padding:'3px 10px',background:'#ef4444',border:'none',borderRadius:4,color:'#fff',fontSize:10,cursor:'pointer',fontWeight:600}}>Confirmar</button>
+                              <button onClick={()=>setConfirmDelete(null)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:10,cursor:'pointer'}}>Cancelar</button>
+                            </>
+                          : <button onClick={()=>setConfirmDelete(u.id)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:10,cursor:'pointer'}}>Excluir</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -299,7 +313,7 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
     const linkedRooms = rooms.filter(rm=>rm.roleId===r.id);
     if (linkedRooms.length) { flash('err',`Ainda há ${linkedRooms.length} sala(s) vinculada(s) a esta função. Desvincule-as antes de excluir.`); return; }
     const linkedUsers = users.filter(u=>u.roleId===r.id);
-    if (linkedUsers.length) { flash('err',`Ainda há ${linkedUsers.length} usuário(s) com esta função. Reatribua-os antes de excluir.`); return; }
+    if (linkedUsers.length) { flash('err',`Ainda há ${linkedUsers.length} usuário(s) vinculado(s) a esta função (incluindo desativados). Edite cada um e atribua outra função antes de excluir.`); return; }
     try { await mgmt.deleteRole(r.id); flash('ok','Função excluída.'); reloadDomain(); }
     catch (e) {
       const msg = e.message.includes('courses_role_id_fkey')

@@ -31,6 +31,7 @@ export const PERMS = Object.freeze({
   CREATE_ANY_USER: 'CREATE_ANY_USER',
   EDIT_ANY_USER:   'EDIT_ANY_USER',
   DEACTIVATE_USER: 'DEACTIVATE_USER',
+  DELETE_USER:     'DELETE_USER',
   ASSIGN_ROLES:    'ASSIGN_ROLES',
 
   // Management screen (institutional roles only)

@@ -54,6 +54,10 @@ export async function deactivateUser(id) {
   return mapUser(rows[0]);
 }
 
+export async function deleteUser(id) {
+  await unwrap(supabase.rpc('delete_app_user', { p_id: id }));
+}
+
 export async function loginUser(username, password) {
   const rows = await unwrap(supabase.rpc('authenticate_app_user', { p_username: username, p_password: password }));
   if (!rows.length) return null;

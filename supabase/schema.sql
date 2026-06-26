@@ -325,9 +325,16 @@ begin
   delete from app_sessions s where s.token = p_token;
 end; $$;
 
+create or replace function delete_app_user(p_id text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  delete from app_users where id = p_id;
+end; $$;
+
 revoke all on function create_app_user(text,text,text,text,text,text) from public;
 revoke all on function update_app_user(text,text,text,text,text,boolean) from public;
 revoke all on function deactivate_app_user(text) from public;
+revoke all on function delete_app_user(text) from public;
 revoke all on function list_app_users() from public;
 revoke all on function authenticate_app_user(text,text) from public;
 revoke all on function validate_app_session(text) from public;
@@ -336,6 +343,7 @@ revoke all on function revoke_app_session(text) from public;
 grant execute on function create_app_user(text,text,text,text,text,text) to anon;
 grant execute on function update_app_user(text,text,text,text,text,boolean) to anon;
 grant execute on function deactivate_app_user(text) to anon;
+grant execute on function delete_app_user(text) to anon;
 grant execute on function list_app_users() to anon;
 grant execute on function authenticate_app_user(text,text) to anon;
 grant execute on function validate_app_session(text) to anon;
