@@ -70,6 +70,8 @@ export async function setCourseRoomByDay(courseId, roomByDay) {
 
 export async function editCourse(courseId, changes) {
   const patch = {};
+  if (changes.code !== undefined) patch.code = changes.code;
+  if (changes.sec !== undefined) patch.sec = changes.sec;
   if (changes.name !== undefined) patch.name = changes.name;
   if (changes.teacher !== undefined) patch.teacher = changes.teacher;
   if (changes.blocks !== undefined) patch.blocks = changes.blocks;

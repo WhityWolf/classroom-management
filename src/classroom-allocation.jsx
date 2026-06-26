@@ -1182,7 +1182,7 @@ function CourseCard({course,activeRole,showRoleBadge,selected,locked,roomLabel,o
           {course.sec!=null&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:3,padding:'1px 4px'}} onClick={onSelect}>Turma {course.sec}</span>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:4}}>
-          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{course.enroll} alunos</span>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}} onClick={onSelect}>{course.enroll} alunos</span>
           {onEdit&&!locked&&(
             <button onClick={e=>{e.stopPropagation();onEdit();}} title="Editar disciplina"
               style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:8,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
@@ -1789,7 +1789,7 @@ function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onS
   const{gRole,roles}=useRolesData();
   const mono={fontFamily:"'DM Mono',monospace"};
   const[code,setCode]=useState(course?.code??'');
-  const[sec,setSec]=useState(course?.sec??1);
+  const[sec,setSec]=useState(course?.sec!=null?String(course.sec):'');
   const[roleId,setRoleId]=useState(course?.roleId??targetRoleId);
   const effectiveRoleId=course?course.roleId:roleId;
   const cd=gRole(effectiveRoleId),cdClr=dtc(cd,theme);
@@ -1805,13 +1805,11 @@ function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onS
   const removeBlock=i=>setBlocks(prev=>prev.filter((_,bi)=>bi!==i));
   const validate=()=>{
     const e={};
-    if(!course){
-      if(!code.trim())e.code='Obrigatório';
-      const secNum=Number(sec);
-      if(!Number.isInteger(secNum)||secNum<1)e.sec='Deve ser um número inteiro ≥ 1';
-      else if(courses.some(c=>c.roleId===effectiveRoleId&&c.period===period&&c.code.trim().toUpperCase()===code.trim().toUpperCase()&&c.sec===secNum))
-        e.sec='Já existe uma disciplina com este código e seção nesta função e período';
-    }
+    if(!code.trim())e.code='Obrigatório';
+    const secNum=sec===''?null:Number(sec);
+    if(sec!==''&&(!Number.isInteger(secNum)||secNum<1))e.sec='Deve ser um número inteiro ≥ 1';
+    else if(courses.some(c=>(course?c.id!==course.id:true)&&c.roleId===effectiveRoleId&&c.period===period&&c.code.trim().toUpperCase()===code.trim().toUpperCase()&&c.sec===secNum))
+      e.sec='Já existe uma disciplina com este código e turma nesta função e período';
     if(!name.trim())e.name='Obrigatório';
     if(enroll<1||enroll>1000)e.enroll='Entre 1 e 1000';
     const bErrs=blocks.map(b=>{
@@ -1830,10 +1828,11 @@ function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onS
   };
   const handleSave=()=>{
     if(!validate())return;
+    const secNum=sec===''?null:Number(sec);
     if(course){
-      onSave(course.id,{name:name.trim(),teacher:teacher.trim(),blocks,enroll:Number(enroll)});
+      onSave(course.id,{code:code.trim(),sec:secNum,name:name.trim(),teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }else{
-      onCreate({id:courseId(effectiveRoleId,code.trim(),Number(sec),period),code:code.trim(),name:name.trim(),sec:Number(sec),roleId:effectiveRoleId,period,teacher:teacher.trim(),blocks,enroll:Number(enroll)});
+      onCreate({id:courseId(effectiveRoleId,code.trim(),secNum,period),code:code.trim(),name:name.trim(),sec:secNum,roleId:effectiveRoleId,period,teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }
   };
   const inp={width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'};
@@ -1856,20 +1855,18 @@ function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onS
             </select>
           </div>
         )}
-        {!course&&(
-          <div style={{display:'flex',gap:10,marginBottom:12}}>
-            <div style={{flex:2}}>
-              <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Código</label>
-              <input value={code} onChange={e=>setCode(e.target.value)} style={inp}/>
-              {errors.code&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.code}</div>}
-            </div>
-            <div style={{flex:1}}>
-              <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Seção</label>
-              <input type="number" min={1} value={sec} onChange={e=>setSec(e.target.value)} style={inp}/>
-              {errors.sec&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.sec}</div>}
-            </div>
+        <div style={{display:'flex',gap:10,marginBottom:12}}>
+          <div style={{flex:2}}>
+            <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Código</label>
+            <input value={code} onChange={e=>setCode(e.target.value)} style={inp}/>
+            {errors.code&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.code}</div>}
           </div>
-        )}
+          <div style={{flex:1}}>
+            <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Turma</label>
+            <input type="number" min={1} value={sec} onChange={e=>setSec(e.target.value)} style={inp} placeholder="—"/>
+            {errors.sec&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.sec}</div>}
+          </div>
+        </div>
         <div style={{marginBottom:12}}>
           <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Nome da Disciplina</label>
           <input value={name} onChange={e=>setName(e.target.value)} style={inp}/>

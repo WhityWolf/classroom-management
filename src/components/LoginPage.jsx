@@ -40,14 +40,14 @@ export default function LoginPage() {
 
   const mono = { fontFamily:"'DM Mono',monospace" };
   const inp  = {
-    width:'100%', padding:'9px 12px',
+    width:'100%', boxSizing:'border-box', padding:'9px 12px',
     background:T.inputBg, border:`1px solid ${error ? '#ef4444' : T.inputBdr}`,
     borderRadius:7, color:T.txt, fontSize:13, outline:'none', transition:'border-color .15s',
   };
 
   return (
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,
-                 minHeight:'100vh',display:'flex',alignItems:'center',
+                 minHeight:'100vh',boxSizing:'border-box',display:'flex',alignItems:'center',
                  justifyContent:'center',padding:'24px 16px',position:'relative'}}>
 
       <button onClick={toggleTheme}
@@ -120,7 +120,7 @@ export default function LoginPage() {
 
         {/* Painel direito */}
         <div style={{flex:1,background:T.surface,padding:'40px 36px',display:'flex',
-                     flexDirection:'column',overflow:'auto'}}>
+                     flexDirection:'column',overflowY:'auto',overflowX:'hidden'}}>
 
           <div style={{marginBottom:28}}>
             <div style={{fontSize:20,fontWeight:700,marginBottom:4}}>Entrar</div>

@@ -40,6 +40,19 @@ const PERM_LABELS = {
   [PERMS.MANAGE_BLOCKS]: 'Gerenciar blocos',
 };
 
+const COORD_PERMS = [
+  PERMS.VIEW_OWN_COURSES, PERMS.EDIT_COURSES,
+  PERMS.ALLOCATE_OWN_ROOMS, PERMS.DEALLOCATE_OWN_ROOMS,
+  PERMS.MERGE_GROUPS, PERMS.FINISH_ALLOCATION,
+];
+const DIRECTOR_PERMS = Object.values(PERMS);
+const PERM_PRESETS = [
+  { key:'coord',    label:'Coordenação', perms: COORD_PERMS },
+  { key:'director', label:'Diretor',     perms: DIRECTOR_PERMS },
+];
+const sortedKey = arr => [...arr].sort().join(',');
+const PRESET_KEYS = Object.fromEntries(PERM_PRESETS.map(p=>[sortedKey(p.perms), p.key]));
+
 const NEUTRAL = { clr:'#94A3B8', textClr:'#475569' };
 
 export default function ManagementScreen({ onBack }) {
@@ -261,10 +274,11 @@ function RolesTab({ roles, subUnits, rooms, blocks, can, reloadDomain, flash }) 
   const { T } = useT();
   const [editing, setEditing] = useState(null); // role | 'new' | null
   const [form, setForm] = useState(null);
+  const [advOpen, setAdvOpen] = useState(false);
 
-  const startCreate = () => setForm({ id:'', name:'', subUnitId:subUnits[0]?.id??'', permissions:[] }) || setEditing('new');
-  const startEdit = r => { setForm({ id:r.id, name:r.name, subUnitId:r.subUnitId??'', permissions:[...r.permissions] }); setEditing(r); };
-  const cancel = () => { setEditing(null); setForm(null); };
+  const startCreate = () => { setForm({ id:'', name:'', subUnitId:subUnits[0]?.id??'', permissions:[] }); setEditing('new'); setAdvOpen(false); };
+  const startEdit = r => { setForm({ id:r.id, name:r.name, subUnitId:r.subUnitId??'', permissions:[...r.permissions] }); setEditing(r); setAdvOpen(false); };
+  const cancel = () => { setEditing(null); setForm(null); setAdvOpen(false); };
   const togglePerm = p => setForm(f=>({...f,permissions:f.permissions.includes(p)?f.permissions.filter(x=>x!==p):[...f.permissions,p]}));
 
   const save = async () => {
@@ -320,13 +334,34 @@ function RolesTab({ roles, subUnits, rooms, blocks, can, reloadDomain, flash }) 
           </select>
         </div>
         <label style={lblStyle(T)}>Permissões</label>
-        <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:14,maxHeight:260,overflow:'auto'}}>
-          {Object.values(PERMS).map(p=>(
-            <label key={p} style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:T.txt2,cursor:'pointer'}}>
-              <input type="checkbox" checked={form.permissions.includes(p)} onChange={()=>togglePerm(p)}/> {PERM_LABELS[p]??p}
-            </label>
-          ))}
+        <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
+          {PERM_PRESETS.map(({key,label})=>{
+            const active=PRESET_KEYS[sortedKey(form.permissions)]===key;
+            return(
+              <button key={key} type="button"
+                onClick={()=>{setForm(f=>({...f,permissions:[...PERM_PRESETS.find(p=>p.key===key).perms]}));setAdvOpen(false);}}
+                style={{padding:'5px 12px',borderRadius:5,fontSize:11,fontWeight:600,cursor:'pointer',border:`1px solid ${active?'#3b82f6':T.bdr2}`,background:active?'#3b82f618':'transparent',color:active?'#3b82f6':T.muted}}>
+                {label}
+              </button>
+            );
+          })}
+          {!PRESET_KEYS[sortedKey(form.permissions)]&&form.permissions.length>0&&(
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>Personalizado</span>
+          )}
+          <button type="button" onClick={()=>setAdvOpen(v=>!v)}
+            style={{marginLeft:'auto',padding:'5px 10px',borderRadius:5,fontSize:10,border:`1px solid ${T.bdr2}`,background:'transparent',color:T.muted,cursor:'pointer'}}>
+            {advOpen?'Ocultar avançado ↑':'Avançado ↓'}
+          </button>
         </div>
+        {advOpen&&(
+          <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:14,maxHeight:260,overflow:'auto'}}>
+            {Object.values(PERMS).map(p=>(
+              <label key={p} style={{display:'flex',alignItems:'center',gap:8,fontSize:11,color:T.txt2,cursor:'pointer'}}>
+                <input type="checkbox" checked={form.permissions.includes(p)} onChange={()=>togglePerm(p)}/> {PERM_LABELS[p]??p}
+              </label>
+            ))}
+          </div>
+        )}
         {editing!=='new'&&(
           <>
             <label style={lblStyle(T)}>Salas desta função</label>
