@@ -47,7 +47,7 @@ export default function LoginPage() {
 
   return (
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,
-                 minHeight:'100vh',boxSizing:'border-box',display:'flex',alignItems:'center',
+                 height:'100vh',boxSizing:'border-box',overflowY:'auto',display:'flex',alignItems:'center',
                  justifyContent:'center',padding:'24px 16px',position:'relative'}}>
 
       <button onClick={toggleTheme}
