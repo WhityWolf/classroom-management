@@ -1018,6 +1018,63 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
   const allocatedRoomIds=useMemo(()=>new Set(periodCourses.flatMap(c=>Object.values(c.roomByDay||{}))),[periodCourses]);
   const allocatedRooms=useMemo(()=>rooms.filter(r=>allocatedRoomIds.has(r.id)),[rooms,allocatedRoomIds]);
   const subUnitOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
+
+  const generatePdf=()=>{
+    const groupOf=r=>gRole(r.roleId).subUnitFull;
+    const groupOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
+    const sorted=[...allocatedRooms].sort((a,b)=>groupOrder(groupOf(a))-groupOrder(groupOf(b))||gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true}));
+    const groupCounts={};sorted.forEach(r=>{const g=groupOf(r);groupCounts[g]=(groupCounts[g]||0)+1;});
+    const thHours=HOURS.map(h=>`<th>${h}h</th>`).join('');
+    const daysSections=DAYS.map(d=>{
+      const rows=sorted.map((room,idx)=>{
+        const rd=gRole(room.roleId);
+        const slots=rowSlots(room.id,d,alloc);
+        const showGroup=idx===0||groupOf(sorted[idx-1])!==groupOf(room);
+        const showBlock=showGroup||sorted[idx-1].blockId!==room.blockId;
+        const groupRow=showGroup?`<tr class="group-row"><td colspan="${HOURS.length+1}" style="border-left:3px solid ${rd.clr}">${rd.subUnitFull} · ${groupCounts[groupOf(room)]} sala${groupCounts[groupOf(room)]!==1?'s':''}</td></tr>`:'';
+        const blockRow=showBlock?`<tr class="block-row"><td colspan="${HOURS.length+1}">${gBlockLabel(room.blockId)}</td></tr>`:'';
+        const cells=slots.map(slot=>{
+          if(slot.c){
+            const cd=gRole(slot.c.roleId);
+            const sb=blockForDay(slot.c,d);
+            const tip=`${slot.c.name}${slot.c.sec!=null?` · Turma ${slot.c.sec}`:''}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(sb.sh)}–${fmtHour(sb.eh)} · ${slot.c.enroll} alunos`;
+            return`<td colspan="${slot.span}" title="${tip.replace(/"/g,'&quot;')}" style="border-left:2px solid ${cd.clr};background:${cd.clr}22;padding:1px 4px;overflow:hidden"><span style="color:${cd.textClr};font-weight:600;font-size:8px;white-space:nowrap">${slot.c.code}</span>${slot.merged>0?`<span style="color:#d97706;font-size:7px"> +${slot.merged}</span>`:''}</td>`;
+          }
+          return`<td style="border-left:${slot.h===12||slot.h===18?'2px solid #cbd5e1':'1px solid #e2e8f0'}"></td>`;
+        }).join('');
+        return`${groupRow}${blockRow}<tr><td class="room-cell" style="border-left:3px solid ${rd.clr}"><span style="color:${rd.textClr};font-weight:600">${room.label}</span><span class="cap">${room.cap}</span></td>${cells}</tr>`;
+      }).join('');
+      return`<div class="day"><div class="day-title">${d}</div><div class="scroll"><table><thead><tr><th>Sala / Cap.</th>${thHours}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    }).join('');
+    const dateStr=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>Mapa de Salas — ${selectedPeriod}</title><style>
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{font-family:Arial,sans-serif;font-size:9px;color:#1e293b;padding:8mm;}
+      h1{font-size:13px;font-weight:700;margin-bottom:2px;}
+      .meta{font-size:8px;color:#64748b;margin-bottom:12px;}
+      .day{margin-bottom:14px;}
+      .day-title{font-size:10px;font-weight:700;padding:3px 8px;background:#f1f5f9;border-left:3px solid #3b82f6;margin-bottom:4px;}
+      .scroll{overflow-x:auto;}
+      table{border-collapse:collapse;table-layout:fixed;width:100%;}
+      th{background:#f8fafc;padding:3px 4px;text-align:left;border:1px solid #e2e8f0;font-size:7px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;font-weight:600;}
+      td{padding:1px 3px;border:1px solid #e2e8f0;height:22px;vertical-align:middle;overflow:hidden;}
+      .room-cell{white-space:nowrap;width:120px;min-width:120px;}
+      .cap{color:#94a3b8;font-size:8px;margin-left:4px;}
+      .group-row td{background:#f1f5f9;font-weight:700;font-size:8px;text-transform:uppercase;letter-spacing:.5px;padding:3px 8px;}
+      .block-row td{background:#f8fafc;font-size:7px;color:#64748b;padding:2px 8px 2px 18px;}
+      @media print{@page{size:A4 landscape;margin:8mm;}.day{page-break-before:always;}.day:first-child{page-break-before:avoid;}}
+    </style></head><body>
+      <h1>Mapa de Salas Alocadas</h1>
+      <div class="meta">Período ${selectedPeriod} · ${allocatedRooms.length} sala${allocatedRooms.length!==1?'s':''} alocada${allocatedRooms.length!==1?'s':''} · Gerado em ${dateStr}</div>
+      ${daysSections}
+    </body></html>`;
+    const w=window.open('','_blank');
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(()=>w.print(),400);
+  };
+
   const presentGroups=useMemo(()=>{
     const byName=new Map();
     allocatedRooms.forEach(r=>{const rd=gRole(r.roleId);if(!byName.has(rd.subUnitFull))byName.set(rd.subUnitFull,rd);});
@@ -1050,6 +1107,10 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
         ))}
         <div style={{flex:1}}/>
         <span style={{...mono,fontSize:9,color:T.dim}}>{allocatedRooms.length} sala{allocatedRooms.length!==1?'s':''} alocada{allocatedRooms.length!==1?'s':''}</span>
+        <button onClick={generatePdf} disabled={allocatedRooms.length===0} title="Gerar PDF com o mapa completo da semana"
+          style={{padding:'5px 12px',background:theme==='light'?'#0f172a':'#e2e8f0',border:'none',borderRadius:6,color:theme==='light'?'#f1f5f9':'#0f172a',fontSize:11,fontWeight:600,cursor:allocatedRooms.length===0?'not-allowed':'pointer',opacity:allocatedRooms.length===0?.4:1,transition:'opacity .15s'}}>
+          ⬇ PDF
+        </button>
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
           <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
           <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
