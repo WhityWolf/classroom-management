@@ -290,7 +290,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
 
 // ─── Aba Funções ──────────────────────────────────────────────────────────────
 function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, flash }) {
-  const { T } = useT();
+  const { T, theme } = useT();
   const [editing, setEditing] = useState(null); // role | 'new' | null
   const [form, setForm] = useState(null);
   const [advOpen, setAdvOpen] = useState(false);
