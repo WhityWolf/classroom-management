@@ -80,6 +80,10 @@ export async function editCourse(courseId, changes) {
   await unwrap(supabase.from('courses').update(patch).eq('id', courseId));
 }
 
+export async function deleteCourse(courseId) {
+  await unwrap(supabase.from('courses').delete().eq('id', courseId));
+}
+
 export async function createCourse(course) {
   await unwrap(supabase.from('courses').insert({
     id: course.id, code: course.code, name: course.name, sec: course.sec,

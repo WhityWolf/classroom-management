@@ -620,6 +620,16 @@ function Dashboard(){
       showToast(`Falha ao criar disciplina: ${e.message}`,'err');
     }
   };
+  const handleDeleteCourse=async course=>{
+    if(!canManageCatalog)return;
+    try{
+      await db.deleteCourse(course.id);
+      if(selId===course.id)setSel(null);
+      showToast(`${course.code} excluída.`,'ok');
+    }catch(e){
+      showToast(`Falha ao excluir disciplina: ${e.message}`,'err');
+    }
+  };
   const handleImportCourses=async newCourses=>{
     setImportingCourses(false);
     if(!canManageCatalog)return;
@@ -814,7 +824,8 @@ function Dashboard(){
                 roomLabel={fmtRoomByDay(c,ROOMS)}
                 onSelect={()=>selectCourse(c)}
                 onEdit={canEditCourse?()=>setEditingCourse(c):null}
-                onRemove={hasAnyAllocation(c)&&canDealloc&&!isLocked?()=>deallocate(c.id):null}/>
+                onRemove={hasAnyAllocation(c)&&canDealloc&&!isLocked?()=>deallocate(c.id):null}
+                onDelete={canManageCatalog&&!isPastPeriod?()=>handleDeleteCourse(c):null}/>
             ))}
           </div>
 
@@ -1227,9 +1238,10 @@ function RoomMapGrid({rooms,day,alloc,gRole,gBlockLabel,subUnits}){
 }
 
 // ─── Card de disciplina ───────────────────────────────────────────────────────
-function CourseCard({course,activeRole,showRoleBadge,selected,locked,roomLabel,onSelect,onEdit,onRemove}){
+function CourseCard({course,activeRole,showRoleBadge,selected,locked,roomLabel,onSelect,onEdit,onRemove,onDelete}){
   const{T,theme}=useT();
   const{gRole}=useRolesData();
+  const[confirmDel,setConfirmDel]=useState(false);
   const cd=gRole(course.roleId),badgeClr=dtc(cd,theme);
   const done=isFullyAllocated(course);
   return(
@@ -1258,6 +1270,20 @@ function CourseCard({course,activeRole,showRoleBadge,selected,locked,roomLabel,o
               style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:8,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor='#ef4444';e.currentTarget.style.color='#ef4444';}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>✕</button>
+          )}
+          {onDelete&&!confirmDel&&(
+            <button onClick={e=>{e.stopPropagation();setConfirmDel(true);}} title="Excluir disciplina"
+              style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:8,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor='#ef4444';e.currentTarget.style.color='#ef4444';}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>🗑</button>
+          )}
+          {onDelete&&confirmDel&&(
+            <>
+              <button onClick={e=>{e.stopPropagation();onDelete();}} title="Confirmar exclusão"
+                style={{background:'#ef4444',border:'none',borderRadius:3,color:'#fff',fontSize:8,padding:'1px 6px',cursor:'pointer',lineHeight:1.3,fontWeight:600}}>Excluir</button>
+              <button onClick={e=>{e.stopPropagation();setConfirmDel(false);}} title="Cancelar"
+                style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:8,padding:'1px 4px',cursor:'pointer',lineHeight:1.3}}>✕</button>
+            </>
           )}
         </div>
       </div>
