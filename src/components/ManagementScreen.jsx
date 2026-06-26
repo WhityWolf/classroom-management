@@ -456,8 +456,10 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
     } catch (e) { flash('err', e.message); }
   };
   const remove = async s => {
+    const linked = roles.filter(r=>r.subUnitId===s.id);
+    if (linked.length) { flash('err',`Ainda há ${linked.length} função(ões) vinculada(s) a esta sub-unidade. Remova-as ou reatribua-as antes de excluir.`); return; }
     try { await mgmt.deleteSubUnit(s.id); flash('ok','Sub-unidade excluída.'); reloadDomain(); }
-    catch (e) { flash('err', `Não foi possível excluir: ${e.message} (verifique se ainda há funções vinculadas)`); }
+    catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
   };
 
   return (
