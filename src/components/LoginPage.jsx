@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useT } from '../theme.jsx';
-import { DEMO_CREDENTIALS } from '../auth/mockDb.js';
-import { ROLE_LABELS } from '../auth/roles.js';
 
-const DEPTS = { MATH:'Matemática', PHYS:'Física', CS:'Computação', CHEM:'Química', BIO:'Biologia' };
+// Reflete o seed inicial fornecido junto com o schema (ver Fase 2 da
+// reformulação de usuários) — puramente ilustrativo para facilitar testes
+// manuais; não é mais lido de nenhum "banco" mock, os usuários reais agora
+// vêm do Postgres e podem não bater com esta lista se o seed for alterado.
+const DEMO_CREDENTIALS = [
+  { username: 'chief',         password: 'chief123', roleName: 'Diretor' },
+  { username: 'math.grad',     password: 'math123',  roleName: 'Coordenador de Graduação · Matemática' },
+  { username: 'math.pos',      password: 'math123',  roleName: 'Coordenador de Pós-Graduação · Matemática' },
+  { username: 'math.profmat',  password: 'math123',  roleName: 'Coordenador PROFMAT · Matemática' },
+];
 
 export default function LoginPage() {
   const { login, authError } = useAuth();
@@ -25,8 +32,7 @@ export default function LoginPage() {
     if (!username.trim()) { setLocalError('Por favor, insira seu usuário.'); return; }
     if (!password)        { setLocalError('Por favor, insira sua senha.');   return; }
     setBusy(true);
-    await new Promise(r => setTimeout(r, 260));
-    login(username.trim(), password);
+    await login(username.trim(), password);
     setBusy(false);
   };
 
@@ -34,14 +40,14 @@ export default function LoginPage() {
 
   const mono = { fontFamily:"'DM Mono',monospace" };
   const inp  = {
-    width:'100%', padding:'9px 12px',
+    width:'100%', boxSizing:'border-box', padding:'9px 12px',
     background:T.inputBg, border:`1px solid ${error ? '#ef4444' : T.inputBdr}`,
     borderRadius:7, color:T.txt, fontSize:13, outline:'none', transition:'border-color .15s',
   };
 
   return (
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,
-                 minHeight:'100vh',display:'flex',alignItems:'center',
+                 height:'100vh',boxSizing:'border-box',overflowY:'auto',display:'flex',alignItems:'center',
                  justifyContent:'center',padding:'24px 16px',position:'relative'}}>
 
       <button onClick={toggleTheme}
@@ -114,7 +120,7 @@ export default function LoginPage() {
 
         {/* Painel direito */}
         <div style={{flex:1,background:T.surface,padding:'40px 36px',display:'flex',
-                     flexDirection:'column',overflow:'auto'}}>
+                     flexDirection:'column',overflowY:'auto',overflowX:'hidden'}}>
 
           <div style={{marginBottom:28}}>
             <div style={{fontSize:20,fontWeight:700,marginBottom:4}}>Entrar</div>
@@ -188,9 +194,7 @@ export default function LoginPage() {
                     onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor=T.bdr;}}>
                     <span style={{...mono,fontSize:10,color:T.txt,fontWeight:500,minWidth:100}}>{cred.username}</span>
                     <span style={{...mono,fontSize:10,color:T.muted,minWidth:72}}>{cred.password}</span>
-                    <span style={{fontSize:10,color:T.dim,flex:1}}>
-                      {ROLE_LABELS[cred.role]}{cred.deptId?` · ${DEPTS[cred.deptId]??cred.deptId}`:''}
-                    </span>
+                    <span style={{fontSize:10,color:T.dim,flex:1}}>{cred.roleName}</span>
                   </button>
                 ))}
               </div>

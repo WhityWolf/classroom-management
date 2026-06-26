@@ -7,29 +7,41 @@
  *   <AuthProvider><App /></AuthProvider>
  *
  *   // Inside any component:
- *   const { currentUser, login, logout, can, canForDept } = useAuth();
+ *   const { currentUser, login, logout, can, canForRole } = useAuth();
  */
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { initDb, loginUser, validateSession, revokeSession, getUserById } from './mockDb.js';
+import { loginUser, validateSession, revokeSession, getUserById } from '../db/authApi.js';
+import { fetchRoleById } from '../db/management.js';
 import { hasPermission } from './permissions.js';
-import { DEPT_SCOPED_ROLES } from './roles.js';
+import { isInstitutionalRole } from './roles.js';
 
 // ── Storage key for the persisted session token ───────────────────────────────
 //
-// TODO (production): Do NOT store the token in localStorage in production.
-// Use an httpOnly cookie set by the server. localStorage is vulnerable to XSS.
+// Server-validated now (validateSession hits Postgres via RPC instead of a
+// localStorage array), but still stored client-side in localStorage rather
+// than an httpOnly cookie — there's no custom backend server to set one.
+// Revisit this once the system moves behind a real server (see CLAUDE.md's
+// "Deployment target").
 const SESSION_TOKEN_KEY = 'cas_session_token';
 
 // ── Context ───────────────────────────────────────────────────────────────────
 
 const AuthContext = createContext(null);
 
+// `currentUser.role` is the full role row (id, subUnitId, name, permissions,
+// isSystem), not just an id — `can`/`canForRole` read permissions off it.
+async function withRole(user) {
+  if (!user) return null;
+  const role = await fetchRoleById(user.roleId);
+  return { ...user, role };
+}
+
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 /**
- * Initialises the mock database, restores any persisted session on mount,
- * and provides auth state + actions to the subtree.
+ * Restores any persisted session on mount, and provides auth state +
+ * actions to the subtree.
  */
 export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
@@ -38,14 +50,19 @@ export function AuthProvider({ children }) {
 
   // ── Restore session on mount ────────────────────────────────────────────────
   useEffect(() => {
-    initDb(); // no-op if already seeded
-
-    const storedToken = localStorage.getItem(SESSION_TOKEN_KEY);
-    if (storedToken) {
-      const user = validateSession(storedToken);
-      setCurrentUser(user);   // null if expired or invalid
-    }
-    setIsLoading(false);
+    (async () => {
+      const storedToken = localStorage.getItem(SESSION_TOKEN_KEY);
+      if (storedToken) {
+        try {
+          const user = await validateSession(storedToken);
+          setCurrentUser(await withRole(user));
+          if (!user) localStorage.removeItem(SESSION_TOKEN_KEY);
+        } catch {
+          setCurrentUser(null);
+        }
+      }
+      setIsLoading(false);
+    })();
   }, []);
 
   // ── login ───────────────────────────────────────────────────────────────────
@@ -53,39 +70,36 @@ export function AuthProvider({ children }) {
    * Authenticate with username + password.
    * Returns `{ ok: true }` on success or `{ ok: false, message: string }` on failure.
    *
-   * TODO (production): Call POST /api/auth/login; read token from the Set-Cookie
-   * response header rather than storing it in JS.
-   *
    * @param {string} username
    * @param {string} password
-   * @returns {{ ok: boolean, message?: string }}
+   * @returns {Promise<{ ok: boolean, message?: string }>}
    */
-  const login = useCallback((username, password) => {
+  const login = useCallback(async (username, password) => {
     setAuthError(null);
-    const result = loginUser(username, password);
-    if (!result) {
-      const msg = 'Usuário ou senha inválidos.';
+    try {
+      const result = await loginUser(username, password);
+      if (!result) {
+        const msg = 'Usuário ou senha inválidos.';
+        setAuthError(msg);
+        return { ok: false, message: msg };
+      }
+      localStorage.setItem(SESSION_TOKEN_KEY, result.token);
+      setCurrentUser(await withRole(result.user));
+      return { ok: true };
+    } catch (e) {
+      const msg = e.message || 'Falha ao entrar.';
       setAuthError(msg);
       return { ok: false, message: msg };
     }
-    localStorage.setItem(SESSION_TOKEN_KEY, result.token);
-    setCurrentUser(result.user);
-    return { ok: true };
   }, []);
 
   // ── logout ──────────────────────────────────────────────────────────────────
-  /**
-   * Revoke the current session and clear local state.
-   *
-   * TODO (production): Call POST /api/auth/logout; clear the httpOnly cookie
-   * server-side. Redirect to the login page.
-   */
   const logout = useCallback(() => {
     const token = localStorage.getItem(SESSION_TOKEN_KEY);
-    if (token) revokeSession(token);
     localStorage.removeItem(SESSION_TOKEN_KEY);
     setCurrentUser(null);
     setAuthError(null);
+    if (token) revokeSession(token).catch(() => {}); // best-effort, user is logged out client-side regardless
   }, []);
 
   // ── refreshUser ─────────────────────────────────────────────────────────────
@@ -93,17 +107,16 @@ export function AuthProvider({ children }) {
    * Re-fetch the current user from the database.
    * Call this after updating the current user's own profile.
    */
-  const refreshUser = useCallback(() => {
-    if (currentUser) {
-      const fresh = getUserById(currentUser.id);
-      setCurrentUser(fresh);
-    }
+  const refreshUser = useCallback(async () => {
+    if (!currentUser) return;
+    const fresh = await getUserById(currentUser.id);
+    setCurrentUser(await withRole(fresh));
   }, [currentUser]);
 
   // ── Permission helpers ──────────────────────────────────────────────────────
 
   /**
-   * Returns true if the current user holds `perm`.
+   * Returns true if the current user's role holds `perm`.
    * @param {string} perm – one of the PERMS constants
    * @returns {boolean}
    */
@@ -114,33 +127,34 @@ export function AuthProvider({ children }) {
 
   /**
    * Returns true if the current user holds `perm` and is authorised to act
-   * on `targetDeptId`.
+   * on `targetRoleId` (a coordination/role, not a whole sub-unit).
    *
-   * - Institution-wide roles (DIRECTOR, SYSTEM_ADMIN) can act on any dept.
-   * - Dept-scoped roles can only act on their own department.
+   * - Institutional roles (e.g. Diretor, Secretário do Diretor) can act on
+   *   any role/coordination.
+   * - Coordination-scoped roles can only act on their own role.
    *
    * @param {string} perm
-   * @param {string} targetDeptId
+   * @param {string} targetRoleId
    * @returns {boolean}
    */
-  const canForDept = useCallback((perm, targetDeptId) => {
+  const canForRole = useCallback((perm, targetRoleId) => {
     if (!currentUser) return false;
     if (!hasPermission(currentUser.role, perm)) return false;
-    if (!DEPT_SCOPED_ROLES.has(currentUser.role)) return true; // institution-wide
-    return currentUser.deptId === targetDeptId;
+    if (isInstitutionalRole(currentUser.role)) return true;
+    return currentUser.roleId === targetRoleId;
   }, [currentUser]);
 
   // ── Context value ───────────────────────────────────────────────────────────
 
   const value = {
-    currentUser,   // null | sanitized user object
+    currentUser,   // null | sanitized user object, with `.role` (full row) attached
     isLoading,     // true while initial session check is in progress
     authError,     // last login error message, or null
     login,
     logout,
     refreshUser,
     can,
-    canForDept,
+    canForRole,
   };
 
   return (

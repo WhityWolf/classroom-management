@@ -1,12 +1,20 @@
 // One-off import script — run manually once per Supabase project, never imported by the app.
 // Usage: node --env-file=.env.local scripts/import-real-rooms.mjs
 //
+// Depends on sub_units/roles already existing (see the SQL seed commands
+// provided alongside the user/role/sub-unit reformulation — supabase/schema.sql
+// + the manual SQL Editor commands creating the institutional role, the 5
+// example sub-units, and their coordination roles, in particular MATH_GRAD/
+// MATH_POS/MATH_PROFMAT). This script only inserts blocks/rooms and points
+// them at roles that must already be there — it does not create roles itself.
+//
 // Reads the real room inventory from scripts/data/salas-de-aula.csv
-// (LOCAL,BLOCO,NÚMERO,CAPACIDADE,EQUIPAMENTO) and upserts it into the `rooms`
-// table, replacing the placeholder rooms scripts/seed-supabase.mjs used to
-// generate. Also makes sure every real department (including BIO, added for
-// this import) has a dept_statuses row, since the app reads that on every
-// login.
+// (LOCAL,BLOCO,NÚMERO,CAPACIDADE,EQUIPAMENTO), upserts one `blocks` row per
+// distinct LOCAL+BLOCO pair (the granularity the CSV already has but the old
+// schema collapsed into a single dept_id + a free-text building string), then
+// inserts `rooms` pointing at the right block_id + role_id. Also seeds a
+// coordination_statuses row for every role referenced here, since the app
+// reads that on every login.
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -23,21 +31,22 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
 }
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-const DEPTS = ['MATH', 'PHYS', 'CS', 'CHEM', 'BIO'];
-
-// Blocos com chefe de departamento dono. Tudo que não está aqui (Espaço
-// Integrado, Bloco II/IV/V do CCN2) é sala compartilhada (dept_id null) —
-// só o Diretor aloca/edita.
-const DEPT_BY_BLOCO = {
-  'SG-01': 'BIO',
-  'SG-02': 'CHEM',
-  'SG-03': 'PHYS',
-  'SG-04': 'MATH',
-  'SG-09': 'CS',
-  'PPG-Química': 'CHEM',
-  'PPG-Matemática': 'MATH',
-  'PROFMAT': 'MATH',
-  'PPG-Computação': 'CS',
+// Blocos com uma coordenação dona (role_id granular, não mais um departamento
+// inteiro — ex.: os 3 blocos de Matemática vão para 3 coordenações
+// diferentes, MATH_GRAD/MATH_POS/MATH_PROFMAT, em vez de um único MATH).
+// Tudo que não está aqui (Espaço Integrado, Bloco II/IV/V do CCN2) é sala
+// compartilhada (role_id null) — só quem tem permissão institucional
+// (MANAGE_ROOMS) aloca/edita.
+const ROLE_BY_BLOCO = {
+  'SG-01': 'BIO_HEAD',
+  'SG-02': 'CHEM_HEAD',
+  'SG-03': 'PHYS_HEAD',
+  'SG-04': 'MATH_GRAD',
+  'SG-09': 'CS_HEAD',
+  'PPG-Química': 'CHEM_HEAD',
+  'PPG-Matemática': 'MATH_POS',
+  'PROFMAT': 'MATH_PROFMAT',
+  'PPG-Computação': 'CS_HEAD',
 };
 
 const slugify = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '')
@@ -67,6 +76,15 @@ function parseCsv(text) {
   });
 }
 
+function buildBlocks(rows) {
+  const seen = new Map();
+  rows.forEach(r => {
+    const id = `${r.LOCAL}-${slugify(r.BLOCO)}`;
+    if (!seen.has(id)) seen.set(id, { id, local: r.LOCAL, name: r.BLOCO });
+  });
+  return [...seen.values()];
+}
+
 function buildRooms(rows) {
   const byGroup = {};
   rows.forEach(r => { const k = `${r.LOCAL}|${r.BLOCO}`; (byGroup[k] = byGroup[k] || []).push(r); });
@@ -89,12 +107,12 @@ function buildRooms(rows) {
 
     return {
       id,
-      dept_id: DEPT_BY_BLOCO[r.BLOCO] ?? null,
+      role_id: ROLE_BY_BLOCO[r.BLOCO] ?? null,
+      block_id: `${r.LOCAL}-${slugify(r.BLOCO)}`,
       label,
       cap: parseInt(r.CAPACIDADE, 10),
       type: 'Sala de Aula',
       features,
-      building: `${r.LOCAL} — ${r.BLOCO}`,
       floor: inferFloor(r.NUMERO),
       description: note,
     };
@@ -103,15 +121,21 @@ function buildRooms(rows) {
 
 async function main() {
   const rows = parseCsv(readFileSync(CSV_PATH, 'utf8'));
+  const blocks = buildBlocks(rows);
   const rooms = buildRooms(rows);
 
-  console.log(`Inserting ${rooms.length} rooms (${rooms.filter(r => !r.dept_id).length} shared)...`);
-  let { error } = await supabase.from('rooms').insert(rooms);
+  console.log(`Inserting ${blocks.length} blocks...`);
+  let { error } = await supabase.from('blocks').upsert(blocks, { onConflict: 'id' });
   if (error) throw error;
 
-  console.log('Seeding dept_statuses...');
-  ({ error } = await supabase.from('dept_statuses')
-    .upsert(DEPTS.map(d => ({ dept_id: d, status: 'active' })), { onConflict: 'dept_id' }));
+  console.log(`Inserting ${rooms.length} rooms (${rooms.filter(r => !r.role_id).length} shared)...`);
+  ({ error } = await supabase.from('rooms').insert(rooms));
+  if (error) throw error;
+
+  const roleIds = [...new Set(Object.values(ROLE_BY_BLOCO))];
+  console.log('Seeding coordination_statuses...');
+  ({ error } = await supabase.from('coordination_statuses')
+    .upsert(roleIds.map(role_id => ({ role_id, status: 'active' })), { onConflict: 'role_id' }));
   if (error) throw error;
 
   console.log('Done.');

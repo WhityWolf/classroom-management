@@ -1,36 +1,63 @@
-import { useState, useMemo, Fragment, useRef, useEffect } from 'react';
+import { useState, useMemo, Fragment, useRef, useEffect, createContext, useContext } from 'react';
 import { ThemeCtx, LIGHT, DARK, useT, dtc, dbg } from './theme.jsx';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
-import { ROLES } from './auth/roles.js';
+import { isInstitutionalRole } from './auth/roles.js';
 import { PERMS } from './auth/permissions.js';
 import LoginPage from './components/LoginPage.jsx';
 import UserManagement from './components/UserManagement.jsx';
+import ManagementScreen from './components/ManagementScreen.jsx';
 import * as db from './db/allocations.js';
 import { useRealtimeSync } from './db/useRealtimeSync.js';
 import { supabaseConfigured } from './db/supabaseClient.js';
 
-// ─── Departamentos ────────────────────────────────────────────────────────────
-const DEPTS = [
-  { id:'MATH', full:'Departamento de Matemática',          clr:'#60A5FA', textClr:'#1d4ed8', bg:'#0d1f3d', lightBg:'#eff6ff' },
-  { id:'PHYS', full:'Departamento de Física',              clr:'#FBBF24', textClr:'#92400e', bg:'#2c1f06', lightBg:'#fffbeb' },
-  { id:'CS',   full:'Departamento de Computação',          clr:'#34D399', textClr:'#065f46', bg:'#062c1d', lightBg:'#ecfdf5' },
-  { id:'CHEM', full:'Departamento de Química',             clr:'#A78BFA', textClr:'#5b21b6', bg:'#1c0d3d', lightBg:'#f5f3ff' },
-  { id:'BIO',  full:'Departamento de Biologia',            clr:'#2DD4BF', textClr:'#0f766e', bg:'#042f2e', lightBg:'#f0fdfa' },
-];
 const DAYS  = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 // 6:00–21:00 start hours (eh can go one past the last entry, i.e. 22:00) —
 // matches the real SIGAA slot table: M1=6h..M6=11h, T1=12h..T6=17h, N1=18h..N4=21h.
 const HOURS = [6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21];
 
-// Salas reais sem departamento dono (ex.: Espaço Integrado, blocos do CCN2) têm
-// dept_id null no banco — só o Diretor aloca/edita essas salas. gDept cai aqui
-// para que o restante do código (badges, cores) não precise tratar null à parte.
-const SHARED_ROOM_DEPT = { id:null, full:'Sala Compartilhada (gerida pelo Diretor)', clr:'#94A3B8', textClr:'#475569', bg:'#1e293b', lightBg:'#f1f5f9' };
+// Salas sem função dona (role_id null no banco — ex.: Espaço Integrado, blocos
+// do CCN2) são "compartilhadas": só quem tem permissão institucional
+// (MANAGE_ROOMS) aloca/edita essas salas. gRole cai aqui (ver makeGRole) para
+// que o restante do código (badges, cores) não precise tratar null à parte.
+const SHARED_ROOM_ROLE = { id:null, full:'Sala Compartilhada (gerida pela Direção)', clr:'#94A3B8', textClr:'#475569', bg:'#1e293b', lightBg:'#f1f5f9' };
 
 const DS = { ACTIVE:'active', FINISHED:'finished', FORCE_FINISHED:'force_finished' };
 
+// Sentinela pro seletor de função ativa de quem tem visão institucional —
+// "Todas" não é uma função real, é o único valor desse seletor que faz a
+// barra lateral mostrar disciplinas de qualquer função (com o rótulo de
+// dona aparecendo em cada uma); qualquer função real ali filtra a lista só
+// pras disciplinas daquela função, sem o rótulo (já fica implícito).
+const ALL_ROLES = '__ALL__';
+
+// ─── Sub-unidades/funções/blocos: dados dinâmicos, não mais enums fixos ──────
+// roles/subUnits/blocks chegam do banco (db.fetchAll(), ver Dashboard) — os
+// helpers abaixo fecham sobre essas listas em vez de uma constante de módulo
+// como o antigo DEPTS. RolesCtx evita ter que passar roles/subUnits/blocks
+// como prop por toda a árvore de componentes da tela de alocação.
+function makeGRole(roles, subUnits) {
+  return roleId => {
+    const role = roles.find(r => r.id === roleId);
+    if (!role) return { ...SHARED_ROOM_ROLE, subUnitFull: SHARED_ROOM_ROLE.full };
+    const su = role.subUnitId ? subUnits.find(s => s.id === role.subUnitId) : null;
+    if (su) return { id: role.id, full: role.name, subUnitFull: su.fullName, clr: su.clr, textClr: su.textClr, bg: su.bg, lightBg: su.lightBg };
+    return { id: role.id, full: role.name, subUnitFull: role.name, clr: SHARED_ROOM_ROLE.clr, textClr: SHARED_ROOM_ROLE.textClr, bg: SHARED_ROOM_ROLE.bg, lightBg: SHARED_ROOM_ROLE.lightBg };
+  };
+}
+function makeGBlockLabel(blocks) {
+  return blockId => {
+    const b = blocks.find(x => x.id === blockId);
+    return b ? `${b.local} — ${b.name}` : '—';
+  };
+}
+const RolesCtx = createContext(null);
+function useRolesData() {
+  const ctx = useContext(RolesCtx);
+  if (!ctx) throw new Error('useRolesData must be used inside <RolesCtx.Provider>');
+  return ctx;
+}
+
 // ─── Auxiliares ───────────────────────────────────────────────────────────────
-const gDept=id=>DEPTS.find(d=>d.id===id)||SHARED_ROOM_DEPT;
 
 // Uma disciplina pode se reunir em dias diferentes com horários diferentes
 // (ex.: Segunda/Quarta 15h-18h e Sexta 17h-18h) — cada combinação é um
@@ -84,7 +111,7 @@ function fmtHour(h){return`${String(h).padStart(2,'0')}:00`;}
 // mudam), então o id nunca precisa ser regenerado — não adicione edição de
 // código/seção sem revisitar isto.
 const slugify=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
-const courseId=(deptId,code,sec,period)=>`${deptId}-${slugify(code)}-${sec}-${slugify(period)}`;
+const courseId=(roleId,code,sec,period)=>`${roleId}-${slugify(code)}-${sec}-${slugify(period)}`;
 // "2026.1" — ano.período; "o período mais recente" é só o maior valor em
 // allPeriods.sort(comparePeriods) — não existe uma tabela/flag separada pra
 // "período atual". Comparação numérica, não lexical: "2026.10" > "2026.2"
@@ -254,7 +281,7 @@ function autoAllocate(unplacedCourses, rooms, existingAlloc) {
       continue;
     }
     const best=candidates.reduce((prev,curr)=>{
-      const s=r=>(r.deptId===course.deptId?10000:0)-(r.cap-course.enroll);
+      const s=r=>(r.roleId===course.roleId?10000:0)-(r.cap-course.enroll);
       return s(curr)>s(prev)?curr:prev;
     });
     assignments.push({course,room:best});
@@ -294,13 +321,18 @@ function Dashboard(){
   const{currentUser,logout,can}=useAuth();
   const{T,theme,toggleTheme}=useT();
 
-  const isChief   =currentUser.role===ROLES.CHIEF;
-  const isDeptHead=currentUser.role===ROLES.DEPT_HEAD;
+  const isInstitutional=isInstitutionalRole(currentUser.role);
 
-  const[activeDeptId,setActiveDeptId]=useState(isChief?DEPTS[0].id:currentUser.deptId);
+  // null até o primeiro fetch resolver (institucional cai no primeiro role de
+  // coordenação disponível — ver useEffect abaixo; uma função de coordenação
+  // já sabe a sua própria roleId de cara, currentUser.roleId).
+  const[activeRoleId,setActiveRoleId]=useState(isInstitutional?null:currentUser.roleId);
+  const[subUnits,setSubUnits]        =useState([]);
+  const[roles,setRoles]              =useState([]);
+  const[blocks,setBlocks]            =useState([]);
   const[rooms,setRooms]              =useState([]);
   const[courses,setCourses]          =useState([]);
-  const[deptStatuses,setDeptStatuses]=useState(Object.fromEntries(DEPTS.map(d=>[d.id,DS.ACTIVE])));
+  const[coordinationStatuses,setCoordinationStatuses]=useState({});
   const[notifications,setNotifs]     =useState([]);
   const[featureOptions,setFeatureOptions]=useState([]);
   const[dataLoading,setDataLoading]  =useState(true);
@@ -314,16 +346,25 @@ function Dashboard(){
     }
     let active=true;
     db.fetchAll()
-      .then(({rooms,courses,deptStatuses,notifications,featureOptions})=>{
+      .then(data=>{
         if(!active)return;
-        setRooms(rooms);setCourses(courses);setDeptStatuses(deptStatuses);setNotifs(notifications);setFeatureOptions(featureOptions);
+        setSubUnits(data.subUnits);setRoles(data.roles);setBlocks(data.blocks);
+        setRooms(data.rooms);setCourses(data.courses);
+        setCoordinationStatuses(data.coordinationStatuses);
+        setNotifs(data.notifications);setFeatureOptions(data.featureOptions);
+        if(isInstitutional){
+          setActiveRoleId(prev=>prev??data.roles.find(r=>r.subUnitId)?.id??data.roles[0]?.id??null);
+        }
       })
       .catch(e=>{if(active)setLoadError(e.message);})
       .finally(()=>{if(active)setDataLoading(false);});
     return()=>{active=false;};
   },[]);
 
-  useRealtimeSync({setRooms,setCourses,setDeptStatuses,setNotifs,setFeatureOptions});
+  useRealtimeSync({setSubUnits,setRoles,setBlocks,setRooms,setCourses,setCoordinationStatuses,setNotifs,setFeatureOptions});
+
+  const gRole=useMemo(()=>makeGRole(roles,subUnits),[roles,subUnits]);
+  const gBlockLabel=useMemo(()=>makeGBlockLabel(blocks),[blocks]);
 
   const[screen,         setScreen]         =useState('select'); // 'select' | 'allocate' | 'map'
   const[selId,          setSelId]          =useState(null);
@@ -371,30 +412,35 @@ function Dashboard(){
   const isPastPeriod=selectedPeriod!==currentPeriod;
   const periodCourses=useMemo(()=>courses.filter(c=>c.period===selectedPeriod),[courses,selectedPeriod]);
 
-  const d         =gDept(activeDeptId);
+  const d         =gRole(activeRoleId);
   const alloc     =useMemo(()=>buildAlloc(periodCourses),[periodCourses]);
   const sel       =useMemo(()=>selId?periodCourses.find(c=>c.id===selId):null,[selId,periodCourses]);
   const ROOMS     =rooms;
-  const myStatus  =isDeptHead?deptStatuses[currentUser.deptId]:null;
-  const isLocked  =isDeptHead&&myStatus!==DS.ACTIVE;
+  const myStatus  =!isInstitutional?(coordinationStatuses[currentUser.roleId]??DS.ACTIVE):null;
+  const isLocked  =!isInstitutional&&myStatus!==DS.ACTIVE;
   const unreadCount=notifications.filter(n=>!n.read).length;
 
   const visRooms=useMemo(()=>
-    isChief
-      ?[...ROOMS.filter(r=>r.deptId===activeDeptId),...ROOMS.filter(r=>r.deptId!==activeDeptId)]
-      :ROOMS.filter(r=>r.deptId===currentUser.deptId)
-  ,[ROOMS,activeDeptId,isChief,currentUser.deptId]);
+    isInstitutional
+      ?[...ROOMS.filter(r=>r.roleId===activeRoleId),...ROOMS.filter(r=>r.roleId!==activeRoleId)]
+      :ROOMS.filter(r=>r.roleId===currentUser.roleId)
+  ,[ROOMS,activeRoleId,isInstitutional,currentUser.roleId]);
 
   // Lista única — sem aba Pendentes/Alocadas. Pendentes (e parciais) vêm
   // primeiro, já alocadas (100%) depois e esmaecidas no CourseCard — sort é
   // estável, então só reagrupa, não embaralha a ordem dentro de cada grupo.
+  // Visão institucional: o seletor de função no topo decide o que aparece
+  // aqui — uma função específica mostra só as disciplinas dela, "Todas"
+  // mostra de qualquer função (com o rótulo de dona em cada uma).
   const visibleSidebarCourses=useMemo(()=>{
-    const base=isDeptHead?periodCourses.filter(c=>c.deptId===currentUser.deptId):periodCourses;
+    const base=!isInstitutional
+      ?periodCourses.filter(c=>c.roleId===currentUser.roleId)
+      :activeRoleId===ALL_ROLES?periodCourses:periodCourses.filter(c=>c.roleId===activeRoleId);
     const filtered=search.trim()
       ?base.filter(c=>{const q=search.toLowerCase();return c.name.toLowerCase().includes(q)||c.code.toLowerCase().includes(q);})
       :base;
     return[...filtered].sort((a,b)=>Number(isFullyAllocated(a))-Number(isFullyAllocated(b)));
-  },[periodCourses,isDeptHead,currentUser.deptId,search]);
+  },[periodCourses,isInstitutional,currentUser.roleId,activeRoleId,search]);
   const pendingCount=useMemo(()=>visibleSidebarCourses.filter(c=>!isFullyAllocated(c)).length,[visibleSidebarCourses]);
   const allocatedCount=visibleSidebarCourses.length-pendingCount;
 
@@ -403,25 +449,31 @@ function Dashboard(){
   // — rodar nele uma disciplina parcial sobrescreveria silenciosamente os
   // dias que o usuário já tinha colocado manualmente em salas diferentes.
   const autoAllocInput=useMemo(()=>{
-    const base=isDeptHead?periodCourses.filter(c=>c.deptId===currentUser.deptId):periodCourses;
+    const base=!isInstitutional?periodCourses.filter(c=>c.roleId===currentUser.roleId):periodCourses;
     return base.filter(c=>!hasAnyAllocation(c));
-  },[periodCourses,isDeptHead,currentUser.deptId]);
+  },[periodCourses,isInstitutional,currentUser.roleId]);
 
   const stats=useMemo(()=>{
-    const mine=periodCourses.filter(c=>c.deptId===activeDeptId),done=mine.filter(isFullyAllocated);
-    const cross=mine.filter(c=>Object.values(c.roomByDay||{}).some(rid=>rid&&!rid.startsWith(activeDeptId))).length;
+    const viewingAll=activeRoleId===ALL_ROLES;
+    const mine=viewingAll?periodCourses:periodCourses.filter(c=>c.roleId===activeRoleId);
+    const done=mine.filter(isFullyAllocated);
+    // "Outra Função" não tem sentido olhando "Todas" de uma vez — não há um
+    // único "próprio" pra comparar contra.
+    const cross=viewingAll?0:mine.filter(c=>Object.values(c.roomByDay||{}).some(rid=>{
+      const room=ROOMS.find(r=>r.id===rid);return room&&room.roleId&&room.roleId!==activeRoleId;
+    })).length;
     return{total:mine.length,done:done.length,pend:mine.length-done.length,cross};
-  },[periodCourses,activeDeptId]);
+  },[periodCourses,activeRoleId,ROOMS]);
 
-  // Período passado é somente leitura pra todo mundo, CHIEF incluso — não dá
-  // pra reescrever histórico mesmo sendo diretor.
-  const canAllocate   =!isPastPeriod&&(isChief||(isDeptHead&&!isLocked));
-  const canDealloc    =!isPastPeriod&&(isChief||(isDeptHead&&!isLocked));
+  // Período passado é somente leitura pra todo mundo, função institucional
+  // inclusa — não dá pra reescrever histórico mesmo sendo diretor.
+  const canAllocate   =!isPastPeriod&&(isInstitutional||!isLocked);
+  const canDealloc    =!isPastPeriod&&(isInstitutional||!isLocked);
   const canMerge      =canAllocate&&can(PERMS.MERGE_GROUPS);
-  const canEditFeatures=isChief;
+  const canEditFeatures=can(PERMS.MANAGE_ROOMS);
   const canEditCourse =canAllocate;
   const canManageCatalog=canAllocate;
-  const targetDeptId  =isChief?activeDeptId:currentUser.deptId;
+  const targetRoleId  =isInstitutional?activeRoleId:currentUser.roleId;
   // Salas (ListView) é uma ferramenta de ação — clicar aloca. Sem ação
   // possível num período passado, ela não tem valor como leitura (ao
   // contrário da Grade, que serve bem só pra consultar onde algo ficou).
@@ -467,7 +519,7 @@ function Dashboard(){
     // sem precisar reselecionar) — só desmarca quando ficar 100% alocada.
     const stillSelected=courseDays(course).some(d=>!nextRoomByDay[d]);
     setSelId(stillSelected?course.id:null);
-    if(isChief)setActiveDeptId(course.deptId);
+    if(isInstitutional)setActiveRoleId(course.roleId);
     const daysLabel=days==null?'todos os dias':targetDays.join(', ');
     try{
       await db.setCourseRoomByDay(course.id,nextRoomByDay);
@@ -525,7 +577,7 @@ function Dashboard(){
     if(!canAllocate)return;
     if(selId===c.id){setSelId(null);return;}
     setSelId(c.id);
-    if(isChief)setActiveDeptId(c.deptId);
+    if(isInstitutional)setActiveRoleId(c.roleId);
   };
   const handleEditCourse=async(courseId,changes)=>{
     setEditingCourse(null);
@@ -568,12 +620,22 @@ function Dashboard(){
       showToast(`Falha ao criar disciplina: ${e.message}`,'err');
     }
   };
+  const handleDeleteCourse=async course=>{
+    if(!canManageCatalog)return;
+    try{
+      await db.deleteCourse(course.id);
+      if(selId===course.id)setSel(null);
+      showToast(`${course.code} excluída.`,'ok');
+    }catch(e){
+      showToast(`Falha ao excluir disciplina: ${e.message}`,'err');
+    }
+  };
   const handleImportCourses=async newCourses=>{
     setImportingCourses(false);
     if(!canManageCatalog)return;
     try{
-      await db.replaceDeptCourses(targetDeptId,selectedPeriod,newCourses);
-      showToast(`${newCourses.length} disciplina${newCourses.length!==1?'s':''} importada${newCourses.length!==1?'s':''} para ${gDept(targetDeptId)?.full} (${selectedPeriod}).`,'ok');
+      await db.replaceRoleCourses(targetRoleId,selectedPeriod,newCourses);
+      showToast(`${newCourses.length} disciplina${newCourses.length!==1?'s':''} importada${newCourses.length!==1?'s':''} para ${gRole(targetRoleId)?.full} (${selectedPeriod}).`,'ok');
     }catch(e){
       showToast(`Falha ao importar disciplinas: ${e.message}`,'err');
     }
@@ -615,18 +677,18 @@ function Dashboard(){
     if(isPastPeriod)return;
     setSelId(null);setFinishConfirm(false);
     try{
-      await db.finishDept(currentUser.deptId,gDept(currentUser.deptId)?.full,currentUser.name);
+      await db.finishCoordination(currentUser.roleId,gRole(currentUser.roleId)?.full,currentUser.name);
       showToast('Alocação enviada. O diretor foi notificado.','ok');
     }catch(e){
       showToast(`Falha ao enviar alocação: ${e.message}`,'err');
     }
   };
-  const handleReopen=async deptId=>{
-    try{await db.setDeptStatus(deptId,DS.ACTIVE);showToast(`${gDept(deptId)?.full} reaberto.`,'ok');}
+  const handleReopen=async roleId=>{
+    try{await db.setCoordinationStatus(roleId,DS.ACTIVE);showToast(`${gRole(roleId)?.full} reaberto.`,'ok');}
     catch(e){showToast(`Falha: ${e.message}`,'err');}
   };
-  const handleForceFinish=async deptId=>{
-    try{await db.setDeptStatus(deptId,DS.FORCE_FINISHED);showToast(`${gDept(deptId)?.full} bloqueado.`,'ok');}
+  const handleForceFinish=async roleId=>{
+    try{await db.setCoordinationStatus(roleId,DS.FORCE_FINISHED);showToast(`${gRole(roleId)?.full} bloqueado.`,'ok');}
     catch(e){showToast(`Falha: ${e.message}`,'err');}
   };
   const markNotifsRead=()=>{db.markAllNotificationsRead().catch(()=>{});};
@@ -640,10 +702,12 @@ function Dashboard(){
 
   if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Carregando dados…</div>;
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:11,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
-  if(screen==='select')return<ScreenSelector onPick={setScreen}/>;
-  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} onBack={()=>setScreen('select')}/>;
+  if(screen==='select')return<ScreenSelector onPick={setScreen} subUnits={subUnits}/>;
+  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} onBack={()=>setScreen('select')}/>;
+  if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')}/>;
 
   return(
+    <RolesCtx.Provider value={{roles,subUnits,blocks,gRole,gBlockLabel}}>
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap');
@@ -673,10 +737,16 @@ function Dashboard(){
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={()=>setScreen('select')} title="Voltar ao menu"
           style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>☰</button>
-        {isChief?(
-          <select value={activeDeptId} onChange={e=>{setActiveDeptId(e.target.value);setSelId(null);}}
+        {isInstitutional?(
+          <select value={activeRoleId??''} onChange={e=>{setActiveRoleId(e.target.value);setSelId(null);}}
+            title="Função em exibição — filtra as disciplinas da barra lateral"
             style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:dClr,fontSize:12,fontWeight:600,outline:'none',cursor:'pointer'}}>
-            {DEPTS.map(dep=><option key={dep.id} value={dep.id}>{dep.full}</option>)}
+            <option value={ALL_ROLES}>Todas</option>
+            {subUnits.map(su=>(
+              <optgroup key={su.id} label={su.fullName}>
+                {roles.filter(r=>r.subUnitId===su.id).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+              </optgroup>
+            ))}
           </select>
         ):(
           <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -689,23 +759,24 @@ function Dashboard(){
           title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:isPastPeriod?T.muted:dClr,fontSize:11,fontWeight:600,outline:'none',cursor:'pointer'}}>
           {allPeriods.map(p=><option key={p} value={p}>{p}{p===currentPeriod?' (atual)':' — somente leitura'}</option>)}
         </select>
-        {isChief&&<button className="icon-btn" onClick={()=>setNewPeriodModal(true)} title="Criar novo período letivo" style={{padding:'5px 9px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,fontWeight:700,cursor:'pointer',lineHeight:1}}>+</button>}
+        {isInstitutional&&<button className="icon-btn" onClick={()=>setNewPeriodModal(true)} title="Criar novo período letivo" style={{padding:'5px 9px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,fontWeight:700,cursor:'pointer',lineHeight:1}}>+</button>}
         {isPastPeriod&&<span style={{...mono,fontSize:8,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'3px 7px',whiteSpace:'nowrap'}}>🔒 PERÍODO PASSADO — SOMENTE LEITURA</span>}
         <div style={{flex:1}}/>
-        {[['Total',stats.total,T.muted],['Alocadas',stats.done,theme==='light'?'#059669':'#34D399'],['Pendentes',stats.pend,theme==='light'?'#b45309':'#FBBF24'],['Outro Depto',stats.cross,theme==='light'?'#5b21b6':'#A78BFA']].map(([l,v,c])=>(
+        {[['Total',stats.total,T.muted],['Alocadas',stats.done,theme==='light'?'#059669':'#34D399'],['Pendentes',stats.pend,theme==='light'?'#b45309':'#FBBF24'],['Outra Função',stats.cross,theme==='light'?'#5b21b6':'#A78BFA']].map(([l,v,c])=>(
           <div key={l} style={{textAlign:'center',padding:'0 12px',borderLeft:`1px solid ${T.bdr}`}}>
             <div style={{fontSize:17,fontWeight:700,color:c,lineHeight:1}}>{v}</div>
             <div style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginTop:2}}>{l}</div>
           </div>
         ))}
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
-          <div style={{width:5,height:5,borderRadius:'50%',background:isChief?(theme==='light'?'#5b21b6':'#A78BFA'):dClr}}/>
+          <div style={{width:5,height:5,borderRadius:'50%',background:isInstitutional?(theme==='light'?'#5b21b6':'#A78BFA'):dClr}}/>
           <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
-          <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{isChief?'Diretor':'Chefe de Depto.'}</span>
+          <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
+          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
-        {isChief&&(
+        {isInstitutional&&(
           <>
-            <button className="icon-btn" onClick={()=>{setDeptPanel(true);setNotifPanel(false);}} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Departamentos</button>
+            <button className="icon-btn" onClick={()=>{setDeptPanel(true);setNotifPanel(false);}} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Coordenações</button>
             <button className="icon-btn" onClick={()=>{setNotifPanel(v=>!v);markNotifsRead();}} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:unreadCount>0?(theme==='light'?'#b45309':'#FBBF24'):T.muted,fontSize:10,cursor:'pointer'}}>
               🔔{unreadCount>0&&<span style={{marginLeft:4,background:'#ef4444',color:'#fff',borderRadius:10,padding:'0 5px',fontSize:8}}>{unreadCount}</span>}
             </button>
@@ -748,18 +819,19 @@ function Dashboard(){
                 <div style={{fontSize:12}}>{search?'Nenhum resultado':'Nenhuma disciplina cadastrada ainda'}</div>
               </div>
             ):visibleSidebarCourses.map(c=>(
-              <CourseCard key={c.id} course={c} activeDept={gDept(activeDeptId)} showDeptBadge={isChief}
+              <CourseCard key={c.id} course={c} activeRole={gRole(activeRoleId)} showRoleBadge={isInstitutional&&activeRoleId===ALL_ROLES}
                 selected={selId===c.id} locked={isLocked}
                 roomLabel={fmtRoomByDay(c,ROOMS)}
                 onSelect={()=>selectCourse(c)}
                 onEdit={canEditCourse?()=>setEditingCourse(c):null}
-                onRemove={hasAnyAllocation(c)&&canDealloc&&!isLocked?()=>deallocate(c.id):null}/>
+                onRemove={hasAnyAllocation(c)&&canDealloc&&!isLocked?()=>deallocate(c.id):null}
+                onDelete={canManageCatalog&&!isPastPeriod?()=>handleDeleteCourse(c):null}/>
             ))}
           </div>
 
-          {!isLocked&&!isPastPeriod&&(isDeptHead||isChief)&&(
+          {!isLocked&&!isPastPeriod&&(
             <div style={{padding:'10px 12px',borderTop:`1px solid ${T.bdr}`,flexShrink:0,display:'flex',flexDirection:'column',gap:6}}>
-              {canManageCatalog&&(
+              {canManageCatalog&&activeRoleId!==ALL_ROLES&&(
                 <div style={{display:'flex',gap:6}}>
                   <button onClick={()=>setCreatingCourse(true)}
                     style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:11,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
@@ -781,7 +853,7 @@ function Dashboard(){
                   ✨ Alocar Automaticamente
                 </button>
               )}
-              {isDeptHead&&(
+              {!isInstitutional&&(
                 <button onClick={()=>setFinishConfirm(true)}
                   style={{width:'100%',padding:'8px',background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,borderRadius:7,color:theme==='light'?'#15803d':'#34d399',fontSize:11,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
                   onMouseEnter={e=>{e.currentTarget.style.background=theme==='light'?'#dcfce7':'#0d3321';}}
@@ -811,7 +883,7 @@ function Dashboard(){
               <button key={dy} onClick={()=>setDay(dy)} style={{padding:'4px 10px',borderRadius:5,fontSize:10,fontWeight:500,background:day===dy?d.clr:'transparent',color:day===dy?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${day===dy?d.clr:T.bdr2}`,transition:'all .12s',cursor:'pointer'}}>{dy.slice(0,3)}</button>
             ))}
             <div style={{flex:1}}/>
-            <span style={{...mono,fontSize:9,color:T.dim}}>{isChief?'Visão do diretor — todas as salas visíveis':`Exibindo apenas salas do ${gDept(currentUser.deptId)?.full}`}</span>
+            <span style={{...mono,fontSize:9,color:T.dim}}>{isInstitutional?'Visão institucional — todas as salas visíveis':`Exibindo apenas salas da função ${gRole(currentUser.roleId)?.full}`}</span>
           </div>
 
           {sel&&canAllocate&&(
@@ -829,11 +901,11 @@ function Dashboard(){
 
           <div style={{flex:1,overflow:'auto',background:T.bg}}>
             {effectiveViewMode==='grid'?(
-              <Grid rooms={visRooms} day={day} alloc={alloc} courses={periodCourses} sel={sel} deptId={activeDeptId} dept={d}
+              <Grid rooms={visRooms} day={day} alloc={alloc} courses={periodCourses} sel={sel} roleId={activeRoleId} dept={d}
                 canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse}
                 onTryAlloc={rid=>tryAllocate(rid,day)} onDealloc={cid=>deallocate(cid,day)} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
             ):(
-              <ListView rooms={visRooms} alloc={alloc} courses={periodCourses} sel={sel} deptId={activeDeptId} dept={d}
+              <ListView rooms={visRooms} alloc={alloc} courses={periodCourses} sel={sel} roleId={activeRoleId} dept={d}
                 canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse}
                 onTryAlloc={trySalasAllocate} onDealloc={cid=>deallocate(cid,null)} onEditFeatures={setFeaturesModal} onEditCourse={setEditingCourse}/>
             )}
@@ -842,13 +914,13 @@ function Dashboard(){
       </div>
 
       {/* Modais */}
-      {finishConfirm&&<FinishConfirmModal deptName={gDept(currentUser.deptId)?.full} remaining={autoAllocInput.length} onConfirm={handleFinish} onCancel={()=>setFinishConfirm(false)}/>}
-      {deptPanel&&<DeptStatusPanel deptStatuses={deptStatuses} notifications={notifications} onReopen={handleReopen} onForceFinish={handleForceFinish} onClose={()=>setDeptPanel(false)}/>}
+      {finishConfirm&&<FinishConfirmModal roleName={gRole(currentUser.roleId)?.full} remaining={autoAllocInput.length} onConfirm={handleFinish} onCancel={()=>setFinishConfirm(false)}/>}
+      {deptPanel&&<CoordinationStatusPanel roles={roles} subUnits={subUnits} coordinationStatuses={coordinationStatuses} notifications={notifications} onReopen={handleReopen} onForceFinish={handleForceFinish} onClose={()=>setDeptPanel(false)}/>}
       {notifPanel&&<NotifPanel notifications={notifications} onClose={()=>setNotifPanel(false)}/>}
-      {(editingCourse||creatingCourse)&&<CourseEditModal course={editingCourse} isChief={isChief} targetDeptId={targetDeptId} courses={courses} period={selectedPeriod}
+      {(editingCourse||creatingCourse)&&<CourseEditModal course={editingCourse} isInstitutional={isInstitutional} targetRoleId={targetRoleId} courses={courses} period={selectedPeriod}
         onSave={handleEditCourse} onCreate={handleCreateCourse} onCancel={()=>{setEditingCourse(null);setCreatingCourse(false);}}/>}
-      {importingCourses&&<CourseImportModal targetDeptId={targetDeptId} deptName={gDept(targetDeptId)?.full} period={selectedPeriod}
-        existingCourses={courses.filter(c=>c.deptId===targetDeptId&&c.period===selectedPeriod)}
+      {importingCourses&&<CourseImportModal targetRoleId={targetRoleId} roleName={gRole(targetRoleId)?.full} period={selectedPeriod}
+        existingCourses={courses.filter(c=>c.roleId===targetRoleId&&c.period===selectedPeriod)}
         onConfirm={handleImportCourses} onCancel={()=>setImportingCourses(false)}/>}
       {newPeriodModal&&<NewPeriodModal currentPeriod={currentPeriod} onConfirm={handleCreatePeriod} onCancel={()=>setNewPeriodModal(false)}/>}
       {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
@@ -858,7 +930,7 @@ function Dashboard(){
       {showUsers&&(
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'stretch',justifyContent:'flex-end',zIndex:200}}>
           <div style={{width:'min(900px,95vw)',background:T.surface,borderLeft:`1px solid ${T.bdr}`,display:'flex',flexDirection:'column',animation:'slideIn .2s ease'}}>
-            <UserManagement onClose={()=>setShowUsers(false)}/>
+            <UserManagement onClose={()=>setShowUsers(false)} roles={roles} subUnits={subUnits}/>
           </div>
         </div>
       )}
@@ -871,6 +943,7 @@ function Dashboard(){
         </div>
       )}
     </div>
+    </RolesCtx.Provider>
   );
 }
 
@@ -879,14 +952,18 @@ function Dashboard(){
 // (Dashboard de sempre) e o mapa somente-leitura de salas já alocadas, em vez
 // de cair direto na alocação. Não usa nenhum estado do Dashboard — só precisa
 // do callback pra trocar a tela.
-function ScreenSelector({onPick}){
-  const{currentUser,logout}=useAuth();
+function ScreenSelector({onPick,subUnits}){
+  const{currentUser,logout,can}=useAuth();
   const{T,theme,toggleTheme}=useT();
-  const isChief=currentUser.role===ROLES.CHIEF;
   const mono={fontFamily:"'DM Mono',monospace"};
+  // "Gerenciamento" não é exclusivo do Diretor por identidade de role — é
+  // qualquer função institucional com pelo menos uma destas permissões
+  // (Diretor e seus secretários têm todas, por exemplo).
+  const canManage=can(PERMS.CREATE_ANY_USER)||can(PERMS.MANAGE_SUB_UNITS)||can(PERMS.MANAGE_ROLES)||can(PERMS.MANAGE_ROOMS)||can(PERMS.MANAGE_BLOCKS);
   const cards=[
-    {key:'allocate',icon:'📋',title:'Alocar Disciplinas',desc:'Cadastre disciplinas e aloque-as nas salas do seu departamento.'},
+    {key:'allocate',icon:'📋',title:'Alocar Disciplinas',desc:'Cadastre disciplinas e aloque-as nas salas da sua função.'},
     {key:'map',icon:'🗺',title:'Mapa de Salas Alocadas',desc:'Veja uma visão ampla de todas as salas já alocadas, por dia e horário.'},
+    ...(canManage?[{key:'manage',icon:'⚙️',title:'Gerenciamento',desc:'Usuários, funções, sub-unidades, salas e blocos.'}]:[]),
   ];
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -901,7 +978,8 @@ function ScreenSelector({onPick}){
         <div style={{flex:1}}/>
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
           <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
-          <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{isChief?'Diretor':'Chefe de Depto.'}</span>
+          <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
+          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Sair</button>
@@ -933,12 +1011,13 @@ function ScreenSelector({onPick}){
 // mostra, para todos os departamentos de uma vez, quais salas já têm
 // disciplinas alocadas e em que horário. Reaproveita rowSlots/blockForDay (os
 // mesmos helpers da Grade de alocação) só que sem nenhum callback de clique.
-function RoomMapScreen({rooms,courses,onBack}){
+function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
   const{currentUser,logout}=useAuth();
   const{T,theme,toggleTheme}=useT();
-  const isChief=currentUser.role===ROLES.CHIEF;
   const mono={fontFamily:"'DM Mono',monospace"};
   const[day,setDay]=useState('Segunda');
+  const gRole=useMemo(()=>makeGRole(roles,subUnits),[roles,subUnits]);
+  const gBlockLabel=useMemo(()=>makeGBlockLabel(blocks),[blocks]);
   // Período próprio, independente do que está selecionado na tela de
   // Alocação (são telas-irmãs, não pai/filho) — sempre cai no mais recente.
   const allPeriods=useMemo(()=>[...new Set(courses.map(c=>c.period))].sort(comparePeriods),[courses]);
@@ -949,10 +1028,64 @@ function RoomMapScreen({rooms,courses,onBack}){
   const alloc=useMemo(()=>buildAlloc(periodCourses),[periodCourses]);
   const allocatedRoomIds=useMemo(()=>new Set(periodCourses.flatMap(c=>Object.values(c.roomByDay||{}))),[periodCourses]);
   const allocatedRooms=useMemo(()=>rooms.filter(r=>allocatedRoomIds.has(r.id)),[rooms,allocatedRoomIds]);
-  const deptOrder=id=>{const i=DEPTS.findIndex(d=>d.id===id);return i===-1?DEPTS.length:i;};
-  const presentDepts=useMemo(()=>
-    [...new Set(allocatedRooms.map(r=>r.deptId))].map(gDept).sort((a,b)=>deptOrder(a.id)-deptOrder(b.id))
-  ,[allocatedRooms]);
+  const subUnitOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
+
+  const generatePdf=()=>{
+    const groupOf=r=>gRole(r.roleId).subUnitFull;
+    const groupOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
+    const sorted=[...allocatedRooms].sort((a,b)=>groupOrder(groupOf(a))-groupOrder(groupOf(b))||gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true}));
+    const groupCounts={};sorted.forEach(r=>{const g=groupOf(r);groupCounts[g]=(groupCounts[g]||0)+1;});
+    const thHours=HOURS.map(h=>`<th>${h}h</th>`).join('');
+    const dateStr=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const daysSections=DAYS.map((d,dIdx)=>{
+      const rows=sorted.map((room,idx)=>{
+        const rd=gRole(room.roleId);
+        const slots=rowSlots(room.id,d,alloc);
+        const showGroup=idx===0||groupOf(sorted[idx-1])!==groupOf(room);
+        const showBlock=showGroup||sorted[idx-1].blockId!==room.blockId;
+        const groupRow=showGroup?`<tr class="group-row"><td colspan="${HOURS.length+1}" style="border-left:3px solid ${rd.clr}">${rd.subUnitFull} · ${groupCounts[groupOf(room)]} sala${groupCounts[groupOf(room)]!==1?'s':''}</td></tr>`:'';
+        const blockRow=showBlock?`<tr class="block-row"><td colspan="${HOURS.length+1}">${gBlockLabel(room.blockId)}</td></tr>`:'';
+        const cells=slots.map(slot=>{
+          if(slot.c){
+            const cd=gRole(slot.c.roleId);
+            const sb=blockForDay(slot.c,d);
+            const tip=`${slot.c.name}${slot.c.sec!=null?` · Turma ${slot.c.sec}`:''}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(sb.sh)}–${fmtHour(sb.eh)} · ${slot.c.enroll} alunos`;
+            return`<td colspan="${slot.span}" title="${tip.replace(/"/g,'&quot;')}" style="border-left:2px solid ${cd.clr};background:${cd.clr}22;padding:1px 4px;overflow:hidden"><span style="color:${cd.textClr};font-weight:600;font-size:8px;white-space:nowrap">${slot.c.code}</span>${slot.merged>0?`<span style="color:#d97706;font-size:7px"> +${slot.merged}</span>`:''}</td>`;
+          }
+          return`<td style="border-left:${slot.h===12||slot.h===18?'2px solid #cbd5e1':'1px solid #e2e8f0'}"></td>`;
+        }).join('');
+        return`${groupRow}${blockRow}<tr><td class="room-cell" style="border-left:3px solid ${rd.clr}"><span style="color:${rd.textClr};font-weight:600">${room.label}</span><span class="cap">${room.cap}</span></td>${cells}</tr>`;
+      }).join('');
+      const hdr=dIdx===0?`<div style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;margin-bottom:2px">Mapa de Salas Alocadas</div><div style="font-size:8px;color:#64748b">Período ${selectedPeriod} · ${allocatedRooms.length} sala${allocatedRooms.length!==1?'s':''} alocada${allocatedRooms.length!==1?'s':''} · Gerado em ${dateStr}</div></div>`:'';
+      return`<div class="day">${hdr}<div class="day-title">${d}</div><div class="scroll"><table><thead><tr><th>Sala / Cap.</th>${thHours}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    }).join('');
+    const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>Mapa de Salas — ${selectedPeriod}</title><style>
+      *{box-sizing:border-box;margin:0;padding:0;}
+      body{font-family:Arial,sans-serif;font-size:9px;color:#1e293b;padding:8mm;}
+      .day{margin-bottom:14px;}
+      .day-title{font-size:10px;font-weight:700;padding:3px 8px;background:#f1f5f9;border-left:3px solid #3b82f6;margin-bottom:4px;}
+      .scroll{overflow-x:auto;}
+      table{border-collapse:collapse;table-layout:fixed;width:100%;}
+      th{background:#f8fafc;padding:3px 4px;text-align:left;border:1px solid #e2e8f0;font-size:7px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;font-weight:600;}
+      td{padding:1px 3px;border:1px solid #e2e8f0;height:22px;vertical-align:middle;overflow:hidden;}
+      .room-cell{white-space:nowrap;width:120px;min-width:120px;}
+      .cap{color:#94a3b8;font-size:8px;margin-left:4px;}
+      .group-row td{background:#f1f5f9;font-weight:700;font-size:8px;text-transform:uppercase;letter-spacing:.5px;padding:3px 8px;}
+      .block-row td{background:#f8fafc;font-size:7px;color:#64748b;padding:2px 8px 2px 18px;}
+      @media print{@page{size:A4 landscape;margin:8mm;}.day{page-break-before:always;}.day:first-child{page-break-before:avoid;}}
+    </style></head><body>${daysSections}</body></html>`;
+    const w=window.open('','_blank');
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(()=>w.print(),400);
+  };
+
+  const presentGroups=useMemo(()=>{
+    const byName=new Map();
+    allocatedRooms.forEach(r=>{const rd=gRole(r.roleId);if(!byName.has(rd.subUnitFull))byName.set(rd.subUnitFull,rd);});
+    return[...byName.values()].sort((a,b)=>subUnitOrder(a.subUnitFull)-subUnitOrder(b.subUnitFull));
+  },[allocatedRooms,roles,subUnits]);
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <style>{`
@@ -980,26 +1113,31 @@ function RoomMapScreen({rooms,courses,onBack}){
         ))}
         <div style={{flex:1}}/>
         <span style={{...mono,fontSize:9,color:T.dim}}>{allocatedRooms.length} sala{allocatedRooms.length!==1?'s':''} alocada{allocatedRooms.length!==1?'s':''}</span>
+        <button onClick={generatePdf} disabled={allocatedRooms.length===0} title="Gerar PDF com o mapa completo da semana"
+          style={{padding:'5px 12px',background:theme==='light'?'#0f172a':'#e2e8f0',border:'none',borderRadius:6,color:theme==='light'?'#f1f5f9':'#0f172a',fontSize:11,fontWeight:600,cursor:allocatedRooms.length===0?'not-allowed':'pointer',opacity:allocatedRooms.length===0?.4:1,transition:'opacity .15s'}}>
+          ⬇ PDF
+        </button>
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
           <span style={{...mono,fontSize:9,color:T.muted}}>{currentUser.name}</span>
-          <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{isChief?'Diretor':'Chefe de Depto.'}</span>
+          <span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
+          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:8,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:10,cursor:'pointer'}}>Sair</button>
       </div>
-      {presentDepts.length>0&&(
+      {presentGroups.length>0&&(
         <div style={{display:'flex',alignItems:'center',gap:14,padding:'7px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,flexWrap:'wrap'}}>
           <span style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>Legenda</span>
-          {presentDepts.map(dp=>(
-            <div key={dp.id??'shared'} style={{display:'flex',alignItems:'center',gap:5}}>
+          {presentGroups.map(dp=>(
+            <div key={dp.subUnitFull} style={{display:'flex',alignItems:'center',gap:5}}>
               <div style={{width:8,height:8,borderRadius:2,background:dp.clr,flexShrink:0}}/>
-              <span style={{...mono,fontSize:9,color:T.muted}}>{dp.full}</span>
+              <span style={{...mono,fontSize:9,color:T.muted}}>{dp.subUnitFull}</span>
             </div>
           ))}
         </div>
       )}
       <div style={{flex:1,overflow:'auto',background:T.bg,padding:16}}>
-        <RoomMapGrid rooms={allocatedRooms} day={day} alloc={alloc}/>
+        <RoomMapGrid rooms={allocatedRooms} day={day} alloc={alloc} gRole={gRole} gBlockLabel={gBlockLabel} subUnits={subUnits}/>
       </div>
     </div>
   );
@@ -1013,13 +1151,14 @@ function RoomMapScreen({rooms,courses,onBack}){
 // coluna de sala (left+top juntos) quebra em tabelas com border-collapse:
 // collapse (o cabeçalho passa a renderizar atrás da primeira linha ao rolar
 // horizontalmente), então a coluna de sala rola normalmente.
-function RoomMapGrid({rooms,day,alloc}){
+function RoomMapGrid({rooms,day,alloc,gRole,gBlockLabel,subUnits}){
   const{T,theme}=useT();
   const CW=76,RH=33,LW=150;
-  const deptOrder=id=>{const i=DEPTS.findIndex(d=>d.id===id);return i===-1?DEPTS.length:i;};
-  const byDeptBuildingLabel=(a,b)=>deptOrder(a.deptId)-deptOrder(b.deptId)||a.building.localeCompare(b.building)||a.label.localeCompare(b.label,undefined,{numeric:true});
-  const sorted=useMemo(()=>[...rooms].sort(byDeptBuildingLabel),[rooms]);
-  const deptCounts=useMemo(()=>{const m={};sorted.forEach(r=>{m[r.deptId]=(m[r.deptId]||0)+1;});return m;},[sorted]);
+  const groupOf=room=>gRole(room.roleId).subUnitFull;
+  const groupOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
+  const byGroupBlockLabel=(a,b)=>groupOrder(groupOf(a))-groupOrder(groupOf(b))||gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true});
+  const sorted=useMemo(()=>[...rooms].sort(byGroupBlockLabel),[rooms]);
+  const groupCounts=useMemo(()=>{const m={};sorted.forEach(r=>{const g=groupOf(r);m[g]=(m[g]||0)+1;});return m;},[sorted]);
   if(sorted.length===0)return(
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',flexDirection:'column',gap:10,padding:40}}>
       <div style={{fontSize:32,opacity:.15}}>🗺</div>
@@ -1041,24 +1180,24 @@ function RoomMapGrid({rooms,day,alloc}){
       </thead>
       <tbody>
         {sorted.map((room,idx)=>{
-          const rd=gDept(room.deptId),rdClr=dtc(rd,theme);
+          const rd=gRole(room.roleId),rdClr=dtc(rd,theme);
           const slots=rowSlots(room.id,day,alloc);
-          const showDeptSep=idx===0||sorted[idx-1].deptId!==room.deptId;
-          const showBuildingSep=showDeptSep||sorted[idx-1].building!==room.building;
+          const showGroupSep=idx===0||groupOf(sorted[idx-1])!==groupOf(room);
+          const showBlockSep=showGroupSep||sorted[idx-1].blockId!==room.blockId;
           const rowBg=idx%2===0?T.bg:(theme==='light'?T.faint:T.inner);
           return(
             <Fragment key={room.id}>
-              {showDeptSep&&(
+              {showGroupSep&&(
                 <tr><td colSpan={HOURS.length+1} style={{padding:0,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`}}>
                   <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:`${rd.clr}${theme==='light'?'14':'10'}`}}>
                     <div style={{width:3,height:14,borderRadius:1,background:rd.clr,flexShrink:0}}/>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:rdClr,letterSpacing:1,textTransform:'uppercase'}}>{rd.full}</span>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>· {deptCounts[room.deptId]} sala{deptCounts[room.deptId]!==1?'s':''}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:rdClr,letterSpacing:1,textTransform:'uppercase'}}>{rd.subUnitFull}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>· {groupCounts[groupOf(room)]} sala{groupCounts[groupOf(room)]!==1?'s':''}</span>
                   </div>
                 </td></tr>
               )}
-              {showBuildingSep&&(
-                <tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 21px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5,borderBottom:`1px solid ${T.bdr}`}}>{room.building}</td></tr>
+              {showBlockSep&&(
+                <tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 21px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5,borderBottom:`1px solid ${T.bdr}`}}>{gBlockLabel(room.blockId)}</td></tr>
               )}
               <tr style={{borderBottom:`1px solid ${T.bdr}`}}>
                 <td style={{padding:'0 6px 0 10px',height:RH,background:rowBg,borderRight:`1px solid ${T.bdr}`}}>
@@ -1070,7 +1209,7 @@ function RoomMapGrid({rooms,day,alloc}){
                 </td>
                 {slots.map((slot,si)=>{
                   if(slot.c){
-                    const cd=gDept(slot.c.deptId),cdClr=dtc(cd,theme);
+                    const cd=gRole(slot.c.roleId),cdClr=dtc(cd,theme);
                     const slotBlock=blockForDay(slot.c,day);
                     return(
                       <td key={si} colSpan={slot.span} style={{padding:'2px 2px',height:RH,verticalAlign:'middle',background:rowBg,borderLeft:shiftEdge(slot.h),borderRight:`1px solid ${T.bdr}`}}>
@@ -1094,21 +1233,27 @@ function RoomMapGrid({rooms,day,alloc}){
 }
 
 // ─── Card de disciplina ───────────────────────────────────────────────────────
-function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,onSelect,onEdit,onRemove}){
+function CourseCard({course,activeRole,showRoleBadge,selected,locked,roomLabel,onSelect,onEdit,onRemove,onDelete}){
   const{T,theme}=useT();
-  const cd=gDept(course.deptId),badgeClr=dtc(cd,theme);
+  const{gRole}=useRolesData();
+  const[confirmDel,setConfirmDel]=useState(false);
+  const cd=gRole(course.roleId),badgeClr=dtc(cd,theme);
   const done=isFullyAllocated(course);
   return(
     <div className={`cc${selected?' sel':''}${locked?' locked':''}${done?' done':''}`}
-      style={{padding:'8px 10px',borderRadius:6,marginBottom:2,cursor:(locked||!onSelect)?'default':'pointer',background:'transparent',border:`1px solid ${selected?activeDept.clr:T.bdr}`,transition:'background .1s, border-color .1s, opacity .15s'}}>
+      style={{padding:'8px 10px',borderRadius:6,marginBottom:2,cursor:(locked||!onSelect)?'default':'pointer',background:'transparent',border:`1px solid ${selected?activeRole.clr:T.bdr}`,transition:'background .1s, border-color .1s, opacity .15s'}}>
+      {showRoleBadge&&(
+        <div style={{marginBottom:4}} onClick={onSelect}>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.full}</span>
+        </div>
+      )}
       <div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}>
         <div style={{display:'flex',alignItems:'center',gap:5}}>
-          {showDeptBadge&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.id}</span>}
-          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:showDeptBadge?badgeClr:dtc(activeDept,theme)}} onClick={onSelect}>{course.code}</span>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:showRoleBadge?badgeClr:dtc(activeRole,theme)}} onClick={onSelect}>{course.code}</span>
           {course.sec!=null&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:3,padding:'1px 4px'}} onClick={onSelect}>Turma {course.sec}</span>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:4}}>
-          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{course.enroll} alunos</span>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}} onClick={onSelect}>{course.enroll} alunos</span>
           {onEdit&&!locked&&(
             <button onClick={e=>{e.stopPropagation();onEdit();}} title="Editar disciplina"
               style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:8,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
@@ -1121,6 +1266,20 @@ function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,o
               onMouseEnter={e=>{e.currentTarget.style.borderColor='#ef4444';e.currentTarget.style.color='#ef4444';}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>✕</button>
           )}
+          {onDelete&&!confirmDel&&(
+            <button onClick={e=>{e.stopPropagation();setConfirmDel(true);}} title="Excluir disciplina"
+              style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:8,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor='#ef4444';e.currentTarget.style.color='#ef4444';}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>🗑</button>
+          )}
+          {onDelete&&confirmDel&&(
+            <>
+              <button onClick={e=>{e.stopPropagation();onDelete();}} title="Confirmar exclusão"
+                style={{background:'#ef4444',border:'none',borderRadius:3,color:'#fff',fontSize:8,padding:'1px 6px',cursor:'pointer',lineHeight:1.3,fontWeight:600}}>Excluir</button>
+              <button onClick={e=>{e.stopPropagation();setConfirmDel(false);}} title="Cancelar"
+                style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:8,padding:'1px 4px',cursor:'pointer',lineHeight:1.3}}>✕</button>
+            </>
+          )}
         </div>
       </div>
       <div style={{fontSize:11,fontWeight:500,color:T.txt,marginBottom:2,lineHeight:1.3}} onClick={onSelect}>{course.name}</div>
@@ -1132,14 +1291,15 @@ function CourseCard({course,activeDept,showDeptBadge,selected,locked,roomLabel,o
 }
 
 // ─── Grade ────────────────────────────────────────────────────────────────────
-function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
+function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
   const{T,theme}=useT();
+  const{gRole,gBlockLabel}=useRolesData();
   const CW=76,RH=33,LW=130;
-  const byBuildingThenLabel=(a,b)=>a.building.localeCompare(b.building)||a.label.localeCompare(b.label,undefined,{numeric:true});
+  const byBlockThenLabel=(a,b)=>gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true});
   const sorted=useMemo(()=>[
-    ...rooms.filter(r=>r.deptId===deptId).sort(byBuildingThenLabel),
-    ...rooms.filter(r=>r.deptId!==deptId).sort(byBuildingThenLabel),
-  ],[rooms,deptId]);
+    ...rooms.filter(r=>r.roleId===roleId).sort(byBlockThenLabel),
+    ...rooms.filter(r=>r.roleId!==roleId).sort(byBlockThenLabel),
+  ],[rooms,roleId]);
   return(
     <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:LW+CW*HOURS.length}}>
       <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
@@ -1151,20 +1311,20 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
       </thead>
       <tbody>
         {sorted.map((room,idx)=>{
-          const isOwn=room.deptId===deptId,rd=gDept(room.deptId),rdClr=dtc(rd,theme);
+          const isOwn=room.roleId===roleId,rd=gRole(room.roleId),rdClr=dtc(rd,theme);
           const free=canAllocate&&sel?roomFree(room.id,sel,alloc,day):false;
           const hasCon=canAllocate&&sel?!free:false;
           const slots=rowSlots(room.id,day,alloc);
           const selBlock=sel?blockForDay(sel,day):null;
           const dayOk=!!selBlock;
-          const showSep=!isOwn&&sorted[idx-1]?.deptId===deptId;
-          const showBuildingSep=idx===0||sorted[idx-1]?.building!==room.building;
+          const showSep=!isOwn&&sorted[idx-1]?.roleId===roleId;
+          const showBlockSep=idx===0||sorted[idx-1]?.blockId!==room.blockId;
           const capWarn=sel&&room.cap<sel.enroll;
           const rowBg=isOwn?(theme==='light'?'#ffffff':T.bg):(theme==='light'?T.faint:T.inner);
           return(
             <Fragment key={room.id}>
-              {showSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:700,color:T.txt2,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outros Departamentos ↓</td></tr>}
-              {showBuildingSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{room.building}</td></tr>}
+              {showSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:700,color:T.txt2,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outras Funções ↓</td></tr>}
+              {showBlockSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{gBlockLabel(room.blockId)}</td></tr>}
               <tr style={{borderBottom:`1px solid ${T.bdr}`,background:rowBg}}>
                 <td style={{padding:'0 6px 0 10px',height:RH}}>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
@@ -1180,7 +1340,7 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
                 </td>
                 {slots.map((slot,si)=>{
                   if(slot.c){
-                    const cd=gDept(slot.c.deptId),cdClr=dtc(cd,theme),isMine=slot.c.deptId===deptId;
+                    const cd=gRole(slot.c.roleId),cdClr=dtc(cd,theme),isMine=slot.c.roleId===roleId;
                     const isMergeZone=canAllocate&&canMerge&&sel&&dayOk&&hasCon&&slot.h>=selBlock.sh&&slot.h<selBlock.eh;
                     const slotBlock=blockForDay(slot.c,day);
                     return(
@@ -1213,31 +1373,33 @@ function Grid({rooms,day,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,ca
 }
 
 // ─── Vista em lista ───────────────────────────────────────────────────────────
-function ListView({rooms,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
+function ListView({rooms,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
   const{T}=useT();
-  const sorted=useMemo(()=>[...rooms.filter(r=>r.deptId===deptId),...rooms.filter(r=>r.deptId!==deptId)],[rooms,deptId]);
+  const{gRole}=useRolesData();
+  const sorted=useMemo(()=>[...rooms.filter(r=>r.roleId===roleId),...rooms.filter(r=>r.roleId!==roleId)],[rooms,roleId]);
   if(!sel)return(
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',flexDirection:'column',gap:12}}>
       <div style={{fontSize:36,opacity:.12}}>≡</div>
       <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{canAllocate?'Selecione uma disciplina à esquerda para ver a disponibilidade das salas':'Vista somente leitura'}</div>
     </div>
   );
-  const own=sorted.filter(r=>r.deptId===deptId),oth=sorted.filter(r=>r.deptId!==deptId);
+  const own=sorted.filter(r=>r.roleId===roleId),oth=sorted.filter(r=>r.roleId!==roleId);
   return(
     <div style={{padding:16,display:'flex',flexDirection:'column',gap:20,animation:'fadeIn .2s ease'}}>
-      <RoomSection title={`${gDept(deptId).full} — Salas Próprias`} rooms={own} alloc={alloc} courses={courses} sel={sel} deptId={deptId} dept={dept} canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>
-      {oth.length>0&&<RoomSection title="Outros Departamentos — Alocação Cruzada" rooms={oth} alloc={alloc} courses={courses} sel={sel} deptId={deptId} dept={dept} canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>}
+      <RoomSection title={`${gRole(roleId).full} — Salas Próprias`} rooms={own} alloc={alloc} courses={courses} sel={sel} roleId={roleId} dept={dept} canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>
+      {oth.length>0&&<RoomSection title="Outras Funções — Alocação Cruzada" rooms={oth} alloc={alloc} courses={courses} sel={sel} roleId={roleId} dept={dept} canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>}
     </div>
   );
 }
 
-function RoomSection({title,rooms,alloc,courses,sel,deptId,dept,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
+function RoomSection({title,rooms,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
   const{T,theme}=useT();
+  const{gBlockLabel}=useRolesData();
   const free=rooms.filter(r=>roomFree(r.id,sel,alloc)),busy=rooms.filter(r=>!roomFree(r.id,sel,alloc));
   const freeSet=new Set(free.map(r=>r.id));
-  const byBuilding=useMemo(()=>{
+  const byBlock=useMemo(()=>{
     const groups={};
-    rooms.forEach(r=>{(groups[r.building]=groups[r.building]||[]).push(r);});
+    rooms.forEach(r=>{const label=gBlockLabel(r.blockId);(groups[label]=groups[label]||[]).push(r);});
     return Object.entries(groups).sort(([a],[b])=>a.localeCompare(b));
   },[rooms]);
   return(
@@ -1249,13 +1411,13 @@ function RoomSection({title,rooms,alloc,courses,sel,deptId,dept,canAllocate,canD
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}}>/</span>
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:theme==='light'?'#d97706':'#F59E0B'}}>{busy.length} {canMerge?'disponíveis para mescla':'ocupadas'}</span>
       </div>
-      {byBuilding.map(([building,bRooms])=>{
+      {byBlock.map(([blockLabel,bRooms])=>{
         const bSorted=[...bRooms].sort((a,b)=>(freeSet.has(b.id)?1:0)-(freeSet.has(a.id)?1:0));
         return(
-          <div key={building} style={{marginBottom:14}}>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,marginBottom:6,paddingLeft:2,letterSpacing:.5}}>{building}</div>
+          <div key={blockLabel} style={{marginBottom:14}}>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,marginBottom:6,paddingLeft:2,letterSpacing:.5}}>{blockLabel}</div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))',gap:8}}>
-              {bSorted.map(r=><RoomCard key={r.id} room={r} sel={sel} alloc={alloc} courses={courses} deptId={deptId} dept={dept} status={freeSet.has(r.id)?'available':'busy'} canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>)}
+              {bSorted.map(r=><RoomCard key={r.id} room={r} sel={sel} alloc={alloc} courses={courses} roleId={roleId} dept={dept} status={freeSet.has(r.id)?'available':'busy'} canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>)}
             </div>
           </div>
         );
@@ -1264,10 +1426,11 @@ function RoomSection({title,rooms,alloc,courses,sel,deptId,dept,canAllocate,canD
   );
 }
 
-function RoomCard({room,sel,alloc,courses,deptId,dept,status,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
+function RoomCard({room,sel,alloc,courses,roleId,dept,status,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
   const{T,theme}=useT();
-  const rd=gDept(room.deptId),rdClr=dtc(rd,theme);
-  const isOwn=room.deptId===deptId,avail=status==='available';
+  const{gRole}=useRolesData();
+  const rd=gRole(room.roleId),rdClr=dtc(rd,theme);
+  const isOwn=room.roleId===roleId,avail=status==='available';
   const capWarn=sel&&room.cap<sel.enroll;
   const conflicts=avail?[]:getConflicts(room.id,sel,alloc,courses);
   const mergeTotal=avail?(sel?.enroll||0):conflicts.reduce((s,c)=>s+c.enroll,0)+(sel?.enroll||0);
@@ -1314,7 +1477,7 @@ function RoomCard({room,sel,alloc,courses,deptId,dept,status,canAllocate,canDeal
             <span style={{fontSize:9,color:theme==='light'?'#d97706':'#F59E0B',fontFamily:"'DM Mono',monospace"}}>{conflicts.length} conflito{conflicts.length!==1?'s':''}</span>
           </div>
           {conflicts.map(c=>{
-            const cd=gDept(c.deptId),cdClr=dtc(cd,theme),isMine=c.deptId===deptId;
+            const cd=gRole(c.roleId),cdClr=dtc(cd,theme),isMine=c.roleId===roleId;
             return(
               <div key={c.id} title={[c.sec!=null?`Turma ${c.sec}`:null,c.teacher].filter(Boolean).join(' · ')||undefined} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 6px',background:`${cd.clr}${theme==='light'?'18':'0e'}`,borderRadius:4,marginBottom:2}}>
                 <div style={{width:2,height:10,borderRadius:1,background:cd.clr}}/>
@@ -1364,8 +1527,9 @@ function CapacityBar({cap,enroll,conflicts,avail}){
 // ─── Modal de recursos da sala ────────────────────────────────────────────────
 function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,onRemoveOption}){
   const{T,theme}=useT();
+  const{gRole}=useRolesData();
   const mono={fontFamily:"'DM Mono',monospace"};
-  const rd=gDept(room.deptId),rdClr=dtc(rd,theme);
+  const rd=gRole(room.roleId),rdClr=dtc(rd,theme);
   const[selected,setSelected]=useState(new Set(room.features));
   const[desc,setDesc]        =useState(room.desc||'');
   const[newOption,setNewOption]=useState('');
@@ -1447,6 +1611,7 @@ function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,
 // ─── Modal de pré-visualização da alocação automática ────────────────────────
 function AutoAllocModal({result,dept,onApply,onCancel}){
   const{T,theme}=useT();
+  const{gRole}=useRolesData();
   const mono={fontFamily:"'DM Mono',monospace"};
   const[tab,setTab]=useState('placed');
   const dClr=dtc(dept,theme);
@@ -1488,9 +1653,9 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
           {tab==='placed'?(
             assignments.length===0?<div style={{textAlign:'center',padding:32,color:T.dim,fontSize:12}}>Nada para alocar.</div>
             :assignments.map(({course,room},i)=>{
-              const cd=gDept(course.deptId),cdClr=dtc(cd,theme);
-              const rd=gDept(room.deptId),rdClr=dtc(rd,theme);
-              const crossDept=room.deptId!==course.deptId;
+              const cd=gRole(course.roleId),cdClr=dtc(cd,theme);
+              const rd=gRole(room.roleId),rdClr=dtc(rd,theme);
+              const crossRole=room.roleId!==course.roleId;
               return(
                 <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 20px',borderBottom:`1px solid ${T.bdr}`,background:i%2===0?'transparent':(theme==='light'?T.faint:T.inner+'88')}}>
                   <div style={{width:2,height:36,borderRadius:1,background:cd.clr,flexShrink:0}}/>
@@ -1504,7 +1669,7 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
                   <div style={{fontSize:14,color:T.dim,flexShrink:0}}>→</div>
                   <div style={{textAlign:'right',flexShrink:0}}>
                     <div style={{display:'flex',alignItems:'center',gap:5,justifyContent:'flex-end',marginBottom:2}}>
-                      {crossDept&&<span style={{...mono,fontSize:7,color:theme==='light'?'#d97706':'#FBBF24',border:`1px solid ${theme==='light'?'#fcd34d':'#FBBF2444'}`,borderRadius:3,padding:'1px 4px'}}>outro depto</span>}
+                      {crossRole&&<span style={{...mono,fontSize:7,color:theme==='light'?'#d97706':'#FBBF24',border:`1px solid ${theme==='light'?'#fcd34d':'#FBBF2444'}`,borderRadius:3,padding:'1px 4px'}}>outra função</span>}
                       <span style={{...mono,fontSize:11,fontWeight:600,color:rdClr}}>{room.label}</span>
                     </div>
                     <div style={{...mono,fontSize:9,color:T.dim}}>limite {room.cap} · {room.type}</div>
@@ -1515,7 +1680,7 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
           ):(
             failed.length===0?<div style={{textAlign:'center',padding:32,color:T.dim,fontSize:12}}>Todas as disciplinas foram alocadas!</div>
             :failed.map(({course,reason},i)=>{
-              const cd=gDept(course.deptId),cdClr=dtc(cd,theme);
+              const cd=gRole(course.roleId),cdClr=dtc(cd,theme);
               return(
                 <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 20px',borderBottom:`1px solid ${T.bdr}`}}>
                   <div style={{width:2,height:36,borderRadius:1,background:'#ef4444',flexShrink:0,marginTop:2}}/>
@@ -1550,7 +1715,7 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
 }
 
 // ─── Modal de confirmação de conclusão ────────────────────────────────────────
-function FinishConfirmModal({deptName,remaining,onConfirm,onCancel}){
+function FinishConfirmModal({roleName,remaining,onConfirm,onCancel}){
   const{T,theme}=useT();
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
@@ -1559,7 +1724,7 @@ function FinishConfirmModal({deptName,remaining,onConfirm,onCancel}){
           <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>✓</div>
           <div>
             <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Marcar Alocação como Concluída?</div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginTop:2}}>{deptName}</div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginTop:2}}>{roleName}</div>
           </div>
           <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
         </div>
@@ -1623,43 +1788,46 @@ function NewPeriodModal({currentPeriod,onConfirm,onCancel}){
   );
 }
 
-// ─── Painel de status dos departamentos ──────────────────────────────────────
-function DeptStatusPanel({deptStatuses,notifications,onReopen,onForceFinish,onClose}){
+// ─── Painel de status das coordenações ────────────────────────────────────────
+function CoordinationStatusPanel({roles,subUnits,coordinationStatuses,notifications,onReopen,onForceFinish,onClose}){
   const{T,theme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
+  const gRole=useMemo(()=>makeGRole(roles,subUnits),[roles,subUnits]);
+  const coordinationRoles=useMemo(()=>roles.filter(r=>r.subUnitId),[roles]);
   const statusColor={[DS.ACTIVE]:theme==='light'?'#1d4ed8':'#60A5FA',[DS.FINISHED]:theme==='light'?'#059669':'#34D399',[DS.FORCE_FINISHED]:theme==='light'?'#b91c1c':'#ef4444'};
   const statusLabel={[DS.ACTIVE]:'Ativo',[DS.FINISHED]:'Concluído',[DS.FORCE_FINISHED]:'Bloqueado'};
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:520,animation:'scaleIn .18s ease',boxShadow:T.shadowMd,maxHeight:'80vh',overflow:'auto'}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:20}}>
-          <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Status de Alocação dos Departamentos</div>
+          <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Status de Alocação das Coordenações</div>
           <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
         </div>
         <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
-          {DEPTS.map(dept=>{
-            const status=deptStatuses[dept.id]||DS.ACTIVE;
-            const lastFinish=notifications.filter(n=>n.deptId===dept.id&&n.type==='FINISHED').slice(-1)[0];
-            const cd=dtc(dept,theme);
+          {coordinationRoles.map(role=>{
+            const rd=gRole(role.id);
+            const status=coordinationStatuses[role.id]||DS.ACTIVE;
+            const lastFinish=notifications.filter(n=>n.roleId===role.id&&n.type==='FINISHED').slice(-1)[0];
+            const cd=dtc(rd,theme);
             return(
-              <div key={dept.id} style={{padding:'12px 14px',background:T.card,border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
-                <div style={{width:3,height:32,borderRadius:1,background:dept.clr}}/>
+              <div key={role.id} style={{padding:'12px 14px',background:T.card,border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
+                <div style={{width:3,height:32,borderRadius:1,background:rd.clr}}/>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:12,fontWeight:600,color:cd}}>{dept.full}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:cd}}>{rd.subUnitFull} — {rd.full}</div>
                   {lastFinish&&<div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>{lastFinish.userName} · {new Date(lastFinish.timestamp).toLocaleString('pt-BR')}</div>}
                 </div>
                 <span style={{...mono,fontSize:9,padding:'2px 8px',borderRadius:4,background:`${statusColor[status]}${theme==='light'?'22':'18'}`,border:`1px solid ${statusColor[status]}44`,color:statusColor[status]}}>{statusLabel[status]}</span>
                 <div style={{display:'flex',gap:6}}>
-                  {status!==DS.ACTIVE&&<button onClick={()=>onReopen(dept.id)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:10,cursor:'pointer'}} onMouseEnter={e=>{e.currentTarget.style.borderColor=theme==='light'?'#1d4ed8':'#60A5FA';e.currentTarget.style.color=theme==='light'?'#1d4ed8':'#60A5FA';}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>Reabrir</button>}
-                  {status===DS.ACTIVE&&<button onClick={()=>onForceFinish(dept.id)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444444',borderRadius:5,color:theme==='light'?'#b91c1c':'#ef4444',fontSize:10,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.borderColor='#ef4444'} onMouseLeave={e=>e.currentTarget.style.borderColor='#ef444444'}>Forçar Conclusão</button>}
+                  {status!==DS.ACTIVE&&<button onClick={()=>onReopen(role.id)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:10,cursor:'pointer'}} onMouseEnter={e=>{e.currentTarget.style.borderColor=theme==='light'?'#1d4ed8':'#60A5FA';e.currentTarget.style.color=theme==='light'?'#1d4ed8':'#60A5FA';}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>Reabrir</button>}
+                  {status===DS.ACTIVE&&<button onClick={()=>onForceFinish(role.id)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444444',borderRadius:5,color:theme==='light'?'#b91c1c':'#ef4444',fontSize:10,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.borderColor='#ef4444'} onMouseLeave={e=>e.currentTarget.style.borderColor='#ef444444'}>Forçar Conclusão</button>}
                 </div>
               </div>
             );
           })}
         </div>
         <div style={{...mono,fontSize:9,color:T.dim,borderTop:`1px solid ${T.bdr}`,paddingTop:12,lineHeight:1.6}}>
-          <strong>Reabrir</strong> — permite ao chefe de departamento fazer novas alterações.<br/>
-          <strong>Forçar Conclusão</strong> — bloqueia o chefe de departamento sem necessidade de ação dele.
+          <strong>Reabrir</strong> — permite à coordenação fazer novas alterações.<br/>
+          <strong>Forçar Conclusão</strong> — bloqueia a coordenação sem necessidade de ação dela.
         </div>
       </div>
     </div>
@@ -1669,6 +1837,7 @@ function DeptStatusPanel({deptStatuses,notifications,onReopen,onForceFinish,onCl
 // ─── Painel de notificações ───────────────────────────────────────────────────
 function NotifPanel({notifications,onClose}){
   const{T,theme}=useT();
+  const{gRole}=useRolesData();
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'transparent',display:'flex',alignItems:'flex-start',justifyContent:'flex-end',zIndex:150,paddingTop:52,paddingRight:16}}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:10,width:340,animation:'slideIn .15s ease',boxShadow:T.shadowMd,overflow:'hidden',maxHeight:'70vh',display:'flex',flexDirection:'column'}}>
@@ -1679,13 +1848,13 @@ function NotifPanel({notifications,onClose}){
         <div style={{flex:1,overflowY:'auto'}}>
           {notifications.length===0?<div style={{padding:24,textAlign:'center',color:T.dim,fontSize:12}}>Nenhuma notificação ainda</div>
           :[...notifications].reverse().map(n=>{
-            const dept=gDept(n.deptId),dClr=dept?dtc(dept,theme):T.muted;
+            const role=gRole(n.roleId),dClr=role?dtc(role,theme):T.muted;
             return(
               <div key={n.id} style={{padding:'12px 16px',borderBottom:`1px solid ${T.bdr}`,background:n.read?'transparent':theme==='light'?'#eff6ff':'#0d1f3d22'}}>
                 <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
-                  <div style={{width:3,height:36,borderRadius:1,background:dept?.clr||T.muted,flexShrink:0,marginTop:2}}/>
+                  <div style={{width:3,height:36,borderRadius:1,background:role?.clr||T.muted,flexShrink:0,marginTop:2}}/>
                   <div>
-                    <div style={{fontSize:12,color:T.txt,fontWeight:500,marginBottom:2}}>Alocação do {n.deptName} enviada</div>
+                    <div style={{fontSize:12,color:T.txt,fontWeight:500,marginBottom:2}}>Alocação de {n.roleName} enviada</div>
                     <div style={{fontSize:11,color:T.muted,marginBottom:2}}>Por {n.userName}</div>
                     <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{new Date(n.timestamp).toLocaleString('pt-BR')}</div>
                   </div>
@@ -1700,14 +1869,15 @@ function NotifPanel({notifications,onClose}){
 }
 
 // ─── Modal de edição de disciplina ────────────────────────────────────────────
-function CourseEditModal({course,isChief,targetDeptId,courses,period,onSave,onCreate,onCancel}){
+function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onSave,onCreate,onCancel}){
   const{T,theme}=useT();
+  const{gRole,roles}=useRolesData();
   const mono={fontFamily:"'DM Mono',monospace"};
   const[code,setCode]=useState(course?.code??'');
-  const[sec,setSec]=useState(course?.sec??1);
-  const[deptId,setDeptId]=useState(course?.deptId??targetDeptId);
-  const effectiveDeptId=course?course.deptId:deptId;
-  const cd=gDept(effectiveDeptId),cdClr=dtc(cd,theme);
+  const[sec,setSec]=useState(course?.sec!=null?String(course.sec):'');
+  const[roleId,setRoleId]=useState(course?.roleId??targetRoleId);
+  const effectiveRoleId=course?course.roleId:roleId;
+  const cd=gRole(effectiveRoleId),cdClr=dtc(cd,theme);
   const[name,setName]=useState(course?.name??'');
   const[teacher,setTeacher]=useState(course?.teacher??'');
   const[blocks,setBlocks]=useState(()=>course?course.blocks.map(b=>({days:[...b.days],sh:b.sh,eh:b.eh})):[{days:[],sh:8,eh:9}]);
@@ -1720,13 +1890,11 @@ function CourseEditModal({course,isChief,targetDeptId,courses,period,onSave,onCr
   const removeBlock=i=>setBlocks(prev=>prev.filter((_,bi)=>bi!==i));
   const validate=()=>{
     const e={};
-    if(!course){
-      if(!code.trim())e.code='Obrigatório';
-      const secNum=Number(sec);
-      if(!Number.isInteger(secNum)||secNum<1)e.sec='Deve ser um número inteiro ≥ 1';
-      else if(courses.some(c=>c.deptId===effectiveDeptId&&c.period===period&&c.code.trim().toUpperCase()===code.trim().toUpperCase()&&c.sec===secNum))
-        e.sec='Já existe uma disciplina com este código e seção neste departamento e período';
-    }
+    if(!code.trim())e.code='Obrigatório';
+    const secNum=sec===''?null:Number(sec);
+    if(sec!==''&&(!Number.isInteger(secNum)||secNum<1))e.sec='Deve ser um número inteiro ≥ 1';
+    else if(courses.some(c=>(course?c.id!==course.id:true)&&c.roleId===effectiveRoleId&&c.period===period&&c.code.trim().toUpperCase()===code.trim().toUpperCase()&&c.sec===secNum))
+      e.sec='Já existe uma disciplina com este código e turma nesta função e período';
     if(!name.trim())e.name='Obrigatório';
     if(enroll<1||enroll>1000)e.enroll='Entre 1 e 1000';
     const bErrs=blocks.map(b=>{
@@ -1745,10 +1913,11 @@ function CourseEditModal({course,isChief,targetDeptId,courses,period,onSave,onCr
   };
   const handleSave=()=>{
     if(!validate())return;
+    const secNum=sec===''?null:Number(sec);
     if(course){
-      onSave(course.id,{name:name.trim(),teacher:teacher.trim(),blocks,enroll:Number(enroll)});
+      onSave(course.id,{code:code.trim(),sec:secNum,name:name.trim(),teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }else{
-      onCreate({id:courseId(effectiveDeptId,code.trim(),Number(sec),period),code:code.trim(),name:name.trim(),sec:Number(sec),deptId:effectiveDeptId,period,teacher:teacher.trim(),blocks,enroll:Number(enroll)});
+      onCreate({id:courseId(effectiveRoleId,code.trim(),secNum,period),code:code.trim(),name:name.trim(),sec:secNum,roleId:effectiveRoleId,period,teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }
   };
   const inp={width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'};
@@ -1763,28 +1932,26 @@ function CourseEditModal({course,isChief,targetDeptId,courses,period,onSave,onCr
           {course&&hasAnyAllocation(course)&&<span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fef3c7':'#3a1a0a',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'2px 6px',marginLeft:'auto'}}>⚠ Alteração de horário pode remover a sala de algum dia</span>}
           <button onClick={onCancel} style={{background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer',marginLeft:course&&hasAnyAllocation(course)?0:'auto'}}>✕</button>
         </div>
-        {!course&&isChief&&(
+        {!course&&isInstitutional&&(
           <div style={{marginBottom:12}}>
-            <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Departamento</label>
-            <select value={deptId} onChange={e=>setDeptId(e.target.value)} style={{...inp,cursor:'pointer'}}>
-              {DEPTS.map(d=><option key={d.id} value={d.id}>{d.full}</option>)}
+            <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Função</label>
+            <select value={roleId} onChange={e=>setRoleId(e.target.value)} style={{...inp,cursor:'pointer'}}>
+              {roles.filter(r=>r.subUnitId).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
           </div>
         )}
-        {!course&&(
-          <div style={{display:'flex',gap:10,marginBottom:12}}>
-            <div style={{flex:2}}>
-              <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Código</label>
-              <input value={code} onChange={e=>setCode(e.target.value)} style={inp}/>
-              {errors.code&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.code}</div>}
-            </div>
-            <div style={{flex:1}}>
-              <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Seção</label>
-              <input type="number" min={1} value={sec} onChange={e=>setSec(e.target.value)} style={inp}/>
-              {errors.sec&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.sec}</div>}
-            </div>
+        <div style={{display:'flex',gap:10,marginBottom:12}}>
+          <div style={{flex:2}}>
+            <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Código</label>
+            <input value={code} onChange={e=>setCode(e.target.value)} style={inp}/>
+            {errors.code&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.code}</div>}
           </div>
-        )}
+          <div style={{flex:1}}>
+            <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Turma</label>
+            <input type="number" min={1} value={sec} onChange={e=>setSec(e.target.value)} style={inp} placeholder="—"/>
+            {errors.sec&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.sec}</div>}
+          </div>
+        </div>
         <div style={{marginBottom:12}}>
           <label style={{...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Nome da Disciplina</label>
           <input value={name} onChange={e=>setName(e.target.value)} style={inp}/>
@@ -1842,10 +2009,11 @@ function CourseEditModal({course,isChief,targetDeptId,courses,period,onSave,onCr
 }
 
 // ─── Modal de import de disciplinas (ODS) ─────────────────────────────────────
-function CourseImportModal({targetDeptId,deptName,existingCourses,period,onConfirm,onCancel}){
+function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfirm,onCancel}){
   const{T,theme}=useT();
+  const{gRole}=useRolesData();
   const mono={fontFamily:"'DM Mono',monospace"};
-  const dept=gDept(targetDeptId),dClr=dtc(dept,theme);
+  const dept=gRole(targetRoleId),dClr=dtc(dept,theme);
   const[step,setStep]=useState('pick');
   const[rows,setRows]=useState([]);
   const[tab,setTab]=useState('valid');
@@ -1876,8 +2044,8 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,period,onConfi
   const allocatedExisting=existingCourses.filter(c=>hasAnyAllocation(c)).length;
 
   const handleConfirmImport=()=>onConfirm(validRows.map(r=>({
-    id:courseId(targetDeptId,r.normalized.code,r.normalized.sec,period),
-    code:r.normalized.code,name:r.normalized.name,sec:r.normalized.sec,deptId:targetDeptId,period,
+    id:courseId(targetRoleId,r.normalized.code,r.normalized.sec,period),
+    code:r.normalized.code,name:r.normalized.name,sec:r.normalized.sec,roleId:targetRoleId,period,
     teacher:r.normalized.teacher,blocks:r.normalized.blocks,enroll:r.normalized.enroll,
   })));
 
@@ -1891,7 +2059,7 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,period,onConfi
               <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
                 <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>⇪</div>
                 <div>
-                  <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Importar Disciplinas — {deptName} <span style={{color:T.dim,fontWeight:400}}>({period})</span></div>
+                  <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Importar Disciplinas — {roleName} <span style={{color:T.dim,fontWeight:400}}>({period})</span></div>
                   <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>Substitui as disciplinas do departamento neste período — outros períodos não são afetados</div>
                 </div>
                 <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
@@ -1989,11 +2157,11 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,period,onConfi
           <div style={{padding:28}}>
             <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
               <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#fef2f2':'#1a0505',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18}}>⚠</div>
-              <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Substituir Disciplinas de {deptName}?</div>
+              <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Substituir Disciplinas de {roleName}?</div>
               <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
             </div>
             <div style={{background:theme==='light'?'#fef2f2':'#1a0505',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444433'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:12,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.7}}>
-              Isso vai <strong>excluir permanentemente {existingCourses.length} disciplina{existingCourses.length!==1?'s':''} existente{existingCourses.length!==1?'s':''}</strong> do {deptName} no período <strong>{period}</strong>{allocatedExisting>0?<>, incluindo <strong>{allocatedExisting} já alocada{allocatedExisting!==1?'s':''} em sala{allocatedExisting!==1?'s':''}</strong> (essas alocações serão perdidas)</>:''}. Outros períodos não são afetados. As <strong>{validRows.length} novas disciplinas</strong> do arquivo serão inseridas em seguida. Esta ação não pode ser desfeita.
+              Isso vai <strong>excluir permanentemente {existingCourses.length} disciplina{existingCourses.length!==1?'s':''} existente{existingCourses.length!==1?'s':''}</strong> do {roleName} no período <strong>{period}</strong>{allocatedExisting>0?<>, incluindo <strong>{allocatedExisting} já alocada{allocatedExisting!==1?'s':''} em sala{allocatedExisting!==1?'s':''}</strong> (essas alocações serão perdidas)</>:''}. Outros períodos não são afetados. As <strong>{validRows.length} novas disciplinas</strong> do arquivo serão inseridas em seguida. Esta ação não pode ser desfeita.
             </div>
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
               <button onClick={()=>setStep('preview')} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:11,cursor:'pointer'}}>Voltar</button>
@@ -2012,7 +2180,8 @@ function CourseImportModal({targetDeptId,deptName,existingCourses,period,onConfi
 // ─── Modal de mesclagem ───────────────────────────────────────────────────────
 function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,day,onConfirm,onCancel}){
   const{T,theme}=useT();
-  const rd=gDept(room.deptId),dClr=dtc(dept,theme);
+  const{gRole,gBlockLabel}=useRolesData();
+  const rd=gRole(room.roleId),dClr=dtc(dept,theme);
   const incomingBlock=blockForDay(incomingCourse,day);
   const over=totalEnroll>room.cap,existing=conflicts.reduce((s,c)=>s+c.enroll,0);
   const pctEx=Math.min(existing/room.cap,1)*100,pctNew=Math.min(incomingCourse.enroll/room.cap,Math.max(0,1-pctEx/100))*100;
@@ -2024,7 +2193,7 @@ function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,day,onConfir
           <div style={{width:34,height:34,borderRadius:8,background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#f59e0b44':'#F59E0B44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:16}}>⇄</div>
           <div>
             <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Mesclar Turmas?</div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginTop:2}}>{room.label} · {room.type} · {room.building}</div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginTop:2}}>{room.label} · {room.type} · {gBlockLabel(room.blockId)}</div>
           </div>
           <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:16,cursor:'pointer'}}>✕</button>
         </div>
@@ -2054,7 +2223,7 @@ function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,day,onConfir
               </div>
             </div>
           </div>
-          {conflicts.map(c=>{const cd=gDept(c.deptId),cdClr=dtc(cd,theme),cBlock=blockForDay(c,day);return(
+          {conflicts.map(c=>{const cd=gRole(c.roleId),cdClr=dtc(cd,theme),cBlock=blockForDay(c,day);return(
             <div key={c.id} style={{padding:'9px 12px',background:T.card,border:`1px solid ${T.bdr}`,borderRadius:7,marginBottom:4}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <div><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:cdClr}}>{c.code}</span><span style={{fontSize:10,color:T.muted,marginLeft:8}}>{c.name}</span></div>

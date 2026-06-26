@@ -1,24 +1,25 @@
 /**
  * src/db/allocations.js — Supabase-backed replacement for the old in-memory
  * + localStorage state in classroom-allocation.jsx. Mirrors the small
- * exported-functions convention used by src/auth/mockDb.js.
+ * exported-functions convention also used by src/db/authApi.js and
+ * src/db/management.js.
  */
 import { supabase } from './supabaseClient.js';
 
 export const mapRoom = r => ({
-  id: r.id, deptId: r.dept_id, label: r.label, cap: r.cap, type: r.type,
-  features: r.features, building: r.building, floor: r.floor, desc: r.description,
+  id: r.id, roleId: r.role_id, blockId: r.block_id, label: r.label, cap: r.cap, type: r.type,
+  features: r.features, floor: r.floor, desc: r.description,
 });
 // '2026.1' fallback mirrors DEFAULT_PERIOD in classroom-allocation.jsx —
 // only hit if the `period` migration hasn't run yet on this Supabase project
 // (column missing from the row). Without it, comparePeriods()'s `.split('.')`
 // would throw on `undefined` and crash the whole app, not just degrade.
 export const mapCourse = c => ({
-  id: c.id, code: c.code, name: c.name, sec: c.sec, deptId: c.dept_id, period: c.period ?? '2026.1',
+  id: c.id, code: c.code, name: c.name, sec: c.sec, roleId: c.role_id, period: c.period ?? '2026.1',
   teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, roomByDay: c.room_by_day ?? {},
 });
 export const mapNotification = n => ({
-  id: n.id, deptId: n.dept_id, deptName: n.dept_name, type: n.type,
+  id: n.id, roleId: n.role_id, roleName: n.role_name, type: n.type,
   userName: n.user_name, timestamp: n.created_at, read: n.read,
 });
 
@@ -29,17 +30,29 @@ async function unwrap(query) {
 }
 
 export async function fetchAll() {
-  const [rooms, courses, deptStatusRows, notifRows, featureRows] = await Promise.all([
+  const [subUnitRows, roleRows, blockRows, rooms, courses, statusRows, notifRows, featureRows] = await Promise.all([
+    unwrap(supabase.from('sub_units').select('*').order('name')),
+    unwrap(supabase.from('roles').select('*').order('name')),
+    unwrap(supabase.from('blocks').select('*').order('local').order('name')),
     unwrap(supabase.from('rooms').select('*')),
     unwrap(supabase.from('courses').select('*')),
-    unwrap(supabase.from('dept_statuses').select('*')),
+    unwrap(supabase.from('coordination_statuses').select('*')),
     unwrap(supabase.from('notifications').select('*').order('id')),
     unwrap(supabase.from('room_features').select('*').order('name')),
   ]);
   return {
+    subUnits: subUnitRows.map(s => ({
+      id: s.id, name: s.name, fullName: s.full_name,
+      clr: s.clr, textClr: s.text_clr, bg: s.bg, lightBg: s.light_bg,
+    })),
+    roles: roleRows.map(r => ({
+      id: r.id, subUnitId: r.sub_unit_id, name: r.name,
+      permissions: r.permissions || [], isSystem: r.is_system,
+    })),
+    blocks: blockRows.map(b => ({ id: b.id, local: b.local, name: b.name })),
     rooms: rooms.map(mapRoom),
     courses: courses.map(mapCourse),
-    deptStatuses: Object.fromEntries(deptStatusRows.map(r => [r.dept_id, r.status])),
+    coordinationStatuses: Object.fromEntries(statusRows.map(r => [r.role_id, r.status])),
     notifications: notifRows.map(mapNotification),
     featureOptions: featureRows.map(r => r.name),
   };
@@ -57,6 +70,8 @@ export async function setCourseRoomByDay(courseId, roomByDay) {
 
 export async function editCourse(courseId, changes) {
   const patch = {};
+  if (changes.code !== undefined) patch.code = changes.code;
+  if (changes.sec !== undefined) patch.sec = changes.sec;
   if (changes.name !== undefined) patch.name = changes.name;
   if (changes.teacher !== undefined) patch.teacher = changes.teacher;
   if (changes.blocks !== undefined) patch.blocks = changes.blocks;
@@ -65,27 +80,31 @@ export async function editCourse(courseId, changes) {
   await unwrap(supabase.from('courses').update(patch).eq('id', courseId));
 }
 
+export async function deleteCourse(courseId) {
+  await unwrap(supabase.from('courses').delete().eq('id', courseId));
+}
+
 export async function createCourse(course) {
   await unwrap(supabase.from('courses').insert({
     id: course.id, code: course.code, name: course.name, sec: course.sec,
-    dept_id: course.deptId, period: course.period, teacher: course.teacher, blocks: course.blocks,
+    role_id: course.roleId, period: course.period, teacher: course.teacher, blocks: course.blocks,
     enroll: course.enroll, room_by_day: {},
   }));
 }
 
 // Destructive, but only within `period` — deletes existing rows for
-// dept_id+period (allocated or not), then bulk-inserts the new set. Past
+// role_id+period (allocated or not), then bulk-inserts the new set. Past
 // periods are read-only in the UI and never reach this function, but the
 // scoping lives here too so a bug upstream can't wipe another period's
 // history. Not transactional — known/accepted limitation for this
-// prototype stage. If insert fails after delete succeeds, the dept+period
+// prototype stage. If insert fails after delete succeeds, the role+period
 // is left empty; the import modal keeps parsed rows in state so retrying
 // doesn't require re-uploading the file.
-export async function replaceDeptCourses(deptId, period, courses) {
-  await unwrap(supabase.from('courses').delete().eq('dept_id', deptId).eq('period', period));
+export async function replaceRoleCourses(roleId, period, courses) {
+  await unwrap(supabase.from('courses').delete().eq('role_id', roleId).eq('period', period));
   if (courses.length === 0) return;
   await unwrap(supabase.from('courses').insert(courses.map(c => ({
-    id: c.id, code: c.code, name: c.name, sec: c.sec, dept_id: deptId, period,
+    id: c.id, code: c.code, name: c.name, sec: c.sec, role_id: roleId, period,
     teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, room_by_day: {},
   }))));
 }
@@ -116,15 +135,15 @@ export async function applyAllocations(assignments) {
   }));
 }
 
-export async function finishDept(deptId, deptName, userName) {
-  await unwrap(supabase.from('dept_statuses').update({ status: 'finished' }).eq('dept_id', deptId));
+export async function finishCoordination(roleId, roleName, userName) {
+  await unwrap(supabase.from('coordination_statuses').update({ status: 'finished' }).eq('role_id', roleId));
   await unwrap(supabase.from('notifications').insert({
-    dept_id: deptId, dept_name: deptName, type: 'FINISHED', user_name: userName,
+    role_id: roleId, role_name: roleName, type: 'FINISHED', user_name: userName,
   }));
 }
 
-export async function setDeptStatus(deptId, status) {
-  await unwrap(supabase.from('dept_statuses').update({ status }).eq('dept_id', deptId));
+export async function setCoordinationStatus(roleId, status) {
+  await unwrap(supabase.from('coordination_statuses').update({ status }).eq('role_id', roleId));
 }
 
 export async function markAllNotificationsRead() {
