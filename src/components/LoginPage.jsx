@@ -11,6 +11,10 @@ const DEMO_CREDENTIALS = [
   { username: 'math.grad',     password: 'math123',  roleName: 'Coordenador de Graduação · Matemática' },
   { username: 'math.pos',      password: 'math123',  roleName: 'Coordenador de Pós-Graduação · Matemática' },
   { username: 'math.profmat',  password: 'math123',  roleName: 'Coordenador PROFMAT · Matemática' },
+  { username: 'phys.head',     password: 'phys123',  roleName: 'Chefe de Departamento · Física' },
+  { username: 'cs.head',       password: 'cs1234',   roleName: 'Chefe de Departamento · Computação' },
+  { username: 'chem.head',     password: 'chem123',  roleName: 'Chefe de Departamento · Química' },
+  { username: 'bio.head',      password: 'bio123',   roleName: 'Chefe de Departamento · Biologia' },
 ];
 
 export default function LoginPage() {
