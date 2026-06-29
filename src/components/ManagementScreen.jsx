@@ -498,7 +498,7 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
               <div style={{width:3,height:28,borderRadius:1,background:s.clr}}/>
               <div style={{flex:1}}>
                 <div style={{fontSize:12,fontWeight:600,color:T.txt}}>{s.fullName}</div>
-                <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{roles.filter(r=>r.subUnitId===s.id).length} funções</div>
+                <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{s.name&&<span style={{marginRight:8}}>{s.name}</span>}{roles.filter(r=>r.subUnitId===s.id).length} funções</div>
               </div>
               <button onClick={()=>startEdit(s)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:10,cursor:'pointer'}}>Editar</button>
               <button onClick={()=>remove(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:10,cursor:'pointer'}}>Excluir</button>
