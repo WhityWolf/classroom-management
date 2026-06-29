@@ -593,17 +593,21 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
             {can(PERMS.MANAGE_ROOMS)&&<button onClick={startCreateRoom} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sala</button>}
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
               <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-                {['Sala','Bloco','Cap.','Função',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
+                {['Sala','Bloco','Vagas','Função','Sub-unidade',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {rooms.map(r=>{
                   const role=gRole(r.roleId);
+                  const roleObj=roles.find(ro=>ro.id===r.roleId);
+                  const su=roleObj?.subUnitId?subUnits.find(s=>s.id===roleObj.subUnitId):null;
+                  const roleLabel=r.roleId?role.full:(roles.find(ro=>ro.isSystem)?.name??'Diretoria');
                   return(
                     <tr key={r.id} style={{borderBottom:`1px solid ${T.bdr}`}}>
                       <td style={{padding:'7px 10px'}}>{r.label}</td>
                       <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{blockLabel(r.blockId)}</td>
                       <td style={{padding:'7px 10px'}}>{r.cap}</td>
-                      <td style={{padding:'7px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:role.textClr,background:`${role.clr}22`,borderRadius:4,padding:'2px 6px'}}>{role.full}</span></td>
+                      <td style={{padding:'7px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:role.textClr,background:`${role.clr}22`,borderRadius:4,padding:'2px 6px'}}>{roleLabel}</span></td>
+                      <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{su?su.fullName:'—'}</td>
                       <td style={{padding:'7px 10px'}}>
                         <div style={{display:'flex',gap:6}}>
                           <button onClick={()=>startEditRoom(r)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:10,cursor:'pointer'}}>Editar</button>
