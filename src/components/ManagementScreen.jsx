@@ -58,6 +58,16 @@ const presetActive = (key, permissions) => sortedKey(permissions) === sortedKey(
 
 const NEUTRAL = { clr:'#94A3B8', textClr:'#475569' };
 
+function ptError(e) {
+  const msg = e?.message ?? String(e);
+  if (msg.includes('foreign key constraint'))  return 'Referência inválida: verifique se todos os campos obrigatórios foram selecionados.';
+  if (msg.includes('duplicate key') || msg.includes('unique constraint')) return 'Já existe um registro com esse valor (dado duplicado).';
+  if (msg.includes('null value in column'))    return 'Campo obrigatório não preenchido.';
+  if (msg.includes('value too long'))          return 'Um dos campos excede o tamanho máximo permitido.';
+  if (msg.includes('invalid input syntax'))    return 'Formato de dado inválido em um dos campos.';
+  return msg;
+}
+
 export default function ManagementScreen({ onBack }) {
   const { currentUser, logout, can } = useAuth();
   const { T, theme, toggleTheme } = useT();
@@ -198,6 +208,11 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
   }, [users, search]);
 
   const save = async () => {
+    if (!form.name.trim())     return flash('err', 'Informe o nome completo.');
+    if (!form.username.trim()) return flash('err', 'Informe o nome de usuário.');
+    if (!form.email.trim())    return flash('err', 'Informe o e-mail.');
+    if (!form.roleId)          return flash('err', 'Selecione uma função para o usuário.');
+    if (editing === 'new' && !form.password) return flash('err', 'Informe uma senha.');
     try {
       if (editing === 'new') {
         await authApi.createUser(form, currentUser.id);
@@ -209,7 +224,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
         flash('ok', 'Usuário atualizado.');
       }
       cancel(); reloadUsers();
-    } catch (e) { flash('err', e.message); }
+    } catch (e) { flash('err', ptError(e)); }
   };
   const deactivate = async u => {
     try { await authApi.deactivateUser(u.id); flash('ok', `${u.name} foi desativado(a).`); reloadUsers(); }
@@ -310,12 +325,13 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
   const togglePerm = p => setForm(f=>({...f,permissions:f.permissions.includes(p)?f.permissions.filter(x=>x!==p):[...f.permissions,p]}));
 
   const save = async () => {
+    if (!form.name.trim()) return flash('err', 'Informe o nome da função.');
     try {
       const payload = { name:form.name, subUnitId:form.subUnitId||null, permissions:form.permissions };
       if (editing==='new') await mgmt.createRole({ id:form.id, ...payload });
       else await mgmt.updateRole(editing.id, payload);
       flash('ok','Função salva.'); cancel(); reloadDomain();
-    } catch (e) { flash('err', e.message); }
+    } catch (e) { flash('err', ptError(e)); }
   };
   const remove = async r => {
     if (r.isSystem) { flash('err','Esta função é protegida e não pode ser excluída.'); return; }
@@ -457,11 +473,13 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
   const cancel = () => { setEditing(null); setForm(null); };
 
   const save = async () => {
+    if (!form.name.trim())     return flash('err', 'Informe o nome curto da sub-unidade.');
+    if (!form.fullName.trim()) return flash('err', 'Informe o nome completo da sub-unidade.');
     try {
       if (editing==='new') await mgmt.createSubUnit(form);
       else await mgmt.updateSubUnit(editing.id, form);
       flash('ok','Sub-unidade salva.'); cancel(); reloadDomain();
-    } catch (e) { flash('err', e.message); }
+    } catch (e) { flash('err', ptError(e)); }
   };
   const remove = async s => {
     const linked = roles.filter(r=>r.subUnitId===s.id);
@@ -531,12 +549,14 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
   const startEditRoom = r => { setRoomForm({ ...r, roleId:r.roleId??'' }); setEditingRoom(r); };
   const cancelRoom = () => { setEditingRoom(null); setRoomForm(null); };
   const saveRoom = async () => {
+    if (!roomForm.label.trim()) return flash('err', 'Informe o nome/número da sala.');
+    if (!roomForm.blockId)      return flash('err', 'Selecione um bloco para a sala.');
     try {
       const payload = { ...roomForm, roleId:roomForm.roleId||null, cap:Number(roomForm.cap), floor:Number(roomForm.floor) };
       if (editingRoom==='new') await mgmt.createRoom(payload);
       else await mgmt.updateRoom(editingRoom.id, payload);
       flash('ok','Sala salva.'); cancelRoom(); reloadDomain();
-    } catch (e) { flash('err', e.message); }
+    } catch (e) { flash('err', ptError(e)); }
   };
   const removeRoom = async r => {
     try { await mgmt.deleteRoom(r.id); flash('ok','Sala excluída.'); reloadDomain(); }
@@ -547,11 +567,13 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
   const startEditBlock = b => { setBlockForm({ ...b }); setEditingBlock(b); };
   const cancelBlock = () => { setEditingBlock(null); setBlockForm(null); };
   const saveBlock = async () => {
+    if (!blockForm.local.trim()) return flash('err', 'Informe o centro do bloco.');
+    if (!blockForm.name.trim())  return flash('err', 'Informe o nome do bloco.');
     try {
       if (editingBlock==='new') await mgmt.createBlock(blockForm);
       else await mgmt.updateBlock(editingBlock.id, blockForm);
       flash('ok','Bloco salvo.'); cancelBlock(); reloadDomain();
-    } catch (e) { flash('err', e.message); }
+    } catch (e) { flash('err', ptError(e)); }
   };
   const removeBlock = async b => {
     try { await mgmt.deleteBlock(b.id); flash('ok','Bloco excluído.'); reloadDomain(); }

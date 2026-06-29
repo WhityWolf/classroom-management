@@ -121,6 +121,16 @@ const courseId=(roleId,code,sec,period)=>`${roleId}-${slugify(code)}-${sec}-${sl
 // raro na prática (a maioria dos calendários acadêmicos não passa de .1/.2/.3).
 const DEFAULT_PERIOD='2026.1';
 const PERIOD_RE=/^\d{4}\.\d+$/;
+
+function ptError(e) {
+  const msg = e?.message ?? String(e);
+  if (msg.includes('foreign key constraint'))  return 'Referência inválida: verifique se todos os campos obrigatórios foram preenchidos corretamente.';
+  if (msg.includes('duplicate key') || msg.includes('unique constraint')) return 'Já existe um registro com esse valor (dado duplicado).';
+  if (msg.includes('null value in column'))    return 'Campo obrigatório não preenchido.';
+  if (msg.includes('value too long'))          return 'Um dos campos excede o tamanho máximo permitido.';
+  if (msg.includes('invalid input syntax'))    return 'Formato de dado inválido em um dos campos.';
+  return msg;
+}
 const comparePeriods=(a,b)=>{
   const[ay,an]=a.split('.').map(Number),[by,bn]=b.split('.').map(Number);
   return ay!==by?ay-by:an-bn;
@@ -526,7 +536,7 @@ function Dashboard(){
       await db.setCourseRoomByDay(course.id,nextRoomByDay);
       showToast(`${course.code} alocada em ${room?.label??rid} (${daysLabel}).`,'ok');
     }catch(e){
-      showToast(`Falha ao alocar: ${e.message}`,'err');
+      showToast(`Falha ao alocar: ${ptError(e)}`,'err');
     }
   };
   // `day` presente = remove só a sala daquele dia (clique no chip da Grade);
@@ -546,7 +556,7 @@ function Dashboard(){
       await db.setCourseRoomByDay(cid,nextRoomByDay);
       showToast(`${course.code} desalocada${day?` (${day})`:''}${roomLabel?` (estava em ${roomLabel})`:''}.`,'warn');
     }catch(e){
-      showToast(`Falha ao desalocar: ${e.message}`,'err');
+      showToast(`Falha ao desalocar: ${ptError(e)}`,'err');
     }
   };
   const saveFeatures=async(rid,feats,desc)=>{
@@ -555,7 +565,7 @@ function Dashboard(){
     try{
       await db.saveRoomFeatures(rid,feats,desc);
     }catch(e){
-      showToast(`Falha ao salvar sala: ${e.message}`,'err');
+      showToast(`Falha ao salvar sala: ${ptError(e)}`,'err');
     }
   };
   const addFeatureOption=async name=>{
@@ -563,7 +573,7 @@ function Dashboard(){
     try{
       await db.addFeatureOption(name.trim());
     }catch(e){
-      showToast(`Falha ao criar recurso: ${e.message}`,'err');
+      showToast(`Falha ao criar recurso: ${ptError(e)}`,'err');
     }
   };
   const removeFeatureOption=async name=>{
@@ -571,7 +581,7 @@ function Dashboard(){
     try{
       await db.removeFeatureOption(name);
     }catch(e){
-      showToast(`Falha ao remover recurso: ${e.message}`,'err');
+      showToast(`Falha ao remover recurso: ${ptError(e)}`,'err');
     }
   };
   const selectCourse=c=>{
@@ -608,7 +618,7 @@ function Dashboard(){
     try{
       await db.editCourse(courseId,{...changes,roomByDay:finalRoomByDay});
     }catch(e){
-      showToast(`Falha ao salvar disciplina: ${e.message}`,'err');
+      showToast(`Falha ao salvar disciplina: ${ptError(e)}`,'err');
     }
   };
   const handleCreateCourse=async course=>{
@@ -618,7 +628,7 @@ function Dashboard(){
       await db.createCourse(course);
       showToast(`${course.code} criada.`,'ok');
     }catch(e){
-      showToast(`Falha ao criar disciplina: ${e.message}`,'err');
+      showToast(`Falha ao criar disciplina: ${ptError(e)}`,'err');
     }
   };
   const handleDeleteCourse=async course=>{
@@ -628,7 +638,7 @@ function Dashboard(){
       if(selId===course.id)setSel(null);
       showToast(`${course.code} excluída.`,'ok');
     }catch(e){
-      showToast(`Falha ao excluir disciplina: ${e.message}`,'err');
+      showToast(`Falha ao excluir disciplina: ${ptError(e)}`,'err');
     }
   };
   const handleImportCourses=async newCourses=>{
@@ -638,7 +648,7 @@ function Dashboard(){
       await db.replaceRoleCourses(targetRoleId,selectedPeriod,newCourses);
       showToast(`${newCourses.length} disciplina${newCourses.length!==1?'s':''} importada${newCourses.length!==1?'s':''} para ${gRole(targetRoleId)?.full} (${selectedPeriod}).`,'ok');
     }catch(e){
-      showToast(`Falha ao importar disciplinas: ${e.message}`,'err');
+      showToast(`Falha ao importar disciplinas: ${ptError(e)}`,'err');
     }
   };
 
@@ -670,7 +680,7 @@ function Dashboard(){
       await db.applyAllocations(assignments);
       showToast(`✨ ${assignments.length} disciplina${assignments.length!==1?'s':''} alocada${assignments.length!==1?'s':''} automaticamente.`,'ok');
     }catch(e){
-      showToast(`Falha ao aplicar alocação automática: ${e.message}`,'err');
+      showToast(`Falha ao aplicar alocação automática: ${ptError(e)}`,'err');
     }
   };
 
@@ -681,16 +691,16 @@ function Dashboard(){
       await db.finishCoordination(currentUser.roleId,gRole(currentUser.roleId)?.full,currentUser.name);
       showToast('Alocação enviada. O diretor foi notificado.','ok');
     }catch(e){
-      showToast(`Falha ao enviar alocação: ${e.message}`,'err');
+      showToast(`Falha ao enviar alocação: ${ptError(e)}`,'err');
     }
   };
   const handleReopen=async roleId=>{
     try{await db.setCoordinationStatus(roleId,DS.ACTIVE);showToast(`${gRole(roleId)?.full} reaberto.`,'ok');}
-    catch(e){showToast(`Falha: ${e.message}`,'err');}
+    catch(e){showToast(`Falha: ${ptError(e)}`,'err');}
   };
   const handleForceFinish=async roleId=>{
     try{await db.setCoordinationStatus(roleId,DS.FORCE_FINISHED);showToast(`${gRole(roleId)?.full} bloqueado.`,'ok');}
-    catch(e){showToast(`Falha: ${e.message}`,'err');}
+    catch(e){showToast(`Falha: ${ptError(e)}`,'err');}
   };
   const markNotifsRead=()=>{db.markAllNotificationsRead().catch(()=>{});};
 
