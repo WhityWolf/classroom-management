@@ -185,7 +185,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
   const [search, setSearch] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null); // user id | null
 
-  const isSystemUser = u => !!roles.find(r => r.id === u.roleId)?.isSystem;
+  const isSystemUser = u => u.username === 'admin';
 
   const startCreate = () => { setEditing('new'); setForm({ name:'', username:'', email:'', roleId:'', password:'' }); };
   const startEdit = u => { setEditing(u); setForm({ name:u.name, username:u.username, email:u.email, roleId:u.roleId, password:'', isActive:u.isActive }); };
@@ -282,7 +282,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
             {roles.filter(r=>!r.subUnitId).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </div>
-        {editing!=='new'&&(
+        {editing!=='new'&&!isSystemUser(editing)&&(
           <label style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,cursor:'pointer',fontSize:12,color:T.txt}}>
             <input type="checkbox" checked={form.isActive} onChange={e=>setForm({...form,isActive:e.target.checked})}/> Conta ativa
           </label>
@@ -491,7 +491,7 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
     )} panel={editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
         <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Nova Sub-unidade':'Editar Sub-unidade'}</div>
-        <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome curto</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
+        <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome curto</label><input value={form.name} maxLength={20} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome completo</label><input value={form.fullName} onChange={e=>setForm({...form,fullName:e.target.value})} style={inpStyle(T)}/></div>
         <button type="button" onClick={()=>setColorOpen(v=>!v)}
           style={{width:'100%',marginBottom:colorOpen?8:16,padding:'6px 10px',borderRadius:5,fontSize:10,border:`1px solid ${T.bdr2}`,background:'transparent',color:T.muted,cursor:'pointer',textAlign:'left'}}>
@@ -563,7 +563,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       <>
         <div style={{display:'flex',gap:6,marginBottom:14}}>
           {[['rooms','Salas'],['blocks','Blocos']].map(([k,l])=>(
-            <button key={k} onClick={()=>setSub(k)} style={{padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>{l}</button>
+            <button key={k} onClick={()=>{setSub(k);cancelRoom();cancelBlock();}} style={{padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>{l}</button>
           ))}
         </div>
         {sub==='rooms'?(
@@ -628,7 +628,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
           <div style={{marginBottom:16}}>
             <label style={lblStyle(T)}>Função dona (vazio = compartilhada)</label>
             <select value={roomForm.roleId} onChange={e=>setRoomForm({...roomForm,roleId:e.target.value})} style={{...inpStyle(T),cursor:'pointer'}}>
-              <option value="">— Compartilhada/institucional —</option>
+              <option value="" style={{fontWeight:'bold'}}>{roles.find(r=>r.isSystem)?.name??'Diretoria'}</option>
               {subUnits.map(su=>{
                 const suRoles=roles.filter(r=>r.subUnitId===su.id);
                 if(!suRoles.length) return null;
@@ -644,7 +644,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       ):editingBlock?(
         <form onSubmit={e=>{e.preventDefault();saveBlock();}}>
           <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:T.txt}}>{editingBlock==='new'?'Novo Bloco':'Editar Bloco'}</div>
-          <div style={{marginBottom:12}}><label style={lblStyle(T)}>Centro</label><input value={blockForm.local} onChange={e=>setBlockForm({...blockForm,local:e.target.value})} style={inpStyle(T)}/></div>
+          <div style={{marginBottom:12}}><label style={lblStyle(T)}>Centro (ex.: CCN1)</label><input value={blockForm.local} onChange={e=>setBlockForm({...blockForm,local:e.target.value})} style={inpStyle(T)}/></div>
           <div style={{marginBottom:16}}><label style={lblStyle(T)}>Nome do bloco (ex.: SG-04)</label><input value={blockForm.name} onChange={e=>setBlockForm({...blockForm,name:e.target.value})} style={inpStyle(T)}/></div>
           <div style={{display:'flex',gap:8}}>
             <button type="button" onClick={cancelBlock} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
