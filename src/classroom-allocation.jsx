@@ -1193,35 +1193,48 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
   const thBdr=`1px solid ${tableBdrClr}`;
   const shiftBg=h=>h===12||h===18?T.faint:T.bg;
   // Agrupa rooms sequencialmente por departamento para intercalar separadores
+  // Agrupa por departamento e, dentro de cada depto, por bloco
   const groups=[];
   sorted.forEach(room=>{
     const g=groupOf(room);
-    if(!groups.length||groups[groups.length-1].name!==g)groups.push({name:g,rd:gRole(room.roleId),rooms:[]});
-    groups[groups.length-1].rooms.push(room);
+    if(!groups.length||groups[groups.length-1].name!==g)
+      groups.push({name:g,rd:gRole(room.roleId),blocks:[]});
+    const grp=groups[groups.length-1];
+    const blkLabel=gBlockLabel(room.blockId);
+    if(!grp.blocks.length||grp.blocks[grp.blocks.length-1].blockId!==room.blockId)
+      grp.blocks.push({blockId:room.blockId,label:blkLabel,rooms:[]});
+    grp.blocks[grp.blocks.length-1].rooms.push(room);
   });
   return(
-    <div style={{display:'flex',flexDirection:'column',gap:24}}>
+    <div style={{display:'flex',flexDirection:'column',gap:28}}>
       {groups.map(grp=>{
         const rd=grp.rd,rdClr=dtc(rd,theme);
         return(
           <div key={grp.name}>
-            <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',marginBottom:12,background:`${rd.clr}${theme==='light'?'14':'10'}`,borderLeft:`3px solid ${rd.clr}`,borderRadius:'0 6px 6px 0'}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',marginBottom:14,background:`${rd.clr}${theme==='light'?'14':'10'}`,borderLeft:`3px solid ${rd.clr}`,borderRadius:'0 6px 6px 0'}}>
               <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:rdClr,letterSpacing:1,textTransform:'uppercase'}}>{grp.name}</span>
               <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>· {groupCounts[grp.name]} sala{groupCounts[grp.name]!==1?'s':''}</span>
             </div>
-            <div style={{display:'flex',flexWrap:'wrap',gap:16}}>
-              {grp.rooms.map(room=>{
-                const rdR=gRole(room.roleId),rdRClr=dtc(rdR,theme);
-                const colMaps={};DAYS.forEach(d=>{colMaps[d]=buildColMap(room.id,d);});
-                return(
-                  <div key={room.id} style={{flex:'1 1 460px',minWidth:0,border:`1px solid ${tableBdrClr}`,borderRadius:8,overflow:'hidden',background:T.surface}}>
-                    <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderBottom:`1px solid ${tableBdrClr}`,borderLeft:`3px solid ${rdR.clr}`,background:`${rdR.clr}${theme==='light'?'10':'0a'}`}}>
-                      <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:700,color:rdRClr}}>{room.label}</span>
-                      <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>{room.cap} alunos</span>
-                      <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.muted,marginLeft:6}}>{getRoomResponsible(room)}</span>
-                      <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,marginLeft:'auto'}}>{gBlockLabel(room.blockId)}</span>
-                    </div>
-                    <div style={{overflowX:'auto'}}>
+            <div style={{display:'flex',flexDirection:'column',gap:20}}>
+              {grp.blocks.map(blk=>(
+                <div key={blk.blockId}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,paddingLeft:10}}>
+                    <div style={{width:2,height:12,borderRadius:1,background:T.bdr2,flexShrink:0}}/>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,letterSpacing:.5}}>{blk.label}</span>
+                    <div style={{flex:1,height:1,background:T.bdr}}/>
+                  </div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:16}}>
+                    {blk.rooms.map(room=>{
+                      const rdR=gRole(room.roleId),rdRClr=dtc(rdR,theme);
+                      const colMaps={};DAYS.forEach(d=>{colMaps[d]=buildColMap(room.id,d);});
+                      return(
+                        <div key={room.id} style={{flex:'1 1 460px',minWidth:0,border:`1px solid ${tableBdrClr}`,borderRadius:8,overflow:'hidden',background:T.surface}}>
+                          <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderBottom:`1px solid ${tableBdrClr}`,borderLeft:`3px solid ${rdR.clr}`,background:`${rdR.clr}${theme==='light'?'10':'0a'}`}}>
+                            <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:700,color:rdRClr}}>{room.label}</span>
+                            <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>{room.cap} alunos</span>
+                            <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.muted,marginLeft:'auto'}}>{getRoomResponsible(room)}</span>
+                          </div>
+                          <div style={{overflowX:'auto'}}>
                       <table style={{borderCollapse:'collapse',width:'100%',tableLayout:'fixed',minWidth:340}}>
                         <colgroup>
                           <col style={{width:90}}/>
@@ -1260,7 +1273,10 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
                     </div>
                   </div>
                 );
-              })}
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         );
