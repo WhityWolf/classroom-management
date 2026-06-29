@@ -48,13 +48,25 @@ const COORD_PERMS = [
 ];
 const DIRECTOR_PERMS = Object.values(PERMS);
 const PERM_PRESETS = [
-  { key:'coord',    label:'Coordenação', perms: COORD_PERMS },
-  { key:'director', label:'Diretor',     perms: DIRECTOR_PERMS },
+  { key:'coord',     label:'Coordenação',          perms: COORD_PERMS },
+  { key:'dept_head', label:'Chefe de Departamento', perms: COORD_PERMS },
+  { key:'director',  label:'Diretor',               perms: DIRECTOR_PERMS },
 ];
 const sortedKey = arr => [...arr].sort().join(',');
 const PRESET_KEYS = Object.fromEntries(PERM_PRESETS.map(p=>[sortedKey(p.perms), p.key]));
+const presetActive = (key, permissions) => sortedKey(permissions) === sortedKey(PERM_PRESETS.find(p=>p.key===key)?.perms??[]);
 
 const NEUTRAL = { clr:'#94A3B8', textClr:'#475569' };
+
+function ptError(e) {
+  const msg = e?.message ?? String(e);
+  if (msg.includes('foreign key constraint'))  return 'Referência inválida: verifique se todos os campos obrigatórios foram selecionados.';
+  if (msg.includes('duplicate key') || msg.includes('unique constraint')) return 'Já existe um registro com esse valor (dado duplicado).';
+  if (msg.includes('null value in column'))    return 'Campo obrigatório não preenchido.';
+  if (msg.includes('value too long'))          return 'Um dos campos excede o tamanho máximo permitido.';
+  if (msg.includes('invalid input syntax'))    return 'Formato de dado inválido em um dos campos.';
+  return msg;
+}
 
 export default function ManagementScreen({ onBack }) {
   const { currentUser, logout, can } = useAuth();
@@ -183,7 +195,9 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
   const [search, setSearch] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null); // user id | null
 
-  const startCreate = () => { setEditing('new'); setForm({ name:'', username:'', email:'', roleId:roles[0]?.id??'', password:'' }); };
+  const isSystemUser = u => u.username === 'admin';
+
+  const startCreate = () => { setEditing('new'); setForm({ name:'', username:'', email:'', roleId:'', password:'' }); };
   const startEdit = u => { setEditing(u); setForm({ name:u.name, username:u.username, email:u.email, roleId:u.roleId, password:'', isActive:u.isActive }); };
   const cancel = () => { setEditing(null); setForm(null); };
 
@@ -194,6 +208,11 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
   }, [users, search]);
 
   const save = async () => {
+    if (!form.name.trim())     return flash('err', 'Informe o nome completo.');
+    if (!form.username.trim()) return flash('err', 'Informe o nome de usuário.');
+    if (!form.email.trim())    return flash('err', 'Informe o e-mail.');
+    if (!form.roleId)          return flash('err', 'Selecione uma função para o usuário.');
+    if (editing === 'new' && !form.password) return flash('err', 'Informe uma senha.');
     try {
       if (editing === 'new') {
         await authApi.createUser(form, currentUser.id);
@@ -205,7 +224,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
         flash('ok', 'Usuário atualizado.');
       }
       cancel(); reloadUsers();
-    } catch (e) { flash('err', e.message); }
+    } catch (e) { flash('err', ptError(e)); }
   };
   const deactivate = async u => {
     try { await authApi.deactivateUser(u.id); flash('ok', `${u.name} foi desativado(a).`); reloadUsers(); }
@@ -232,15 +251,18 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
               const role=gRole(u.roleId);
               return(
                 <tr key={u.id} style={{borderBottom:`1px solid ${T.bdr}`,opacity:u.isActive?1:.55}}>
-                  <td style={{padding:'8px 10px'}}>{u.name}<div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{u.email}</div></td>
+                  <td style={{padding:'8px 10px'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>{u.name}{isSystemUser(u)&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:'#94a3b8',background:'#94a3b822',border:'1px solid #94a3b844',borderRadius:3,padding:'1px 5px'}}>sistema</span>}</div>
+                    {!isSystemUser(u)&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{u.email}</div>}
+                  </td>
                   <td style={{padding:'8px 10px',fontFamily:"'DM Mono',monospace",fontSize:11}}>{u.username}</td>
                   <td style={{padding:'8px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:role.textClr,background:`${role.clr}22`,border:`1px solid ${role.clr}44`,borderRadius:4,padding:'2px 7px'}}>{role.full}</span></td>
                   <td style={{padding:'8px 10px',fontSize:10,color:u.isActive?(theme==='light'?'#15803d':'#34d399'):T.dim}}>{u.isActive?'Ativo':'Inativo'}</td>
                   <td style={{padding:'8px 10px'}}>
                     <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                       {can(PERMS.EDIT_ANY_USER)&&<button onClick={()=>startEdit(u)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:10,cursor:'pointer'}}>Editar</button>}
-                      {can(PERMS.DEACTIVATE_USER)&&u.isActive&&u.id!==currentUser.id&&<button onClick={()=>deactivate(u)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:10,cursor:'pointer'}}>Desativar</button>}
-                      {can(PERMS.DELETE_USER)&&!u.isActive&&u.id!==currentUser.id&&(
+                      {can(PERMS.DEACTIVATE_USER)&&u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&<button onClick={()=>deactivate(u)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:10,cursor:'pointer'}}>Desativar</button>}
+                      {can(PERMS.DELETE_USER)&&!u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&(
                         confirmDelete===u.id
                           ? <>
                               <button onClick={()=>deleteUser(u)} style={{padding:'3px 10px',background:'#ef4444',border:'none',borderRadius:4,color:'#fff',fontSize:10,cursor:'pointer',fontWeight:600}}>Confirmar</button>
@@ -266,6 +288,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
         <div style={{marginBottom:12}}>
           <label style={lblStyle(T)}>Função</label>
           <select value={form.roleId} onChange={e=>setForm({...form,roleId:e.target.value})} style={{...inpStyle(T),cursor:'pointer'}}>
+            <option value="" disabled>— Selecione uma função —</option>
             {subUnits.map(su=>{
               const suRoles=roles.filter(r=>r.subUnitId===su.id);
               if(!suRoles.length) return null;
@@ -274,7 +297,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
             {roles.filter(r=>!r.subUnitId).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </div>
-        {editing!=='new'&&(
+        {editing!=='new'&&!isSystemUser(editing)&&(
           <label style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,cursor:'pointer',fontSize:12,color:T.txt}}>
             <input type="checkbox" checked={form.isActive} onChange={e=>setForm({...form,isActive:e.target.checked})}/> Conta ativa
           </label>
@@ -296,18 +319,19 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
   const [advOpen, setAdvOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null); // {role, courseCount} | null
 
-  const startCreate = () => { setForm({ id:'', name:'', subUnitId:subUnits[0]?.id??'', permissions:[] }); setEditing('new'); setAdvOpen(false); };
+  const startCreate = () => { setForm({ id:crypto.randomUUID(), name:'', subUnitId:subUnits[0]?.id??'', permissions:[] }); setEditing('new'); setAdvOpen(false); };
   const startEdit = r => { setForm({ id:r.id, name:r.name, subUnitId:r.subUnitId??'', permissions:[...r.permissions] }); setEditing(r); setAdvOpen(false); };
   const cancel = () => { setEditing(null); setForm(null); setAdvOpen(false); };
   const togglePerm = p => setForm(f=>({...f,permissions:f.permissions.includes(p)?f.permissions.filter(x=>x!==p):[...f.permissions,p]}));
 
   const save = async () => {
+    if (!form.name.trim()) return flash('err', 'Informe o nome da função.');
     try {
       const payload = { name:form.name, subUnitId:form.subUnitId||null, permissions:form.permissions };
       if (editing==='new') await mgmt.createRole({ id:form.id, ...payload });
       else await mgmt.updateRole(editing.id, payload);
       flash('ok','Função salva.'); cancel(); reloadDomain();
-    } catch (e) { flash('err', e.message); }
+    } catch (e) { flash('err', ptError(e)); }
   };
   const remove = async r => {
     if (r.isSystem) { flash('err','Esta função é protegida e não pode ser excluída.'); return; }
@@ -369,7 +393,6 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
     ):editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
         <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Nova Função':'Editar Função'}</div>
-        {editing==='new'&&<div style={{marginBottom:12}}><label style={lblStyle(T)}>Identificador (slug, ex.: MATH_GRAD_COORD)</label><input value={form.id} onChange={e=>setForm({...form,id:e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g,'_')})} style={inpStyle(T)}/></div>}
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
         <div style={{marginBottom:12}}>
           <label style={lblStyle(T)}>Sub-unidade (vazio = institucional)</label>
@@ -381,7 +404,7 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
         <label style={lblStyle(T)}>Permissões</label>
         <div style={{display:'flex',gap:6,marginBottom:8,flexWrap:'wrap',alignItems:'center'}}>
           {PERM_PRESETS.map(({key,label})=>{
-            const active=PRESET_KEYS[sortedKey(form.permissions)]===key;
+            const active=presetActive(key,form.permissions);
             return(
               <button key={key} type="button"
                 onClick={()=>{setForm(f=>({...f,permissions:[...PERM_PRESETS.find(p=>p.key===key).perms]}));setAdvOpen(false);}}
@@ -390,7 +413,7 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
               </button>
             );
           })}
-          {!PRESET_KEYS[sortedKey(form.permissions)]&&form.permissions.length>0&&(
+          {!PERM_PRESETS.some(p=>presetActive(p.key,form.permissions))&&form.permissions.length>0&&(
             <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>Personalizado</span>
           )}
           <button type="button" onClick={()=>setAdvOpen(v=>!v)}
@@ -442,18 +465,21 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
   const { T } = useT();
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
+  const [colorOpen, setColorOpen] = useState(false);
   const DEFAULT_COLORS = { clr:'#60A5FA', textClr:'#1d4ed8', bg:'#0d1f3d', lightBg:'#eff6ff' };
 
-  const startCreate = () => { setForm({ id:'', name:'', fullName:'', ...DEFAULT_COLORS }); setEditing('new'); };
+  const startCreate = () => { setForm({ id:crypto.randomUUID(), name:'', fullName:'', ...DEFAULT_COLORS }); setEditing('new'); setColorOpen(false); };
   const startEdit = s => { setForm({ ...s }); setEditing(s); };
   const cancel = () => { setEditing(null); setForm(null); };
 
   const save = async () => {
+    if (!form.name.trim())     return flash('err', 'Informe o nome curto da sub-unidade.');
+    if (!form.fullName.trim()) return flash('err', 'Informe o nome completo da sub-unidade.');
     try {
       if (editing==='new') await mgmt.createSubUnit(form);
       else await mgmt.updateSubUnit(editing.id, form);
       flash('ok','Sub-unidade salva.'); cancel(); reloadDomain();
-    } catch (e) { flash('err', e.message); }
+    } catch (e) { flash('err', ptError(e)); }
   };
   const remove = async s => {
     const linked = roles.filter(r=>r.subUnitId===s.id);
@@ -472,7 +498,7 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
               <div style={{width:3,height:28,borderRadius:1,background:s.clr}}/>
               <div style={{flex:1}}>
                 <div style={{fontSize:12,fontWeight:600,color:T.txt}}>{s.fullName}</div>
-                <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{roles.filter(r=>r.subUnitId===s.id).length} funções</div>
+                <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{s.name&&<span style={{marginRight:8}}>{s.name}</span>}{roles.filter(r=>r.subUnitId===s.id).length} funções</div>
               </div>
               <button onClick={()=>startEdit(s)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:10,cursor:'pointer'}}>Editar</button>
               <button onClick={()=>remove(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:10,cursor:'pointer'}}>Excluir</button>
@@ -483,17 +509,22 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
     )} panel={editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
         <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Nova Sub-unidade':'Editar Sub-unidade'}</div>
-        {editing==='new'&&<div style={{marginBottom:12}}><label style={lblStyle(T)}>Identificador (slug, ex.: ARQ)</label><input value={form.id} onChange={e=>setForm({...form,id:e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g,'_')})} style={inpStyle(T)}/></div>}
-        <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome curto</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
+        <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome curto</label><input value={form.name} maxLength={20} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome completo</label><input value={form.fullName} onChange={e=>setForm({...form,fullName:e.target.value})} style={inpStyle(T)}/></div>
-        <div style={{display:'flex',gap:8,marginBottom:16}}>
-          {['clr','textClr','bg','lightBg'].map(k=>(
-            <div key={k} style={{flex:1}}>
-              <label style={lblStyle(T)}>{k}</label>
-              <input type="color" value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})} style={{width:'100%',height:30,border:`1px solid ${T.inputBdr}`,borderRadius:6,cursor:'pointer'}}/>
-            </div>
-          ))}
-        </div>
+        <button type="button" onClick={()=>setColorOpen(v=>!v)}
+          style={{width:'100%',marginBottom:colorOpen?8:16,padding:'6px 10px',borderRadius:5,fontSize:10,border:`1px solid ${T.bdr2}`,background:'transparent',color:T.muted,cursor:'pointer',textAlign:'left'}}>
+          {colorOpen?'Cores ↑':'Cores ↓'}
+        </button>
+        {colorOpen&&(
+          <div style={{display:'flex',gap:8,marginBottom:16}}>
+            {[['clr','Cor principal'],['textClr','Cor do texto']].map(([k,label])=>(
+              <div key={k} style={{flex:1}}>
+                <label style={lblStyle(T)}>{label}</label>
+                <input type="color" value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})} style={{width:'100%',height:30,border:`1px solid ${T.inputBdr}`,borderRadius:6,cursor:'pointer'}}/>
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{display:'flex',gap:8}}>
           <button type="button" onClick={cancel} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
           <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:600,cursor:'pointer'}}>Salvar</button>
@@ -514,31 +545,35 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
 
   const blockLabel = id => { const b=blocks.find(x=>x.id===id); return b?`${b.local} — ${b.name}`:'—'; };
 
-  const startCreateRoom = () => { setRoomForm({ id:'', label:'', cap:30, type:'Sala de Aula', floor:1, blockId:blocks[0]?.id??'', roleId:'', features:[], description:'' }); setEditingRoom('new'); };
+  const startCreateRoom = () => { setRoomForm({ id:crypto.randomUUID(), label:'', cap:30, type:'Sala de Aula', floor:1, blockId:blocks[0]?.id??'', roleId:'', features:[], description:'' }); setEditingRoom('new'); };
   const startEditRoom = r => { setRoomForm({ ...r, roleId:r.roleId??'' }); setEditingRoom(r); };
   const cancelRoom = () => { setEditingRoom(null); setRoomForm(null); };
   const saveRoom = async () => {
+    if (!roomForm.label.trim()) return flash('err', 'Informe o nome/número da sala.');
+    if (!roomForm.blockId)      return flash('err', 'Selecione um bloco para a sala.');
     try {
       const payload = { ...roomForm, roleId:roomForm.roleId||null, cap:Number(roomForm.cap), floor:Number(roomForm.floor) };
       if (editingRoom==='new') await mgmt.createRoom(payload);
       else await mgmt.updateRoom(editingRoom.id, payload);
       flash('ok','Sala salva.'); cancelRoom(); reloadDomain();
-    } catch (e) { flash('err', e.message); }
+    } catch (e) { flash('err', ptError(e)); }
   };
   const removeRoom = async r => {
     try { await mgmt.deleteRoom(r.id); flash('ok','Sala excluída.'); reloadDomain(); }
     catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
   };
 
-  const startCreateBlock = () => { setBlockForm({ id:'', local:'', name:'' }); setEditingBlock('new'); };
+  const startCreateBlock = () => { setBlockForm({ id:crypto.randomUUID(), local:'', name:'' }); setEditingBlock('new'); };
   const startEditBlock = b => { setBlockForm({ ...b }); setEditingBlock(b); };
   const cancelBlock = () => { setEditingBlock(null); setBlockForm(null); };
   const saveBlock = async () => {
+    if (!blockForm.local.trim()) return flash('err', 'Informe o centro do bloco.');
+    if (!blockForm.name.trim())  return flash('err', 'Informe o nome do bloco.');
     try {
       if (editingBlock==='new') await mgmt.createBlock(blockForm);
       else await mgmt.updateBlock(editingBlock.id, blockForm);
       flash('ok','Bloco salvo.'); cancelBlock(); reloadDomain();
-    } catch (e) { flash('err', e.message); }
+    } catch (e) { flash('err', ptError(e)); }
   };
   const removeBlock = async b => {
     try { await mgmt.deleteBlock(b.id); flash('ok','Bloco excluído.'); reloadDomain(); }
@@ -550,7 +585,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       <>
         <div style={{display:'flex',gap:6,marginBottom:14}}>
           {[['rooms','Salas'],['blocks','Blocos']].map(([k,l])=>(
-            <button key={k} onClick={()=>setSub(k)} style={{padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>{l}</button>
+            <button key={k} onClick={()=>{setSub(k);cancelRoom();cancelBlock();}} style={{padding:'6px 14px',borderRadius:6,fontSize:11,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>{l}</button>
           ))}
         </div>
         {sub==='rooms'?(
@@ -558,17 +593,21 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
             {can(PERMS.MANAGE_ROOMS)&&<button onClick={startCreateRoom} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sala</button>}
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
               <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-                {['Sala','Bloco','Cap.','Função',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
+                {['Sala','Bloco','Vagas','Função','Sub-unidade',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {rooms.map(r=>{
                   const role=gRole(r.roleId);
+                  const roleObj=roles.find(ro=>ro.id===r.roleId);
+                  const su=roleObj?.subUnitId?subUnits.find(s=>s.id===roleObj.subUnitId):null;
+                  const roleLabel=r.roleId?role.full:(roles.find(ro=>ro.isSystem)?.name??'Diretoria');
                   return(
                     <tr key={r.id} style={{borderBottom:`1px solid ${T.bdr}`}}>
                       <td style={{padding:'7px 10px'}}>{r.label}</td>
                       <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{blockLabel(r.blockId)}</td>
                       <td style={{padding:'7px 10px'}}>{r.cap}</td>
-                      <td style={{padding:'7px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:role.textClr,background:`${role.clr}22`,borderRadius:4,padding:'2px 6px'}}>{role.full}</span></td>
+                      <td style={{padding:'7px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:role.textClr,background:`${role.clr}22`,borderRadius:4,padding:'2px 6px'}}>{roleLabel}</span></td>
+                      <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{su?su.fullName:'—'}</td>
                       <td style={{padding:'7px 10px'}}>
                         <div style={{display:'flex',gap:6}}>
                           <button onClick={()=>startEditRoom(r)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:10,cursor:'pointer'}}>Editar</button>
@@ -600,7 +639,6 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       editingRoom?(
         <form onSubmit={e=>{e.preventDefault();saveRoom();}}>
           <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:T.txt}}>{editingRoom==='new'?'Nova Sala':'Editar Sala'}</div>
-          {editingRoom==='new'&&<div style={{marginBottom:12}}><label style={lblStyle(T)}>Identificador (id)</label><input value={roomForm.id} onChange={e=>setRoomForm({...roomForm,id:e.target.value})} style={inpStyle(T)}/></div>}
           <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome/Número</label><input value={roomForm.label} onChange={e=>setRoomForm({...roomForm,label:e.target.value})} style={inpStyle(T)}/></div>
           <div style={{display:'flex',gap:8,marginBottom:12}}>
             <div style={{flex:1}}><label style={lblStyle(T)}>Capacidade</label><input type="number" min={1} value={roomForm.cap} onChange={e=>setRoomForm({...roomForm,cap:e.target.value})} style={inpStyle(T)}/></div>
@@ -616,7 +654,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
           <div style={{marginBottom:16}}>
             <label style={lblStyle(T)}>Função dona (vazio = compartilhada)</label>
             <select value={roomForm.roleId} onChange={e=>setRoomForm({...roomForm,roleId:e.target.value})} style={{...inpStyle(T),cursor:'pointer'}}>
-              <option value="">— Compartilhada/institucional —</option>
+              <option value="" style={{fontWeight:'bold'}}>{roles.find(r=>r.isSystem)?.name??'Diretoria'}</option>
               {subUnits.map(su=>{
                 const suRoles=roles.filter(r=>r.subUnitId===su.id);
                 if(!suRoles.length) return null;
@@ -632,8 +670,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       ):editingBlock?(
         <form onSubmit={e=>{e.preventDefault();saveBlock();}}>
           <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:T.txt}}>{editingBlock==='new'?'Novo Bloco':'Editar Bloco'}</div>
-          {editingBlock==='new'&&<div style={{marginBottom:12}}><label style={lblStyle(T)}>Identificador (id)</label><input value={blockForm.id} onChange={e=>setBlockForm({...blockForm,id:e.target.value})} style={inpStyle(T)}/></div>}
-          <div style={{marginBottom:12}}><label style={lblStyle(T)}>Local/Prédio (ex.: CCN1)</label><input value={blockForm.local} onChange={e=>setBlockForm({...blockForm,local:e.target.value})} style={inpStyle(T)}/></div>
+          <div style={{marginBottom:12}}><label style={lblStyle(T)}>Centro (ex.: CCN1)</label><input value={blockForm.local} onChange={e=>setBlockForm({...blockForm,local:e.target.value})} style={inpStyle(T)}/></div>
           <div style={{marginBottom:16}}><label style={lblStyle(T)}>Nome do bloco (ex.: SG-04)</label><input value={blockForm.name} onChange={e=>setBlockForm({...blockForm,name:e.target.value})} style={inpStyle(T)}/></div>
           <div style={{display:'flex',gap:8}}>
             <button type="button" onClick={cancelBlock} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>

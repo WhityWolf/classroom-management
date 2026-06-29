@@ -7,6 +7,7 @@ import LoginPage from './components/LoginPage.jsx';
 import UserManagement from './components/UserManagement.jsx';
 import ManagementScreen from './components/ManagementScreen.jsx';
 import * as db from './db/allocations.js';
+import * as authApi from './db/authApi.js';
 import { useRealtimeSync } from './db/useRealtimeSync.js';
 import { supabaseConfigured } from './db/supabaseClient.js';
 
@@ -120,6 +121,16 @@ const courseId=(roleId,code,sec,period)=>`${roleId}-${slugify(code)}-${sec}-${sl
 // raro na prática (a maioria dos calendários acadêmicos não passa de .1/.2/.3).
 const DEFAULT_PERIOD='2026.1';
 const PERIOD_RE=/^\d{4}\.\d+$/;
+
+function ptError(e) {
+  const msg = e?.message ?? String(e);
+  if (msg.includes('foreign key constraint'))  return 'Referência inválida: verifique se todos os campos obrigatórios foram preenchidos corretamente.';
+  if (msg.includes('duplicate key') || msg.includes('unique constraint')) return 'Já existe um registro com esse valor (dado duplicado).';
+  if (msg.includes('null value in column'))    return 'Campo obrigatório não preenchido.';
+  if (msg.includes('value too long'))          return 'Um dos campos excede o tamanho máximo permitido.';
+  if (msg.includes('invalid input syntax'))    return 'Formato de dado inválido em um dos campos.';
+  return msg;
+}
 const comparePeriods=(a,b)=>{
   const[ay,an]=a.split('.').map(Number),[by,bn]=b.split('.').map(Number);
   return ay!==by?ay-by:an-bn;
@@ -525,7 +536,7 @@ function Dashboard(){
       await db.setCourseRoomByDay(course.id,nextRoomByDay);
       showToast(`${course.code} alocada em ${room?.label??rid} (${daysLabel}).`,'ok');
     }catch(e){
-      showToast(`Falha ao alocar: ${e.message}`,'err');
+      showToast(`Falha ao alocar: ${ptError(e)}`,'err');
     }
   };
   // `day` presente = remove só a sala daquele dia (clique no chip da Grade);
@@ -545,7 +556,7 @@ function Dashboard(){
       await db.setCourseRoomByDay(cid,nextRoomByDay);
       showToast(`${course.code} desalocada${day?` (${day})`:''}${roomLabel?` (estava em ${roomLabel})`:''}.`,'warn');
     }catch(e){
-      showToast(`Falha ao desalocar: ${e.message}`,'err');
+      showToast(`Falha ao desalocar: ${ptError(e)}`,'err');
     }
   };
   const saveFeatures=async(rid,feats,desc)=>{
@@ -554,7 +565,7 @@ function Dashboard(){
     try{
       await db.saveRoomFeatures(rid,feats,desc);
     }catch(e){
-      showToast(`Falha ao salvar sala: ${e.message}`,'err');
+      showToast(`Falha ao salvar sala: ${ptError(e)}`,'err');
     }
   };
   const addFeatureOption=async name=>{
@@ -562,7 +573,7 @@ function Dashboard(){
     try{
       await db.addFeatureOption(name.trim());
     }catch(e){
-      showToast(`Falha ao criar recurso: ${e.message}`,'err');
+      showToast(`Falha ao criar recurso: ${ptError(e)}`,'err');
     }
   };
   const removeFeatureOption=async name=>{
@@ -570,7 +581,7 @@ function Dashboard(){
     try{
       await db.removeFeatureOption(name);
     }catch(e){
-      showToast(`Falha ao remover recurso: ${e.message}`,'err');
+      showToast(`Falha ao remover recurso: ${ptError(e)}`,'err');
     }
   };
   const selectCourse=c=>{
@@ -607,7 +618,7 @@ function Dashboard(){
     try{
       await db.editCourse(courseId,{...changes,roomByDay:finalRoomByDay});
     }catch(e){
-      showToast(`Falha ao salvar disciplina: ${e.message}`,'err');
+      showToast(`Falha ao salvar disciplina: ${ptError(e)}`,'err');
     }
   };
   const handleCreateCourse=async course=>{
@@ -617,7 +628,7 @@ function Dashboard(){
       await db.createCourse(course);
       showToast(`${course.code} criada.`,'ok');
     }catch(e){
-      showToast(`Falha ao criar disciplina: ${e.message}`,'err');
+      showToast(`Falha ao criar disciplina: ${ptError(e)}`,'err');
     }
   };
   const handleDeleteCourse=async course=>{
@@ -627,7 +638,7 @@ function Dashboard(){
       if(selId===course.id)setSel(null);
       showToast(`${course.code} excluída.`,'ok');
     }catch(e){
-      showToast(`Falha ao excluir disciplina: ${e.message}`,'err');
+      showToast(`Falha ao excluir disciplina: ${ptError(e)}`,'err');
     }
   };
   const handleImportCourses=async newCourses=>{
@@ -637,7 +648,7 @@ function Dashboard(){
       await db.replaceRoleCourses(targetRoleId,selectedPeriod,newCourses);
       showToast(`${newCourses.length} disciplina${newCourses.length!==1?'s':''} importada${newCourses.length!==1?'s':''} para ${gRole(targetRoleId)?.full} (${selectedPeriod}).`,'ok');
     }catch(e){
-      showToast(`Falha ao importar disciplinas: ${e.message}`,'err');
+      showToast(`Falha ao importar disciplinas: ${ptError(e)}`,'err');
     }
   };
 
@@ -669,7 +680,7 @@ function Dashboard(){
       await db.applyAllocations(assignments);
       showToast(`✨ ${assignments.length} disciplina${assignments.length!==1?'s':''} alocada${assignments.length!==1?'s':''} automaticamente.`,'ok');
     }catch(e){
-      showToast(`Falha ao aplicar alocação automática: ${e.message}`,'err');
+      showToast(`Falha ao aplicar alocação automática: ${ptError(e)}`,'err');
     }
   };
 
@@ -680,16 +691,16 @@ function Dashboard(){
       await db.finishCoordination(currentUser.roleId,gRole(currentUser.roleId)?.full,currentUser.name);
       showToast('Alocação enviada. O diretor foi notificado.','ok');
     }catch(e){
-      showToast(`Falha ao enviar alocação: ${e.message}`,'err');
+      showToast(`Falha ao enviar alocação: ${ptError(e)}`,'err');
     }
   };
   const handleReopen=async roleId=>{
     try{await db.setCoordinationStatus(roleId,DS.ACTIVE);showToast(`${gRole(roleId)?.full} reaberto.`,'ok');}
-    catch(e){showToast(`Falha: ${e.message}`,'err');}
+    catch(e){showToast(`Falha: ${ptError(e)}`,'err');}
   };
   const handleForceFinish=async roleId=>{
     try{await db.setCoordinationStatus(roleId,DS.FORCE_FINISHED);showToast(`${gRole(roleId)?.full} bloqueado.`,'ok');}
-    catch(e){showToast(`Falha: ${e.message}`,'err');}
+    catch(e){showToast(`Falha: ${ptError(e)}`,'err');}
   };
   const markNotifsRead=()=>{db.markAllNotificationsRead().catch(()=>{});};
 
@@ -962,7 +973,7 @@ function ScreenSelector({onPick,subUnits}){
   const canManage=can(PERMS.CREATE_ANY_USER)||can(PERMS.MANAGE_SUB_UNITS)||can(PERMS.MANAGE_ROLES)||can(PERMS.MANAGE_ROOMS)||can(PERMS.MANAGE_BLOCKS);
   const cards=[
     {key:'allocate',icon:'📋',title:'Alocar Disciplinas',desc:'Cadastre disciplinas e aloque-as nas salas da sua função.'},
-    {key:'map',icon:'🗺',title:'Mapa de Salas Alocadas',desc:'Veja uma visão ampla de todas as salas já alocadas, por dia e horário.'},
+    {key:'map',icon:'🗺',title:'Mapa de Salas',desc:'Veja uma visão geral de todas as salas, com disciplinas alocadas por dia e horário.'},
     ...(canManage?[{key:'manage',icon:'⚙️',title:'Gerenciamento',desc:'Usuários, funções, sub-unidades, salas e blocos.'}]:[]),
   ];
   return(
@@ -1006,20 +1017,16 @@ function ScreenSelector({onPick,subUnits}){
   );
 }
 
-// ─── Tela: mapa de salas alocadas ──────────────────────────────────────────────
-// Visão somente-leitura, sem seleção de disciplina nem ações de alocar/editar —
-// mostra, para todos os departamentos de uma vez, quais salas já têm
-// disciplinas alocadas e em que horário. Reaproveita rowSlots/blockForDay (os
-// mesmos helpers da Grade de alocação) só que sem nenhum callback de clique.
+// ─── Tela: mapa de salas ───────────────────────────────────────────────────────
+// Visão somente-leitura — mostra uma tabela por sala, com dias da semana como
+// colunas e faixas horárias (8h–22h) como linhas, para todos os departamentos
+// de uma vez.
 function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
   const{currentUser,logout}=useAuth();
   const{T,theme,toggleTheme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
-  const[day,setDay]=useState('Segunda');
   const gRole=useMemo(()=>makeGRole(roles,subUnits),[roles,subUnits]);
   const gBlockLabel=useMemo(()=>makeGBlockLabel(blocks),[blocks]);
-  // Período próprio, independente do que está selecionado na tela de
-  // Alocação (são telas-irmãs, não pai/filho) — sempre cai no mais recente.
   const allPeriods=useMemo(()=>[...new Set(courses.map(c=>c.period))].sort(comparePeriods),[courses]);
   const currentPeriod=allPeriods[allPeriods.length-1]??DEFAULT_PERIOD;
   const[periodOverride,setPeriodOverride]=useState(null);
@@ -1028,52 +1035,108 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
   const alloc=useMemo(()=>buildAlloc(periodCourses),[periodCourses]);
   const allocatedRoomIds=useMemo(()=>new Set(periodCourses.flatMap(c=>Object.values(c.roomByDay||{}))),[periodCourses]);
   const allocatedRooms=useMemo(()=>rooms.filter(r=>allocatedRoomIds.has(r.id)),[rooms,allocatedRoomIds]);
+  const[roomFilter,setRoomFilter]=useState('all'); // 'all' | 'allocated' | 'empty'
+  const displayRooms=useMemo(()=>{
+    if(roomFilter==='allocated')return allocatedRooms;
+    if(roomFilter==='empty')return rooms.filter(r=>!allocatedRoomIds.has(r.id));
+    return rooms;
+  },[roomFilter,rooms,allocatedRooms,allocatedRoomIds]);
   const subUnitOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
+
+  const[mapUsers,setMapUsers]=useState([]);
+  useEffect(()=>{authApi.getUsers().then(setMapUsers).catch(()=>{});},[]);
+  // roleId → nome(s) dos usuários com aquela função; vazio = "Diretoria"
+  const roleUserNames=useMemo(()=>{
+    const m={};
+    mapUsers.forEach(u=>{if(!m[u.roleId])m[u.roleId]=[];m[u.roleId].push(u.name);});
+    return m;
+  },[mapUsers]);
+  const getRoomResponsible=room=>roleUserNames[room.roleId]?.join(', ')||'Diretoria';
+
+  const MAP_HOURS=HOURS.filter(h=>h>=8); // 8..21 → faixas 8:00–9:00 até 21:00–22:00
+
+  // Retorna um mapa hour→{span,c,merged}|null para renderização vertical.
+  // null = célula coberta pelo rowSpan de um slot anterior naquele dia.
+  const buildColMap=(rid,day)=>{
+    const slots=rowSlots(rid,day,alloc);
+    const map={};
+    for(const slot of slots){
+      const start=Math.max(slot.h,8);
+      const end=Math.min(slot.h+slot.span,22);
+      if(end<=8)continue;
+      const span=end-start;
+      if(!(start in map)){
+        map[start]={span,c:slot.c,merged:slot.merged};
+        for(let i=1;i<span;i++){if(start+i<=21)map[start+i]=null;}
+      }
+    }
+    for(const h of MAP_HOURS){if(!(h in map))map[h]={span:1,c:null,merged:0};}
+    return map;
+  };
 
   const generatePdf=()=>{
     const groupOf=r=>gRole(r.roleId).subUnitFull;
     const groupOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
-    const sorted=[...allocatedRooms].sort((a,b)=>groupOrder(groupOf(a))-groupOrder(groupOf(b))||gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true}));
-    const groupCounts={};sorted.forEach(r=>{const g=groupOf(r);groupCounts[g]=(groupCounts[g]||0)+1;});
-    const thHours=HOURS.map(h=>`<th>${h}h</th>`).join('');
+    const sorted=[...displayRooms].sort((a,b)=>groupOrder(groupOf(a))-groupOrder(groupOf(b))||gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true}));
     const dateStr=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-    const daysSections=DAYS.map((d,dIdx)=>{
-      const rows=sorted.map((room,idx)=>{
-        const rd=gRole(room.roleId);
-        const slots=rowSlots(room.id,d,alloc);
-        const showGroup=idx===0||groupOf(sorted[idx-1])!==groupOf(room);
-        const showBlock=showGroup||sorted[idx-1].blockId!==room.blockId;
-        const groupRow=showGroup?`<tr class="group-row"><td colspan="${HOURS.length+1}" style="border-left:3px solid ${rd.clr}">${rd.subUnitFull} · ${groupCounts[groupOf(room)]} sala${groupCounts[groupOf(room)]!==1?'s':''}</td></tr>`:'';
-        const blockRow=showBlock?`<tr class="block-row"><td colspan="${HOURS.length+1}">${gBlockLabel(room.blockId)}</td></tr>`:'';
-        const cells=slots.map(slot=>{
-          if(slot.c){
-            const cd=gRole(slot.c.roleId);
-            const sb=blockForDay(slot.c,d);
-            const tip=`${slot.c.name}${slot.c.sec!=null?` · Turma ${slot.c.sec}`:''}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(sb.sh)}–${fmtHour(sb.eh)} · ${slot.c.enroll} alunos`;
-            return`<td colspan="${slot.span}" title="${tip.replace(/"/g,'&quot;')}" style="border-left:2px solid ${cd.clr};background:${cd.clr}22;padding:1px 4px;overflow:hidden"><span style="color:${cd.textClr};font-weight:600;font-size:8px;white-space:nowrap">${slot.c.code}</span>${slot.merged>0?`<span style="color:#d97706;font-size:7px"> +${slot.merged}</span>`:''}</td>`;
-          }
-          return`<td style="border-left:${slot.h===12||slot.h===18?'2px solid #cbd5e1':'1px solid #e2e8f0'}"></td>`;
+    // Monta a mesma hierarquia Depto → Bloco → Salas que a UI usa
+    const pdfGroups=[];
+    sorted.forEach(room=>{
+      const g=groupOf(room);
+      if(!pdfGroups.length||pdfGroups[pdfGroups.length-1].name!==g)
+        pdfGroups.push({name:g,rd:gRole(room.roleId),blocks:[]});
+      const grp=pdfGroups[pdfGroups.length-1];
+      const blkLabel=gBlockLabel(room.blockId);
+      if(!grp.blocks.length||grp.blocks[grp.blocks.length-1].blockId!==room.blockId)
+        grp.blocks.push({blockId:room.blockId,label:blkLabel,rooms:[]});
+      grp.blocks[grp.blocks.length-1].rooms.push(room);
+    });
+    const thDays=DAYS.map(d=>`<th>${d.slice(0,3)}</th>`).join('');
+    const roomHtml=room=>{
+      const rd=gRole(room.roleId);
+      const colMaps={};DAYS.forEach(d=>{colMaps[d]=buildColMap(room.id,d);});
+      const bodyRows=MAP_HOURS.map(h=>{
+        const cells=DAYS.map(d=>{
+          const cell=colMaps[d][h];
+          if(cell===null)return'';
+          if(!cell.c)return`<td></td>`;
+          const cd=gRole(cell.c.roleId);
+          const sb=blockForDay(cell.c,d);
+          const tip=`${cell.c.name}${cell.c.sec!=null?` · Turma ${cell.c.sec}`:''}${cell.c.teacher?` · ${cell.c.teacher}`:''} · ${fmtHour(sb.sh)}–${fmtHour(sb.eh)}`;
+          return`<td rowspan="${cell.span}" title="${tip.replace(/"/g,'&quot;')}" style="border-left:2px solid ${cd.clr};background:${cd.clr}22"><span style="color:${cd.textClr};font-weight:700">${cell.c.code}${cell.c.sec!=null?` T${cell.c.sec}`:''}</span>${cell.c.teacher?`<br><span class="tchr">${cell.c.teacher}</span>`:''}</td>`;
         }).join('');
-        return`${groupRow}${blockRow}<tr><td class="room-cell" style="border-left:3px solid ${rd.clr}"><span style="color:${rd.textClr};font-weight:600">${room.label}</span><span class="cap">${room.cap}</span></td>${cells}</tr>`;
+        return`<tr><td class="hcell">${h}:00–${h+1}:00</td>${cells}</tr>`;
       }).join('');
-      const hdr=dIdx===0?`<div style="margin-bottom:8px"><div style="font-size:13px;font-weight:700;margin-bottom:2px">Mapa de Salas Alocadas</div><div style="font-size:8px;color:#64748b">Período ${selectedPeriod} · ${allocatedRooms.length} sala${allocatedRooms.length!==1?'s':''} alocada${allocatedRooms.length!==1?'s':''} · Gerado em ${dateStr}</div></div>`:'';
-      return`<div class="day">${hdr}<div class="day-title">${d}</div><div class="scroll"><table><thead><tr><th>Sala / Cap.</th>${thHours}</tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      const responsible=getRoomResponsible(room);
+      return`<div class="room-card"><div class="room-hdr" style="border-left:3px solid ${rd.clr}"><span style="color:${rd.textClr};font-weight:700;font-size:8px">${room.label}</span><span class="cap">${room.cap} al.</span><span class="resp">${responsible}</span></div><table><thead><tr><th class="hth">Horário</th>${thDays}</tr></thead><tbody>${bodyRows}</tbody></table></div>`;
+    };
+    const sectionsHtml=pdfGroups.map(grp=>{
+      const blocksHtml=grp.blocks.map(blk=>`<div class="blk-section"><div class="blk-hdr">${blk.label}</div><div class="rooms-wrap">${blk.rooms.map(roomHtml).join('')}</div></div>`).join('');
+      return`<div class="dept-section"><div class="dept-hdr" style="border-left:3px solid ${grp.rd.clr}">${grp.name}</div>${blocksHtml}</div>`;
     }).join('');
     const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>Mapa de Salas — ${selectedPeriod}</title><style>
       *{box-sizing:border-box;margin:0;padding:0;}
-      body{font-family:Arial,sans-serif;font-size:9px;color:#1e293b;padding:8mm;}
-      .day{margin-bottom:14px;}
-      .day-title{font-size:10px;font-weight:700;padding:3px 8px;background:#f1f5f9;border-left:3px solid #3b82f6;margin-bottom:4px;}
-      .scroll{overflow-x:auto;}
-      table{border-collapse:collapse;table-layout:fixed;width:100%;}
-      th{background:#f8fafc;padding:3px 4px;text-align:left;border:1px solid #e2e8f0;font-size:7px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;font-weight:600;}
-      td{padding:1px 3px;border:1px solid #e2e8f0;height:22px;vertical-align:middle;overflow:hidden;}
-      .room-cell{white-space:nowrap;width:120px;min-width:120px;}
-      .cap{color:#94a3b8;font-size:8px;margin-left:4px;}
-      .group-row td{background:#f1f5f9;font-weight:700;font-size:8px;text-transform:uppercase;letter-spacing:.5px;padding:3px 8px;}
-      .block-row td{background:#f8fafc;font-size:7px;color:#64748b;padding:2px 8px 2px 18px;}
-      @media print{@page{size:A4 landscape;margin:8mm;}.day{page-break-before:always;}.day:first-child{page-break-before:avoid;}}
-    </style></head><body>${daysSections}</body></html>`;
+      body{font-family:Arial,sans-serif;font-size:7px;color:#1e293b;padding:6mm;}
+      h1{font-size:11px;font-weight:700;margin-bottom:2px;}
+      .meta{font-size:6px;color:#64748b;margin-bottom:8px;}
+      .dept-section{margin-bottom:12px;}
+      .dept-hdr{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:3px 8px;background:#f1f5f9;margin-bottom:5px;page-break-after:avoid;}
+      .blk-section{margin-bottom:8px;}
+      .blk-hdr{font-size:6px;font-weight:600;color:#64748b;padding:2px 8px 2px 14px;background:#f8fafc;border-bottom:1px solid #b8c4d0;margin-bottom:4px;page-break-after:avoid;}
+      .rooms-wrap{display:flex;flex-wrap:wrap;gap:8px;}
+      .room-card{flex:1 1 340px;min-width:0;border:1px solid #b8c4d0;border-radius:3px;overflow:hidden;page-break-inside:avoid;}
+      .room-hdr{display:flex;align-items:center;gap:5px;padding:3px 6px;background:#f8fafc;border-bottom:1px solid #b8c4d0;}
+      .cap{color:#94a3b8;font-size:6px;}
+      .resp{font-size:6px;color:#64748b;margin-left:auto;}
+      table{border-collapse:collapse;width:100%;table-layout:fixed;}
+      .hth{width:52px;}
+      th{background:#f8fafc;padding:2px 2px;text-align:center;border:1px solid #b8c4d0;font-size:6px;font-weight:600;white-space:nowrap;}
+      td{padding:1px 2px;border:1px solid #b8c4d0;height:14px;vertical-align:top;overflow:hidden;font-size:6px;}
+      td span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .hcell{color:#94a3b8;background:#f8fafc;white-space:nowrap;font-size:5px;}
+      .tchr{color:#64748b;font-size:5px;}
+      @media print{@page{size:A4 landscape;margin:6mm;}.dept-section{page-break-before:auto;}}
+    </style></head><body><h1>Mapa de Salas</h1><div class="meta">Período ${selectedPeriod} · ${displayRooms.length} sala${displayRooms.length!==1?'s':''} · Gerado em ${dateStr}</div>${sectionsHtml}</body></html>`;
     const w=window.open('','_blank');
     w.document.write(html);
     w.document.close();
@@ -1083,9 +1146,9 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
 
   const presentGroups=useMemo(()=>{
     const byName=new Map();
-    allocatedRooms.forEach(r=>{const rd=gRole(r.roleId);if(!byName.has(rd.subUnitFull))byName.set(rd.subUnitFull,rd);});
+    displayRooms.forEach(r=>{const rd=gRole(r.roleId);if(!byName.has(rd.subUnitFull))byName.set(rd.subUnitFull,rd);});
     return[...byName.values()].sort((a,b)=>subUnitOrder(a.subUnitFull)-subUnitOrder(b.subUnitFull));
-  },[allocatedRooms,roles,subUnits]);
+  },[displayRooms,roles,subUnits]);
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <style>{`
@@ -1096,24 +1159,25 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
         ::-webkit-scrollbar-track{background:${T.scrollTrack};}
         ::-webkit-scrollbar-thumb{background:${T.scrollThumb};border-radius:4px;}
         .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
-        .daybtn:hover{border-color:${T.muted}!important;}
       `}</style>
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>☰</button>
-        <span style={{fontSize:13,fontWeight:700,color:T.txt}}>🗺 Mapa de Salas Alocadas</span>
+        <span style={{fontSize:13,fontWeight:700,color:T.txt}}>🗺 Mapa de Salas</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
         <select value={selectedPeriod} onChange={e=>setPeriodOverride(e.target.value===currentPeriod?null:e.target.value)}
           title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,fontWeight:600,outline:'none',cursor:'pointer'}}>
           {allPeriods.map(p=><option key={p} value={p}>{p}{p===currentPeriod?' (atual)':''}</option>)}
         </select>
         <div style={{width:1,height:16,background:T.bdr2}}/>
-        {DAYS.map(dy=>(
-          <button key={dy} className="daybtn" onClick={()=>setDay(dy)}
-            style={{padding:'4px 10px',borderRadius:5,fontSize:10,fontWeight:500,background:day===dy?T.muted:'transparent',color:day===dy?T.bg:T.muted,border:`1px solid ${day===dy?T.muted:T.bdr2}`,transition:'all .12s',cursor:'pointer'}}>{dy.slice(0,3)}</button>
-        ))}
+        <select value={roomFilter} onChange={e=>setRoomFilter(e.target.value)}
+          title="Filtrar salas" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,fontWeight:600,outline:'none',cursor:'pointer'}}>
+          <option value="all">Todas as salas</option>
+          <option value="allocated">Apenas alocadas</option>
+          <option value="empty">Apenas vazias</option>
+        </select>
         <div style={{flex:1}}/>
         <span style={{...mono,fontSize:9,color:T.dim}}>{allocatedRooms.length} sala{allocatedRooms.length!==1?'s':''} alocada{allocatedRooms.length!==1?'s':''}</span>
-        <button onClick={generatePdf} disabled={allocatedRooms.length===0} title="Gerar PDF com o mapa completo da semana"
+        <button onClick={generatePdf} disabled={allocatedRooms.length===0} title="Gerar PDF com o mapa completo"
           style={{padding:'5px 12px',background:theme==='light'?'#0f172a':'#e2e8f0',border:'none',borderRadius:6,color:theme==='light'?'#f1f5f9':'#0f172a',fontSize:11,fontWeight:600,cursor:allocatedRooms.length===0?'not-allowed':'pointer',opacity:allocatedRooms.length===0?.4:1,transition:'opacity .15s'}}>
           ⬇ PDF
         </button>
@@ -1137,23 +1201,17 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
         </div>
       )}
       <div style={{flex:1,overflow:'auto',background:T.bg,padding:16}}>
-        <RoomMapGrid rooms={allocatedRooms} day={day} alloc={alloc} gRole={gRole} gBlockLabel={gBlockLabel} subUnits={subUnits}/>
+        <RoomMapGrid rooms={displayRooms} alloc={alloc} mapHours={MAP_HOURS} buildColMap={buildColMap} gRole={gRole} gBlockLabel={gBlockLabel} subUnits={subUnits} getRoomResponsible={getRoomResponsible}/>
       </div>
     </div>
   );
 }
 
-// Grade somente-leitura usada pelo RoomMapScreen — mesma estrutura de tabela
-// da Grade de alocação, mas agrupada por departamento (não "meu/outro depto")
-// e sem nenhuma interação (sem clique, sem editar, sem mesclar). Linhas de
-// grade verticais + zebra nas linhas + cabeçalho fixo (sticky no topo) ajudam
-// a ler uma tabela larga. Só o cabeçalho é sticky — sticky simultâneo na
-// coluna de sala (left+top juntos) quebra em tabelas com border-collapse:
-// collapse (o cabeçalho passa a renderizar atrás da primeira linha ao rolar
-// horizontalmente), então a coluna de sala rola normalmente.
-function RoomMapGrid({rooms,day,alloc,gRole,gBlockLabel,subUnits}){
+// Grade somente-leitura do Mapa de Salas — uma tabela por sala, com dias da
+// semana como colunas e horários (8h–22h) como linhas. buildColMap é passado
+// pelo RoomMapScreen para não precisar passar alloc inteiro para cada card.
+function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnits,getRoomResponsible}){
   const{T,theme}=useT();
-  const CW=76,RH=33,LW=150;
   const groupOf=room=>gRole(room.roleId).subUnitFull;
   const groupOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
   const byGroupBlockLabel=(a,b)=>groupOrder(groupOf(a))-groupOrder(groupOf(b))||gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true});
@@ -1162,73 +1220,102 @@ function RoomMapGrid({rooms,day,alloc,gRole,gBlockLabel,subUnits}){
   if(sorted.length===0)return(
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',flexDirection:'column',gap:10,padding:40}}>
       <div style={{fontSize:32,opacity:.15}}>🗺</div>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Nenhuma sala alocada ainda.</div>
+      <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Nenhuma sala cadastrada.</div>
     </div>
   );
-  // Marca o início de cada turno (M/T/N — mesma divisão do SIGAA usada em
-  // SIGAA_SHIFT_BASE) com uma linha vertical mais forte, pra cortar visualmente
-  // a tabela larga em Manhã/Tarde/Noite sem precisar de sombreamento extra.
-  const shiftEdge=h=>(h===12||h===18)?`2px solid ${T.bdr2}`:`1px solid ${T.bdr}`;
+  const tableBdrClr=theme==='light'?'#b8c4d0':'#253355';
+  const thBdr=`1px solid ${tableBdrClr}`;
+  const shiftBg=h=>h===12||h===18?T.faint:T.bg;
+  // Agrupa rooms sequencialmente por departamento para intercalar separadores
+  // Agrupa por departamento e, dentro de cada depto, por bloco
+  const groups=[];
+  sorted.forEach(room=>{
+    const g=groupOf(room);
+    if(!groups.length||groups[groups.length-1].name!==g)
+      groups.push({name:g,rd:gRole(room.roleId),blocks:[]});
+    const grp=groups[groups.length-1];
+    const blkLabel=gBlockLabel(room.blockId);
+    if(!grp.blocks.length||grp.blocks[grp.blocks.length-1].blockId!==room.blockId)
+      grp.blocks.push({blockId:room.blockId,label:blkLabel,rooms:[]});
+    grp.blocks[grp.blocks.length-1].rooms.push(room);
+  });
   return(
-    <table style={{borderCollapse:'collapse',tableLayout:'fixed',minWidth:LW+CW*HOURS.length,border:`1px solid ${T.bdr}`}}>
-      <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
-      <thead>
-        <tr style={{position:'sticky',top:0,zIndex:5,background:T.surface,boxShadow:theme==='light'?'0 1px 2px rgba(0,0,0,.06)':'none'}}>
-          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,background:T.surface,borderBottom:`1px solid ${T.bdr}`,borderRight:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
-          {HOURS.map(h=><th key={h} style={{padding:'7px 0 7px 5px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,background:T.surface,borderBottom:`1px solid ${T.bdr}`,borderLeft:shiftEdge(h)}}>{h}:00</th>)}
-        </tr>
-      </thead>
-      <tbody>
-        {sorted.map((room,idx)=>{
-          const rd=gRole(room.roleId),rdClr=dtc(rd,theme);
-          const slots=rowSlots(room.id,day,alloc);
-          const showGroupSep=idx===0||groupOf(sorted[idx-1])!==groupOf(room);
-          const showBlockSep=showGroupSep||sorted[idx-1].blockId!==room.blockId;
-          const rowBg=idx%2===0?T.bg:(theme==='light'?T.faint:T.inner);
-          return(
-            <Fragment key={room.id}>
-              {showGroupSep&&(
-                <tr><td colSpan={HOURS.length+1} style={{padding:0,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:`${rd.clr}${theme==='light'?'14':'10'}`}}>
-                    <div style={{width:3,height:14,borderRadius:1,background:rd.clr,flexShrink:0}}/>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:rdClr,letterSpacing:1,textTransform:'uppercase'}}>{rd.subUnitFull}</span>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>· {groupCounts[groupOf(room)]} sala{groupCounts[groupOf(room)]!==1?'s':''}</span>
+    <div style={{display:'flex',flexDirection:'column',gap:28}}>
+      {groups.map(grp=>{
+        const rd=grp.rd,rdClr=dtc(rd,theme);
+        return(
+          <div key={grp.name}>
+            <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',marginBottom:14,background:`${rd.clr}${theme==='light'?'14':'10'}`,borderLeft:`3px solid ${rd.clr}`,borderRadius:'0 6px 6px 0'}}>
+              <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:rdClr,letterSpacing:1,textTransform:'uppercase'}}>{grp.name}</span>
+              <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>· {groupCounts[grp.name]} sala{groupCounts[grp.name]!==1?'s':''}</span>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:20}}>
+              {grp.blocks.map(blk=>(
+                <div key={blk.blockId}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,paddingLeft:10}}>
+                    <div style={{width:2,height:12,borderRadius:1,background:T.bdr2,flexShrink:0}}/>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,letterSpacing:.5}}>{blk.label}</span>
+                    <div style={{flex:1,height:1,background:T.bdr}}/>
                   </div>
-                </td></tr>
-              )}
-              {showBlockSep&&(
-                <tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 21px',fontFamily:"'DM Mono',monospace",fontSize:8,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5,borderBottom:`1px solid ${T.bdr}`}}>{gBlockLabel(room.blockId)}</td></tr>
-              )}
-              <tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-                <td style={{padding:'0 6px 0 10px',height:RH,background:rowBg,borderRight:`1px solid ${T.bdr}`}}>
-                  <div style={{display:'flex',alignItems:'center',gap:4}}>
-                    <div style={{width:2,height:18,borderRadius:1,background:rd.clr}}/>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:rdClr,whiteSpace:'nowrap'}}>{room.label}</span>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>{room.cap}</span>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:16}}>
+                    {blk.rooms.map(room=>{
+                      const rdR=gRole(room.roleId),rdRClr=dtc(rdR,theme);
+                      const colMaps={};DAYS.forEach(d=>{colMaps[d]=buildColMap(room.id,d);});
+                      return(
+                        <div key={room.id} style={{flex:'1 1 460px',minWidth:0,border:`1px solid ${tableBdrClr}`,borderRadius:8,overflow:'hidden',background:T.surface}}>
+                          <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderBottom:`1px solid ${tableBdrClr}`,borderLeft:`3px solid ${rdR.clr}`,background:`${rdR.clr}${theme==='light'?'10':'0a'}`}}>
+                            <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:700,color:rdRClr}}>{room.label}</span>
+                            <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>{room.cap} alunos</span>
+                            <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.muted,marginLeft:'auto'}}>{getRoomResponsible(room)}</span>
+                          </div>
+                          <div style={{overflowX:'auto'}}>
+                      <table style={{borderCollapse:'collapse',width:'100%',tableLayout:'fixed',minWidth:340}}>
+                        <colgroup>
+                          <col style={{width:90}}/>
+                          {DAYS.map(d=><col key={d} style={{width:80}}/>)}
+                        </colgroup>
+                        <thead>
+                          <tr style={{background:T.surface}}>
+                            <th style={{padding:'5px 6px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,fontWeight:400,borderBottom:thBdr,borderRight:thBdr,letterSpacing:.5,textTransform:'uppercase'}}>Horário</th>
+                            {DAYS.map(d=><th key={d} style={{padding:'5px 4px',textAlign:'center',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:600,borderBottom:thBdr,borderLeft:thBdr}}>{d.slice(0,3)}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mapHours.map(h=>(
+                            <tr key={h} style={{background:shiftBg(h)}}>
+                              <td style={{padding:'3px 6px',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,borderBottom:thBdr,borderRight:thBdr,whiteSpace:'nowrap'}}>{h}:00–{h+1}:00</td>
+                              {DAYS.map(d=>{
+                                const cell=colMaps[d][h];
+                                if(cell===null)return null;
+                                if(!cell.c)return<td key={d} style={{borderBottom:thBdr,borderLeft:thBdr}}/>;
+                                const cd=gRole(cell.c.roleId),cdClr=dtc(cd,theme);
+                                const sb=blockForDay(cell.c,d);
+                                return(
+                                  <td key={d} rowSpan={cell.span}
+                                    title={`${cell.c.name}${cell.c.sec!=null?` · Turma ${cell.c.sec}`:''}${cell.c.teacher?` · ${cell.c.teacher}`:''} · ${fmtHour(sb.sh)}–${fmtHour(sb.eh)} · ${cell.c.enroll} alunos`}
+                                    style={{padding:'3px 4px',borderBottom:thBdr,borderLeft:`2px solid ${cd.clr}`,verticalAlign:'top',background:`${cd.clr}${theme==='light'?'1e':'16'}`,overflow:'hidden'}}>
+                                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:cdClr,fontWeight:700,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{cell.c.code}{cell.c.sec!=null&&<span style={{fontWeight:400,color:T.dim}}> T{cell.c.sec}</span>}</div>
+                                    {cell.c.teacher&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{cell.c.teacher}</div>}
+                                    {cell.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:'#d97706'}}>+{cell.merged}</span>}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </td>
-                {slots.map((slot,si)=>{
-                  if(slot.c){
-                    const cd=gRole(slot.c.roleId),cdClr=dtc(cd,theme);
-                    const slotBlock=blockForDay(slot.c,day);
-                    return(
-                      <td key={si} colSpan={slot.span} style={{padding:'2px 2px',height:RH,verticalAlign:'middle',background:rowBg,borderLeft:shiftEdge(slot.h),borderRight:`1px solid ${T.bdr}`}}>
-                        <div title={`${slot.c.name}${slot.c.sec!=null?` · Turma ${slot.c.sec}`:''}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos`}
-                          style={{height:'100%',padding:'0 5px',borderRadius:3,background:`${cd.clr}${theme==='light'?'28':'22'}`,borderLeft:`2px solid ${cd.clr}`,display:'flex',alignItems:'center',gap:4,overflow:'hidden'}}>
-                          <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:cdClr,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{slot.c.code}</span>
-                          {slot.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:'#d97706',background:'#F59E0B22',borderRadius:2,padding:'0 3px',flexShrink:0}}>+{slot.merged}</span>}
-                        </div>
-                      </td>
-                    );
-                  }
-                  return<td key={si} style={{height:RH,background:rowBg,borderLeft:shiftEdge(slot.h),borderRight:`1px solid ${T.bdr}`}}/>;
-                })}
-              </tr>
-            </Fragment>
-          );
-        })}
-      </tbody>
-    </table>
+                );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

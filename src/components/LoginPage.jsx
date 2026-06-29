@@ -7,7 +7,7 @@ import { useT } from '../theme.jsx';
 // manuais; não é mais lido de nenhum "banco" mock, os usuários reais agora
 // vêm do Postgres e podem não bater com esta lista se o seed for alterado.
 const DEMO_CREDENTIALS = [
-  { username: 'chief',         password: 'chief123', roleName: 'Diretor' },
+  { username: 'admin',         password: 'chief123', roleName: 'Diretor' },
   { username: 'math.grad',     password: 'math123',  roleName: 'Coordenador de Graduação · Matemática' },
   { username: 'math.pos',      password: 'math123',  roleName: 'Coordenador de Pós-Graduação · Matemática' },
   { username: 'math.profmat',  password: 'math123',  roleName: 'Coordenador PROFMAT · Matemática' },
