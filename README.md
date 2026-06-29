@@ -21,11 +21,12 @@ salas e blocos novos.
 ## Funcionalidades
 
 - **Seleção de tela pós-login** — antes de entrar na alocação, o usuário
-  escolhe entre "Alocar Disciplinas" (o fluxo de sempre), "Mapa de Salas
-  Alocadas" (visão somente-leitura e mais ampla — todas as salas já
-  alocadas, de todas as sub-unidades, lado a lado por dia da semana) e, só
-  pra quem tem permissão de gerenciamento (Diretor/secretários), uma terceira
-  opção "Gerenciamento".
+  escolhe entre "Alocar Disciplinas" (o fluxo de sempre), "Mapa de Salas"
+  (visão somente-leitura de todas as salas, organizadas por departamento →
+  bloco; cada sala tem sua própria tabela com dias da semana como colunas e
+  horários 8h–22h como linhas; um seletor filtra entre todas as salas, apenas
+  alocadas ou apenas vazias) e, só pra quem tem permissão de gerenciamento
+  (Diretor/secretários), uma terceira opção "Gerenciamento".
 - **Gerenciamento institucional** — tela dedicada (não é exclusiva por
   identidade de usuário, e sim por permissão) com abas para: criar/editar
   usuários e atribuir sua função; criar/editar/excluir funções (definindo
@@ -282,7 +283,7 @@ não configurado" após entrar — ver `src/db/supabaseClient.js`.
 
 | Usuário | Senha | Função |
 |---|---|---|
-| `chief` | `chief123` | Diretor |
+| `admin` | `chief123` | Diretor |
 | `math.grad` | `math123` | Coordenador de Graduação — Matemática |
 | `math.pos` | `math123` | Coordenador de Pós-Graduação — Matemática |
 | `math.profmat` | `math123` | Coordenador PROFMAT — Matemática |
