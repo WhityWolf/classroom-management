@@ -1069,40 +1069,64 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
     const groupOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
     const sorted=[...displayRooms].sort((a,b)=>groupOrder(groupOf(a))-groupOrder(groupOf(b))||gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true}));
     const dateStr=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    // Monta a mesma hierarquia Depto → Bloco → Salas que a UI usa
+    const pdfGroups=[];
+    sorted.forEach(room=>{
+      const g=groupOf(room);
+      if(!pdfGroups.length||pdfGroups[pdfGroups.length-1].name!==g)
+        pdfGroups.push({name:g,rd:gRole(room.roleId),blocks:[]});
+      const grp=pdfGroups[pdfGroups.length-1];
+      const blkLabel=gBlockLabel(room.blockId);
+      if(!grp.blocks.length||grp.blocks[grp.blocks.length-1].blockId!==room.blockId)
+        grp.blocks.push({blockId:room.blockId,label:blkLabel,rooms:[]});
+      grp.blocks[grp.blocks.length-1].rooms.push(room);
+    });
     const thDays=DAYS.map(d=>`<th>${d.slice(0,3)}</th>`).join('');
-    const roomBlocks=sorted.map((room,idx)=>{
+    const roomHtml=room=>{
       const rd=gRole(room.roleId);
       const colMaps={};DAYS.forEach(d=>{colMaps[d]=buildColMap(room.id,d);});
       const bodyRows=MAP_HOURS.map(h=>{
         const cells=DAYS.map(d=>{
           const cell=colMaps[d][h];
           if(cell===null)return'';
-          if(!cell.c)return`<td style="border:1px solid #e2e8f0;height:20px"></td>`;
+          if(!cell.c)return`<td></td>`;
           const cd=gRole(cell.c.roleId);
           const sb=blockForDay(cell.c,d);
           const tip=`${cell.c.name}${cell.c.sec!=null?` · Turma ${cell.c.sec}`:''}${cell.c.teacher?` · ${cell.c.teacher}`:''} · ${fmtHour(sb.sh)}–${fmtHour(sb.eh)}`;
-          return`<td rowspan="${cell.span}" title="${tip.replace(/"/g,'&quot;')}" style="border:1px solid #e2e8f0;border-left:2px solid ${cd.clr};background:${cd.clr}22;padding:2px 4px;vertical-align:top;overflow:hidden"><span style="color:${cd.textClr};font-weight:600;font-size:7px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${cell.c.code}${cell.c.sec!=null?` T${cell.c.sec}`:''}</span>${cell.c.teacher?`<span style="color:#64748b;font-size:6px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${cell.c.teacher}</span>`:''}</td>`;
+          return`<td rowspan="${cell.span}" title="${tip.replace(/"/g,'&quot;')}" style="border-left:2px solid ${cd.clr};background:${cd.clr}22"><span style="color:${cd.textClr};font-weight:700">${cell.c.code}${cell.c.sec!=null?` T${cell.c.sec}`:''}</span>${cell.c.teacher?`<br><span class="tchr">${cell.c.teacher}</span>`:''}</td>`;
         }).join('');
-        return`<tr><td style="border:1px solid #e2e8f0;padding:2px 4px;white-space:nowrap;font-size:7px;color:#64748b;background:#f8fafc">${h}:00–${h+1}:00</td>${cells}</tr>`;
+        return`<tr><td class="hcell">${h}:00–${h+1}:00</td>${cells}</tr>`;
       }).join('');
-      const showGroup=idx===0||groupOf(sorted[idx-1])!==groupOf(room);
-      const groupHdr=showGroup?`<div class="group-hdr" style="border-left:3px solid ${rd.clr}">${rd.subUnitFull}</div>`:'';
-      return`${groupHdr}<div class="room-card"><div class="room-hdr" style="border-left:3px solid ${rd.clr}"><span style="color:${rd.textClr};font-weight:700">${room.label}</span><span class="cap">${room.cap} alunos</span></div><div style="overflow-x:auto"><table><thead><tr><th>Horário</th>${thDays}</tr></thead><tbody>${bodyRows}</tbody></table></div></div>`;
+      const responsible=getRoomResponsible(room);
+      return`<div class="room-card"><div class="room-hdr" style="border-left:3px solid ${rd.clr}"><span style="color:${rd.textClr};font-weight:700;font-size:8px">${room.label}</span><span class="cap">${room.cap} al.</span><span class="resp">${responsible}</span></div><table><thead><tr><th class="hth">Horário</th>${thDays}</tr></thead><tbody>${bodyRows}</tbody></table></div>`;
+    };
+    const sectionsHtml=pdfGroups.map(grp=>{
+      const blocksHtml=grp.blocks.map(blk=>`<div class="blk-section"><div class="blk-hdr">${blk.label}</div><div class="rooms-wrap">${blk.rooms.map(roomHtml).join('')}</div></div>`).join('');
+      return`<div class="dept-section"><div class="dept-hdr" style="border-left:3px solid ${grp.rd.clr}">${grp.name}</div>${blocksHtml}</div>`;
     }).join('');
     const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>Mapa de Salas — ${selectedPeriod}</title><style>
       *{box-sizing:border-box;margin:0;padding:0;}
-      body{font-family:Arial,sans-serif;font-size:9px;color:#1e293b;padding:8mm;}
-      h1{font-size:13px;font-weight:700;margin-bottom:2px;}
-      .meta{font-size:8px;color:#64748b;margin-bottom:12px;}
-      .group-hdr{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:4px 8px;background:#f1f5f9;margin:12px 0 4px;page-break-after:avoid;}
-      .room-card{margin-bottom:10px;page-break-inside:avoid;}
-      .room-hdr{padding:3px 8px;background:#f8fafc;margin-bottom:2px;display:flex;align-items:center;gap:8px;}
-      .cap{color:#94a3b8;font-size:8px;margin-left:4px;}
-      table{border-collapse:collapse;width:100%;}
-      th{background:#f8fafc;padding:3px 6px;text-align:center;border:1px solid #e2e8f0;font-size:7px;font-weight:600;}
-      td{padding:2px 4px;border:1px solid #e2e8f0;height:20px;vertical-align:middle;}
-      @media print{@page{size:A4 portrait;margin:8mm;}}
-    </style></head><body><h1>Mapa de Salas</h1><div class="meta">Período ${selectedPeriod} · ${allocatedRooms.length} sala${allocatedRooms.length!==1?'s':''} · Gerado em ${dateStr}</div>${roomBlocks}</body></html>`;
+      body{font-family:Arial,sans-serif;font-size:7px;color:#1e293b;padding:6mm;}
+      h1{font-size:11px;font-weight:700;margin-bottom:2px;}
+      .meta{font-size:6px;color:#64748b;margin-bottom:8px;}
+      .dept-section{margin-bottom:12px;}
+      .dept-hdr{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:3px 8px;background:#f1f5f9;margin-bottom:5px;page-break-after:avoid;}
+      .blk-section{margin-bottom:8px;}
+      .blk-hdr{font-size:6px;font-weight:600;color:#64748b;padding:2px 8px 2px 14px;background:#f8fafc;border-bottom:1px solid #b8c4d0;margin-bottom:4px;page-break-after:avoid;}
+      .rooms-wrap{display:flex;flex-wrap:wrap;gap:8px;}
+      .room-card{flex:1 1 340px;min-width:0;border:1px solid #b8c4d0;border-radius:3px;overflow:hidden;page-break-inside:avoid;}
+      .room-hdr{display:flex;align-items:center;gap:5px;padding:3px 6px;background:#f8fafc;border-bottom:1px solid #b8c4d0;}
+      .cap{color:#94a3b8;font-size:6px;}
+      .resp{font-size:6px;color:#64748b;margin-left:auto;}
+      table{border-collapse:collapse;width:100%;table-layout:fixed;}
+      .hth{width:52px;}
+      th{background:#f8fafc;padding:2px 2px;text-align:center;border:1px solid #b8c4d0;font-size:6px;font-weight:600;white-space:nowrap;}
+      td{padding:1px 2px;border:1px solid #b8c4d0;height:14px;vertical-align:top;overflow:hidden;font-size:6px;}
+      td span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+      .hcell{color:#94a3b8;background:#f8fafc;white-space:nowrap;font-size:5px;}
+      .tchr{color:#64748b;font-size:5px;}
+      @media print{@page{size:A4 landscape;margin:6mm;}.dept-section{page-break-before:auto;}}
+    </style></head><body><h1>Mapa de Salas</h1><div class="meta">Período ${selectedPeriod} · ${displayRooms.length} sala${displayRooms.length!==1?'s':''} · Gerado em ${dateStr}</div>${sectionsHtml}</body></html>`;
     const w=window.open('','_blank');
     w.document.write(html);
     w.document.close();
