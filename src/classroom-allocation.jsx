@@ -7,6 +7,7 @@ import LoginPage from './components/LoginPage.jsx';
 import UserManagement from './components/UserManagement.jsx';
 import ManagementScreen from './components/ManagementScreen.jsx';
 import * as db from './db/allocations.js';
+import * as authApi from './db/authApi.js';
 import { useRealtimeSync } from './db/useRealtimeSync.js';
 import { supabaseConfigured } from './db/supabaseClient.js';
 
@@ -1032,6 +1033,16 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
   },[roomFilter,rooms,allocatedRooms,allocatedRoomIds]);
   const subUnitOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
 
+  const[mapUsers,setMapUsers]=useState([]);
+  useEffect(()=>{authApi.getUsers().then(setMapUsers).catch(()=>{});},[]);
+  // roleId → nome(s) dos usuários com aquela função; vazio = "Diretoria"
+  const roleUserNames=useMemo(()=>{
+    const m={};
+    mapUsers.forEach(u=>{if(!m[u.roleId])m[u.roleId]=[];m[u.roleId].push(u.name);});
+    return m;
+  },[mapUsers]);
+  const getRoomResponsible=room=>roleUserNames[room.roleId]?.join(', ')||'Diretoria';
+
   const MAP_HOURS=HOURS.filter(h=>h>=8); // 8..21 → faixas 8:00–9:00 até 21:00–22:00
 
   // Retorna um mapa hour→{span,c,merged}|null para renderização vertical.
@@ -1156,7 +1167,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
         </div>
       )}
       <div style={{flex:1,overflow:'auto',background:T.bg,padding:16}}>
-        <RoomMapGrid rooms={displayRooms} alloc={alloc} mapHours={MAP_HOURS} buildColMap={buildColMap} gRole={gRole} gBlockLabel={gBlockLabel} subUnits={subUnits}/>
+        <RoomMapGrid rooms={displayRooms} alloc={alloc} mapHours={MAP_HOURS} buildColMap={buildColMap} gRole={gRole} gBlockLabel={gBlockLabel} subUnits={subUnits} getRoomResponsible={getRoomResponsible}/>
       </div>
     </div>
   );
@@ -1165,7 +1176,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
 // Grade somente-leitura do Mapa de Salas — uma tabela por sala, com dias da
 // semana como colunas e horários (8h–22h) como linhas. buildColMap é passado
 // pelo RoomMapScreen para não precisar passar alloc inteiro para cada card.
-function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnits}){
+function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnits,getRoomResponsible}){
   const{T,theme}=useT();
   const groupOf=room=>gRole(room.roleId).subUnitFull;
   const groupOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
@@ -1178,7 +1189,8 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
       <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Nenhuma sala cadastrada.</div>
     </div>
   );
-  const thBdr=`1px solid ${T.bdr}`;
+  const tableBdrClr=theme==='light'?'#b8c4d0':'#253355';
+  const thBdr=`1px solid ${tableBdrClr}`;
   const shiftBg=h=>h===12||h===18?T.faint:T.bg;
   // Agrupa rooms sequencialmente por departamento para intercalar separadores
   const groups=[];
@@ -1202,10 +1214,11 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
                 const rdR=gRole(room.roleId),rdRClr=dtc(rdR,theme);
                 const colMaps={};DAYS.forEach(d=>{colMaps[d]=buildColMap(room.id,d);});
                 return(
-                  <div key={room.id} style={{flex:'1 1 460px',minWidth:0,border:`1px solid ${T.bdr}`,borderRadius:8,overflow:'hidden',background:T.surface}}>
-                    <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderBottom:`1px solid ${T.bdr}`,borderLeft:`3px solid ${rdR.clr}`,background:`${rdR.clr}${theme==='light'?'10':'0a'}`}}>
+                  <div key={room.id} style={{flex:'1 1 460px',minWidth:0,border:`1px solid ${tableBdrClr}`,borderRadius:8,overflow:'hidden',background:T.surface}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderBottom:`1px solid ${tableBdrClr}`,borderLeft:`3px solid ${rdR.clr}`,background:`${rdR.clr}${theme==='light'?'10':'0a'}`}}>
                       <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:700,color:rdRClr}}>{room.label}</span>
                       <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>{room.cap} alunos</span>
+                      <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.muted,marginLeft:6}}>{getRoomResponsible(room)}</span>
                       <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,marginLeft:'auto'}}>{gBlockLabel(room.blockId)}</span>
                     </div>
                     <div style={{overflowX:'auto'}}>
