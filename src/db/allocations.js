@@ -30,7 +30,7 @@ async function unwrap(query) {
 }
 
 export async function fetchAll() {
-  const [subUnitRows, roleRows, blockRows, rooms, courses, statusRows, notifRows, featureRows] = await Promise.all([
+  const [subUnitRows, roleRows, blockRows, rooms, courses, statusRows, notifRows, featureRows, settingsRows] = await Promise.all([
     unwrap(supabase.from('sub_units').select('*').order('name')),
     unwrap(supabase.from('roles').select('*').order('name')),
     unwrap(supabase.from('blocks').select('*').order('local').order('name')),
@@ -39,6 +39,7 @@ export async function fetchAll() {
     unwrap(supabase.from('coordination_statuses').select('*')),
     unwrap(supabase.from('notifications').select('*').order('id')),
     unwrap(supabase.from('room_features').select('*').order('name')),
+    unwrap(supabase.from('app_settings').select('*').eq('id', 'singleton')),
   ]);
   return {
     subUnits: subUnitRows.map(s => ({
@@ -55,6 +56,7 @@ export async function fetchAll() {
     coordinationStatuses: Object.fromEntries(statusRows.map(r => [r.role_id, r.status])),
     notifications: notifRows.map(mapNotification),
     featureOptions: featureRows.map(r => r.name),
+    currentPeriodOverride: settingsRows[0]?.current_period_override ?? null,
   };
 }
 
@@ -148,4 +150,11 @@ export async function setCoordinationStatus(roleId, status) {
 
 export async function markAllNotificationsRead() {
   await unwrap(supabase.from('notifications').update({ read: true }).eq('read', false));
+}
+
+// period=null volta ao comportamento automático (maior período por
+// comparePeriods); um valor força esse período como "atual" pra todo mundo,
+// via a linha singleton de app_settings.
+export async function setCurrentPeriodOverride(period) {
+  await unwrap(supabase.from('app_settings').update({ current_period_override: period }).eq('id', 'singleton'));
 }

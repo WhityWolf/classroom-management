@@ -23,7 +23,7 @@ function upsertById(list, row) {
 
 export function useRealtimeSync({
   setSubUnits, setRoles, setBlocks, setRooms, setCourses,
-  setCoordinationStatuses, setNotifs, setFeatureOptions,
+  setCoordinationStatuses, setNotifs, setFeatureOptions, setCurrentPeriodOverride,
 }) {
   useEffect(() => {
     if (!supabaseConfigured) return;
@@ -55,8 +55,11 @@ export function useRealtimeSync({
           ? prev.filter(name => name !== old.name)
           : prev.includes(row.name) ? prev : [...prev, row.name].sort());
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, ({ new: row }) => {
+        setCurrentPeriodOverride(row.current_period_override);
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [setSubUnits, setRoles, setBlocks, setRooms, setCourses, setCoordinationStatuses, setNotifs, setFeatureOptions]);
+  }, [setSubUnits, setRoles, setBlocks, setRooms, setCourses, setCoordinationStatuses, setNotifs, setFeatureOptions, setCurrentPeriodOverride]);
 }

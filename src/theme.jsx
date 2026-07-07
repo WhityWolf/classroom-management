@@ -9,7 +9,7 @@ import { createContext, useContext } from 'react';
 export const LIGHT = {
   bg: '#f4f6fb', surface: '#ffffff', card: '#f9fafb', inner: '#f1f3f8',
   bdr: '#e2e8f0', bdr2: '#cbd5e1',
-  txt: '#0f172a', txt2: '#334155', muted: '#64748b', dim: '#94a3b8',
+  txt: '#0f172a', txt2: '#334155', muted: '#475569', dim: '#64748b',
   faint: '#eef2f7', hover: '#e8edf5',
   barTrack: '#e2e8f0', barExist: '#94a3b8',
   scrollThumb: '#cbd5e1', scrollTrack: '#f4f6fb',
@@ -21,7 +21,7 @@ export const LIGHT = {
 export const DARK = {
   bg: '#070e1c', surface: '#060c18', card: '#0a1424', inner: '#040810',
   bdr: '#0f1c30', bdr2: '#18263d',
-  txt: '#e2e8f0', txt2: '#94a3b8', muted: '#3d4f66', dim: '#1e2d42',
+  txt: '#e2e8f0', txt2: '#94a3b8', muted: '#8ea0b8', dim: '#64768e',
   faint: '#040810', hover: '#0d1829',
   barTrack: '#0f1c30', barExist: '#3d5a80',
   scrollThumb: '#18263d', scrollTrack: 'transparent',
