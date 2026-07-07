@@ -3,6 +3,7 @@ import { ThemeCtx, LIGHT, DARK, useT, dtc, dbg } from './theme.jsx';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { isInstitutionalRole } from './auth/roles.js';
 import { PERMS } from './auth/permissions.js';
+import { DEFAULT_PERIOD, PERIOD_RE, comparePeriods } from './periods.js';
 import LoginPage from './components/LoginPage.jsx';
 import UserManagement from './components/UserManagement.jsx';
 import ManagementScreen from './components/ManagementScreen.jsx';
@@ -139,15 +140,6 @@ function buildCellContent(cell,day,mode){
 // código/seção sem revisitar isto.
 const slugify=s=>s.normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,'');
 const courseId=(roleId,code,sec,period)=>`${roleId}-${slugify(code)}-${sec}-${slugify(period)}`;
-// "2026.1" — ano.período; "o período mais recente" é só o maior valor em
-// allPeriods.sort(comparePeriods) — não existe uma tabela/flag separada pra
-// "período atual". Comparação numérica, não lexical: "2026.10" > "2026.2"
-// lexicalmente (compara caractere a caractere) mas é "2026.2" que vem depois
-// numericamente — comparePeriods evita essa pegadinha mesmo sendo um caso
-// raro na prática (a maioria dos calendários acadêmicos não passa de .1/.2/.3).
-const DEFAULT_PERIOD='2026.1';
-const PERIOD_RE=/^\d{4}\.\d+$/;
-
 function ptError(e) {
   const msg = e?.message ?? String(e);
   if (msg.includes('foreign key constraint'))  return 'Referência inválida: verifique se todos os campos obrigatórios foram preenchidos corretamente.';
@@ -157,11 +149,6 @@ function ptError(e) {
   if (msg.includes('invalid input syntax'))    return 'Formato de dado inválido em um dos campos.';
   return msg;
 }
-const comparePeriods=(a,b)=>{
-  const[ay,an]=a.split('.').map(Number),[by,bn]=b.split('.').map(Number);
-  return ay!==by?ay-by:an-bn;
-};
-
 // Planilha (.csv/.ods/.xlsx) com uma linha por disciplina/turma — modelo
 // próprio do app (não o relatório bruto do SIGAA, que vem em blocos
 // cabeçalho+turmas e exige outra estrutura). Colunas, na ordem:
@@ -420,7 +407,6 @@ function Dashboard(){
   const[dayPickerModal, setDayPickerModal] =useState(null);
   const[showUsers,      setShowUsers]      =useState(false);
   const[toast,          setToast]          =useState(null);
-  const[newPeriodModal, setNewPeriodModal] =useState(false);
   // null = "segue o período mais recente" (currentPeriod) — assim, quando um
   // período novo é criado (ou os dados terminam de carregar), o usuário cai
   // nele automaticamente em vez de ficar presa num valor calculado cedo
@@ -434,6 +420,11 @@ function Dashboard(){
   // referência). Não precisa "limpar" depois que ganha uma disciplina de
   // verdade — o Set abaixo dedup, é inofensivo manter os dois.
   const[createdPeriods,setCreatedPeriods]  =useState([]);
+  // Desbloqueio institucional de período passado — deliberado e reversível,
+  // nunca persiste sozinho: reseta pra false sempre que selectedPeriod muda
+  // (ver useEffect abaixo), então toda entrada em modo "editar histórico"
+  // exige uma ação fresca, não é um estado que sobrevive escondido.
+  const[pastEditUnlocked,setPastEditUnlocked]=useState(false);
 
   const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),3200);};
 
@@ -447,6 +438,11 @@ function Dashboard(){
   const currentPeriod=allPeriods[allPeriods.length-1]??DEFAULT_PERIOD;
   const selectedPeriod=periodOverride??currentPeriod;
   const isPastPeriod=selectedPeriod!==currentPeriod;
+  // Instituição pode destravar um período passado pra corrigir alocação
+  // histórica — não-institucional nunca pode, então periodLocked===isPastPeriod
+  // pra eles, preservando o travamento absoluto que já existia.
+  const periodLocked=isPastPeriod&&!(isInstitutional&&pastEditUnlocked);
+  useEffect(()=>{setPastEditUnlocked(false);},[selectedPeriod]);
   const periodCourses=useMemo(()=>courses.filter(c=>c.period===selectedPeriod),[courses,selectedPeriod]);
 
   const d         =gRole(activeRoleId);
@@ -502,10 +498,10 @@ function Dashboard(){
     return{total:mine.length,done:done.length,pend:mine.length-done.length,cross};
   },[periodCourses,activeRoleId,ROOMS]);
 
-  // Período passado é somente leitura pra todo mundo, função institucional
-  // inclusa — não dá pra reescrever histórico mesmo sendo diretor.
-  const canAllocate   =!isPastPeriod&&(isInstitutional||!isLocked);
-  const canDealloc    =!isPastPeriod&&(isInstitutional||!isLocked);
+  // Período passado é somente leitura por padrão — instituição pode
+  // destravar via periodLocked (ver acima); não-institucional nunca pode.
+  const canAllocate   =!periodLocked&&(isInstitutional||!isLocked);
+  const canDealloc    =!periodLocked&&(isInstitutional||!isLocked);
   const canMerge      =canAllocate&&can(PERMS.MERGE_GROUPS);
   const canEditFeatures=can(PERMS.MANAGE_ROOMS);
   const canEditCourse =canAllocate;
@@ -516,7 +512,7 @@ function Dashboard(){
   // contrário da Grade, que serve bem só pra consultar onde algo ficou).
   // Força Horários sem precisar de efeito: a UI renderiza por este valor,
   // não pelo `viewMode` bruto, então não há "vazamento" de um clique antigo.
-  const effectiveViewMode=isPastPeriod?'grid':viewMode;
+  const effectiveViewMode=periodLocked?'grid':viewMode;
 
   // Clique vindo da Grade — sempre um dia específico (a aba ativa). Mesclar
   // exige saber qual bloco/horário está em conflito pra mostrar no modal, daí
@@ -682,14 +678,16 @@ function Dashboard(){
   // tabela de períodos. "Criar" um período é só passar a selecioná-lo
   // (periodOverride); ele só persiste de fato quando algo é criado/importado
   // nele. Só o Diretor decide quando um novo período letivo começa.
-  const handleCreatePeriod=newPeriod=>{
-    const trimmed=newPeriod.trim();
-    if(!PERIOD_RE.test(trimmed)){showToast('Período deve seguir o formato AAAA.N, ex.: 2026.2.','err');return;}
-    if(comparePeriods(trimmed,currentPeriod)<=0){showToast(`O novo período precisa ser posterior a ${currentPeriod}.`,'err');return;}
-    setNewPeriodModal(false);
+  // A criação em si (validação de formato/recência) agora acontece na aba
+  // "Períodos" de Gerenciamento — isto só assume um valor já validado e
+  // completa a transição: registra o período, seleciona-o e volta pra
+  // Alocar Disciplinas já com ele em foco (mesmo comportamento de antes,
+  // agora cruzando a fronteira entre as duas telas).
+  const handlePeriodCreatedFromManagement=trimmed=>{
     setCreatedPeriods(prev=>prev.includes(trimmed)?prev:[...prev,trimmed]);
     setPeriodOverride(trimmed);
     setSelId(null);
+    setScreen('allocate');
     showToast(`Período ${trimmed} criado e selecionado.`,'ok');
   };
 
@@ -741,7 +739,8 @@ function Dashboard(){
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
   if(screen==='select')return<ScreenSelector onPick={setScreen} subUnits={subUnits}/>;
   if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} onBack={()=>setScreen('select')}/>;
-  if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')}/>;
+  if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')}
+    courses={courses} createdPeriods={createdPeriods} onPeriodCreated={handlePeriodCreatedFromManagement}/>;
 
   return(
     <RolesCtx.Provider value={{roles,subUnits,blocks,gRole,gBlockLabel}}>
@@ -796,8 +795,18 @@ function Dashboard(){
           title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:isPastPeriod?T.muted:dClr,fontSize:12,fontWeight:600,outline:'none',cursor:'pointer'}}>
           {allPeriods.map(p=><option key={p} value={p}>{p}{p===currentPeriod?' (atual)':' — somente leitura'}</option>)}
         </select>
-        {isInstitutional&&<button className="icon-btn" onClick={()=>setNewPeriodModal(true)} title="Criar novo período letivo" style={{padding:'5px 9px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,fontWeight:700,cursor:'pointer',lineHeight:1}}>+</button>}
-        {isPastPeriod&&<span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'3px 7px',whiteSpace:'nowrap'}}>🔒 PERÍODO PASSADO — SOMENTE LEITURA</span>}
+        {isPastPeriod&&(isInstitutional?(
+          <button onClick={()=>{if(pastEditUnlocked)setSelId(null);setPastEditUnlocked(v=>!v);}}
+            title={pastEditUnlocked?'Clique para bloquear novamente':'Clique para habilitar edição deste período passado'}
+            style={{...mono,fontSize:9,fontWeight:700,cursor:'pointer',borderRadius:4,padding:'3px 7px',whiteSpace:'nowrap',
+              color:pastEditUnlocked?(theme==='light'?'#b91c1c':'#ef4444'):(theme==='light'?'#b45309':'#FBBF24'),
+              background:pastEditUnlocked?(theme==='light'?'#fef2f2':'#2a0a0a'):(theme==='light'?'#fffbeb':'#1a1400'),
+              border:`1px solid ${pastEditUnlocked?(theme==='light'?'#fca5a5':'#ef444444'):(theme==='light'?'#fcd34d':'#F59E0B44')}`}}>
+            {pastEditUnlocked?'🔓 EDIÇÃO HABILITADA (PERÍODO PASSADO)':'🔒 PERÍODO PASSADO — SOMENTE LEITURA'}
+          </button>
+        ):(
+          <span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'3px 7px',whiteSpace:'nowrap'}}>🔒 PERÍODO PASSADO — SOMENTE LEITURA</span>
+        ))}
         <div style={{flex:1}}/>
         {[['Total',stats.total,T.muted],['Alocadas',stats.done,theme==='light'?'#059669':'#34D399'],['Pendentes',stats.pend,theme==='light'?'#b45309':'#FBBF24'],['Outra Função',stats.cross,theme==='light'?'#5b21b6':'#A78BFA']].map(([l,v,c])=>(
           <div key={l} style={{textAlign:'center',padding:'0 12px',borderLeft:`1px solid ${T.bdr}`}}>
@@ -862,11 +871,11 @@ function Dashboard(){
                 onSelect={()=>selectCourse(c)}
                 onEdit={canEditCourse?()=>setEditingCourse(c):null}
                 onRemove={hasAnyAllocation(c)&&canDealloc&&!isLocked?()=>deallocate(c.id):null}
-                onDelete={canManageCatalog&&!isPastPeriod?()=>handleDeleteCourse(c):null}/>
+                onDelete={canManageCatalog?()=>handleDeleteCourse(c):null}/>
             ))}
           </div>
 
-          {!isLocked&&!isPastPeriod&&(
+          {!isLocked&&!periodLocked&&(
             <div style={{padding:'10px 12px',borderTop:`1px solid ${T.bdr}`,flexShrink:0,display:'flex',flexDirection:'column',gap:6}}>
               {canManageCatalog&&activeRoleId!==ALL_ROLES&&(
                 <div style={{display:'flex',gap:6}}>
@@ -907,7 +916,7 @@ function Dashboard(){
           <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 16px',borderBottom:`1px solid ${T.bdr}`,background:theme==='light'?T.surface:T.card,flexShrink:0}}>
             <div style={{display:'flex',gap:2,border:`1px solid ${T.bdr2}`,borderRadius:6,overflow:'hidden'}}>
               {[['list','≡ Salas'],['grid','⊞ Horários']].map(([m,lbl])=>{
-                const disabled=m==='list'&&isPastPeriod;
+                const disabled=m==='list'&&periodLocked;
                 return(
                   <button key={m} disabled={disabled} title={disabled?'Período passado é somente leitura — use Horários para consultar.':undefined}
                     className={`viewbtn${effectiveViewMode===m?' active':''}`} onClick={()=>!disabled&&setViewMode(m)}
@@ -959,7 +968,6 @@ function Dashboard(){
       {importingCourses&&<CourseImportModal targetRoleId={targetRoleId} roleName={gRole(targetRoleId)?.full} period={selectedPeriod}
         existingCourses={courses.filter(c=>c.roleId===targetRoleId&&c.period===selectedPeriod)}
         onConfirm={handleImportCourses} onCancel={()=>setImportingCourses(false)}/>}
-      {newPeriodModal&&<NewPeriodModal currentPeriod={currentPeriod} onConfirm={handleCreatePeriod} onCancel={()=>setNewPeriodModal(false)}/>}
       {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
       {autoAllocResult&&<AutoAllocModal result={autoAllocResult} dept={d} onApply={handleApplyAllocation} onCancel={()=>setAutoAllocResult(null)}/>}
       {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={mergeModal.day} onConfirm={()=>forceAllocate(mergeModal.roomId,mergeModal.day)} onCancel={()=>setMergeModal(null)}/>}
@@ -1848,49 +1856,6 @@ function FinishConfirmModal({roleName,remaining,onConfirm,onCancel}){
           <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
           <button onClick={onConfirm} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,background:theme==='light'?'#059669':'#34D399',border:'none',color:'#fff',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
             ✓ Confirmar e Notificar o Diretor
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Modal de novo período letivo (só Diretor) ────────────────────────────────
-// Período não tem tabela própria — é só a string carimbada em cada
-// disciplina (courses.period). "Criar" um aqui só seleciona o valor
-// (Dashboard.handleCreatePeriod); ele só persiste de verdade quando algo é
-// criado/importado nele. Por isso a validação aqui é só de formato e de ser
-// estritamente posterior ao período atual, não uma checagem de unicidade.
-function NewPeriodModal({currentPeriod,onConfirm,onCancel}){
-  const{T,theme}=useT();
-  const mono={fontFamily:"'DM Mono',monospace"};
-  const[value,setValue]=useState('');
-  const[error,setError]=useState(null);
-  const submit=()=>{
-    const trimmed=value.trim();
-    if(!PERIOD_RE.test(trimmed)){setError('Use o formato AAAA.N, ex.: 2026.2.');return;}
-    if(comparePeriods(trimmed,currentPeriod)<=0){setError(`Precisa ser posterior ao período atual (${currentPeriod}).`);return;}
-    onConfirm(trimmed);
-  };
-  return(
-    <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:380,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
-        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
-          <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Novo Período Letivo</div>
-          <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
-        </div>
-        <div style={{fontSize:12,color:T.txt2,lineHeight:1.6,marginBottom:14}}>
-          O período atual ({currentPeriod}) vira somente leitura assim que um período posterior existir. Disciplinas novas (criadas ou importadas) entram no período selecionado.
-        </div>
-        <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Período (AAAA.N)</label>
-        <input autoFocus value={value} onChange={e=>{setValue(e.target.value);setError(null);}} onKeyDown={e=>e.key==='Enter'&&submit()}
-          placeholder={`ex.: ${currentPeriod.split('.')[0]}.${Number(currentPeriod.split('.')[1]||1)+1}`}
-          style={{width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:13,outline:'none',marginBottom:6}}/>
-        {error&&<div style={{fontSize:11,color:'#ef4444',marginBottom:10}}>{error}</div>}
-        <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:14}}>
-          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
-          <button onClick={submit} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,background:'#60A5FA',border:'none',color:'#000',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
-            Criar e Selecionar
           </button>
         </div>
       </div>

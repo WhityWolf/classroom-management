@@ -11,6 +11,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useT, dtc, dbg } from '../theme.jsx';
 import { PERMS } from '../auth/permissions.js';
+import { isInstitutionalRole } from '../auth/roles.js';
+import { DEFAULT_PERIOD, PERIOD_RE, comparePeriods } from '../periods.js';
 import * as db from '../db/allocations.js';
 import * as mgmt from '../db/management.js';
 import * as authApi from '../db/authApi.js';
@@ -68,10 +70,11 @@ function ptError(e) {
   return msg;
 }
 
-export default function ManagementScreen({ onBack }) {
+export default function ManagementScreen({ onBack, courses=[], createdPeriods=[], onPeriodCreated }) {
   const { currentUser, logout, can } = useAuth();
   const { T, theme, toggleTheme } = useT();
   const mono = { fontFamily:"'DM Mono',monospace" };
+  const isInstitutional = isInstitutionalRole(currentUser.role);
 
   const [subUnits, setSubUnits] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -106,6 +109,11 @@ export default function ManagementScreen({ onBack }) {
     { key:'subunits', label:'Sub-unidades',   perm:PERMS.MANAGE_SUB_UNITS },
     { key:'rooms',    label:'Salas e Blocos', perm:PERMS.MANAGE_ROOMS },
   ].filter(t => can(t.perm));
+  // "Períodos" não é gated por PERMS.* — segue o mesmo critério estrutural
+  // (isInstitutional) que já valia pro antigo botão "+" de criar período em
+  // Alocar Disciplinas, evitando exigir uma migração/concessão de permissão
+  // nova pra uma função "Diretor" já existente usar isto de cara.
+  if (isInstitutional) tabs.push({ key:'periods', label:'Períodos' });
   const [tab, setTab] = useState(tabs[0]?.key ?? 'users');
 
   const gRole = id => {
@@ -167,6 +175,7 @@ export default function ManagementScreen({ onBack }) {
             {tab==='roles'&&<RolesTab roles={roles} subUnits={subUnits} rooms={rooms} blocks={blocks} users={users} can={can} reloadDomain={reloadDomain} flash={flash}/>}
             {tab==='subunits'&&<SubUnitsTab subUnits={subUnits} roles={roles} can={can} reloadDomain={reloadDomain} flash={flash}/>}
             {tab==='rooms'&&<RoomsBlocksTab rooms={rooms} blocks={blocks} roles={roles} subUnits={subUnits} can={can} reloadDomain={reloadDomain} flash={flash} gRole={gRole}/>}
+            {tab==='periods'&&<PeriodsTab courses={courses} createdPeriods={createdPeriods} onPeriodCreated={onPeriodCreated} flash={flash}/>}
           </>
         )}
       </div>
@@ -679,5 +688,72 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
         </form>
       ):null
     }/>
+  );
+}
+
+// ─── Aba Períodos ─────────────────────────────────────────────────────────────
+// Período não tem tabela própria — é só a string carimbada em cada disciplina
+// (courses.period), veja periods.js. "Criar" um aqui só valida formato/
+// recência e chama onPeriodCreated, que quem chamou (Dashboard) usa pra
+// registrar o período (createdPeriods), selecioná-lo e levar de volta pra
+// Alocar Disciplinas — nada é persistido no banco por esta aba.
+function PeriodsTab({ courses, createdPeriods, onPeriodCreated, flash }) {
+  const { T } = useT();
+  const [creating, setCreating] = useState(false);
+  const [value, setValue] = useState('');
+  const [error, setError] = useState(null);
+
+  const allPeriods = useMemo(() => {
+    const s = new Set([...courses.map(c=>c.period), ...createdPeriods]);
+    return [...s].sort(comparePeriods);
+  }, [courses, createdPeriods]);
+  const currentPeriod = allPeriods[allPeriods.length-1] ?? DEFAULT_PERIOD;
+
+  const startCreate = () => { setCreating(true); setValue(''); setError(null); };
+  const cancel = () => { setCreating(false); setValue(''); setError(null); };
+  const submit = () => {
+    const trimmed = value.trim();
+    if (!PERIOD_RE.test(trimmed)) { setError('Use o formato AAAA.N, ex.: 2026.2.'); return; }
+    if (comparePeriods(trimmed, currentPeriod) <= 0) { setError(`Precisa ser posterior ao período atual (${currentPeriod}).`); return; }
+    setCreating(false); setValue(''); setError(null);
+    onPeriodCreated(trimmed);
+  };
+
+  return (
+    <PanelLayout T={T} list={(
+      <>
+        <button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Novo Período</button>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {[...allPeriods].reverse().map(p=>(
+            <div key={p} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
+              <div style={{flex:1,display:'flex',alignItems:'center',gap:8}}>
+                <span style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:600,color:T.txt}}>{p}</span>
+                {p===currentPeriod&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:'#059669',background:'#f0fdf4',border:'1px solid #86efac',borderRadius:4,padding:'2px 6px'}}>ATUAL</span>}
+              </div>
+              <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{courses.filter(c=>c.period===p).length} disciplina{courses.filter(c=>c.period===p).length!==1?'s':''}</span>
+            </div>
+          ))}
+          {allPeriods.length===0&&<div style={{...{fontFamily:"'DM Mono',monospace"},fontSize:12,color:T.dim}}>Nenhum período cadastrado ainda.</div>}
+        </div>
+      </>
+    )} panel={creating&&(
+      <form onSubmit={e=>{e.preventDefault();submit();}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>Novo Período Letivo</div>
+        <div style={{fontSize:12,color:T.txt2,lineHeight:1.6,marginBottom:14}}>
+          O período atual ({currentPeriod}) vira somente leitura assim que um período posterior existir. Disciplinas novas (criadas ou importadas) entram no período selecionado.
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={lblStyle(T)}>Período (AAAA.N)</label>
+          <input autoFocus value={value} onChange={e=>{setValue(e.target.value);setError(null);}}
+            placeholder={`ex.: ${currentPeriod.split('.')[0]}.${Number(currentPeriod.split('.')[1]||1)+1}`}
+            style={inpStyle(T)}/>
+        </div>
+        {error&&<div style={{fontSize:11,color:'#ef4444',marginBottom:10}}>{error}</div>}
+        <div style={{display:'flex',gap:8}}>
+          <button type="button" onClick={cancel} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Criar e Selecionar</button>
+        </div>
+      </form>
+    )}/>
   );
 }
