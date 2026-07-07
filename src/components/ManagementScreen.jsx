@@ -129,26 +129,26 @@ export default function ManagementScreen({ onBack }) {
       `}</style>
 
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
-        <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>☰</button>
-        <span style={{fontSize:15,fontWeight:700,color:T.txt}}>⚙️ Gerenciamento</span>
+        <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
+        <span style={{fontSize:14,fontWeight:700,color:T.txt}}>⚙️ Gerenciamento</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
         {tabs.map(t => (
           <button key={t.key} className="mgmt-tab" onClick={() => setTab(t.key)}
-            style={{padding:'5px 12px',borderRadius:6,fontSize:13,fontWeight:600,background:tab===t.key?T.inner:'transparent',border:`1px solid ${tab===t.key?T.bdr2:'transparent'}`,color:tab===t.key?T.txt:T.muted,cursor:'pointer'}}>
+            style={{padding:'5px 12px',borderRadius:6,fontSize:12,fontWeight:600,background:tab===t.key?T.inner:'transparent',border:`1px solid ${tab===t.key?T.bdr2:'transparent'}`,color:tab===t.key?T.txt:T.muted,cursor:'pointer'}}>
             {t.label}
           </button>
         ))}
         <div style={{flex:1}}/>
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
-          <span style={{...mono,fontSize:12,color:T.muted}}>{currentUser.name}</span>
-          <span style={{...mono,fontSize:11,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
+          <span style={{...mono,fontSize:10,color:T.muted}}>{currentUser.name}</span>
+          <span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
         </div>
-        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
-        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Sair</button>
+        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
 
       {feedback && (
-        <div style={{margin:'10px 18px 0',padding:'8px 12px',borderRadius:6,fontSize:14,flexShrink:0,
+        <div style={{margin:'10px 18px 0',padding:'8px 12px',borderRadius:6,fontSize:13,flexShrink:0,
           background:feedback.type==='ok'?(theme==='light'?'#f0fdf4':'#0a2a0a'):(theme==='light'?'#fef2f2':'#2a0a0a'),
           border:`1px solid ${feedback.type==='ok'?(theme==='light'?'#86efac':'#34d39944'):(theme==='light'?'#fca5a5':'#ef444444')}`,
           color:feedback.type==='ok'?(theme==='light'?'#15803d':'#34d399'):(theme==='light'?'#b91c1c':'#ef4444')}}>
@@ -158,9 +158,9 @@ export default function ManagementScreen({ onBack }) {
 
       <div style={{flex:1,overflow:'auto'}}>
         {loading?(
-          <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',...mono,fontSize:13,color:T.dim}}>Carregando…</div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',...mono,fontSize:12,color:T.dim}}>Carregando…</div>
         ):loadError?(
-          <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',...mono,fontSize:13,color:'#ef4444'}}>Erro ao carregar: {loadError}</div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',...mono,fontSize:12,color:'#ef4444'}}>Erro ao carregar: {loadError}</div>
         ):(
           <>
             {tab==='users'&&<UsersTab users={users} roles={roles} subUnits={subUnits} can={can} currentUser={currentUser} reloadUsers={reloadUsers} flash={flash} gRole={gRole}/>}
@@ -184,8 +184,8 @@ function PanelLayout({ T, list, panel }) {
   );
 }
 
-const inpStyle = T => ({width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:14,outline:'none'});
-const lblStyle = T => ({fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4});
+const inpStyle = T => ({width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:13,outline:'none'});
+const lblStyle = T => ({fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4});
 
 // ─── Aba Usuários ─────────────────────────────────────────────────────────────
 function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash, gRole }) {
@@ -240,11 +240,11 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
       <>
         <div style={{display:'flex',gap:8,marginBottom:14}}>
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nome ou usuário…" style={{...inpStyle(T),flex:1}}/>
-          {can(PERMS.CREATE_ANY_USER)&&<button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>+ Novo Usuário</button>}
+          {can(PERMS.CREATE_ANY_USER)&&<button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>+ Novo Usuário</button>}
         </div>
-        <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
+        <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
           <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-            {['Nome','Usuário','Função','Status',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
+            {['Nome','Usuário','Função','Status',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
           </tr></thead>
           <tbody>
             {visible.map(u=>{
@@ -252,23 +252,23 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
               return(
                 <tr key={u.id} style={{borderBottom:`1px solid ${T.bdr}`,opacity:u.isActive?1:.55}}>
                   <td style={{padding:'8px 10px'}}>
-                    <div style={{display:'flex',alignItems:'center',gap:6}}>{u.name}{isSystemUser(u)&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:'#94a3b8',background:'#94a3b822',border:'1px solid #94a3b844',borderRadius:3,padding:'1px 5px'}}>sistema</span>}</div>
-                    {!isSystemUser(u)&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>{u.email}</div>}
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>{u.name}{isSystemUser(u)&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:'#94a3b8',background:'#94a3b822',border:'1px solid #94a3b844',borderRadius:3,padding:'1px 5px'}}>sistema</span>}</div>
+                    {!isSystemUser(u)&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{u.email}</div>}
                   </td>
-                  <td style={{padding:'8px 10px',fontFamily:"'DM Mono',monospace",fontSize:13}}>{u.username}</td>
-                  <td style={{padding:'8px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:role.textClr,background:`${role.clr}22`,border:`1px solid ${role.clr}44`,borderRadius:4,padding:'2px 7px'}}>{role.full}</span></td>
-                  <td style={{padding:'8px 10px',fontSize:12,color:u.isActive?(theme==='light'?'#15803d':'#34d399'):T.dim}}>{u.isActive?'Ativo':'Inativo'}</td>
+                  <td style={{padding:'8px 10px',fontFamily:"'DM Mono',monospace",fontSize:12}}>{u.username}</td>
+                  <td style={{padding:'8px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:role.textClr,background:`${role.clr}22`,border:`1px solid ${role.clr}44`,borderRadius:4,padding:'2px 7px'}}>{role.full}</span></td>
+                  <td style={{padding:'8px 10px',fontSize:11,color:u.isActive?(theme==='light'?'#15803d':'#34d399'):T.dim}}>{u.isActive?'Ativo':'Inativo'}</td>
                   <td style={{padding:'8px 10px'}}>
                     <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                      {can(PERMS.EDIT_ANY_USER)&&<button onClick={()=>startEdit(u)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:12,cursor:'pointer'}}>Editar</button>}
-                      {can(PERMS.DEACTIVATE_USER)&&u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&<button onClick={()=>deactivate(u)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:12,cursor:'pointer'}}>Desativar</button>}
+                      {can(PERMS.EDIT_ANY_USER)&&<button onClick={()=>startEdit(u)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>}
+                      {can(PERMS.DEACTIVATE_USER)&&u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&<button onClick={()=>deactivate(u)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Desativar</button>}
                       {can(PERMS.DELETE_USER)&&!u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&(
                         confirmDelete===u.id
                           ? <>
-                              <button onClick={()=>deleteUser(u)} style={{padding:'3px 10px',background:'#ef4444',border:'none',borderRadius:4,color:'#fff',fontSize:12,cursor:'pointer',fontWeight:600}}>Confirmar</button>
-                              <button onClick={()=>setConfirmDelete(null)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+                              <button onClick={()=>deleteUser(u)} style={{padding:'3px 10px',background:'#ef4444',border:'none',borderRadius:4,color:'#fff',fontSize:11,cursor:'pointer',fontWeight:600}}>Confirmar</button>
+                              <button onClick={()=>setConfirmDelete(null)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
                             </>
-                          : <button onClick={()=>setConfirmDelete(u.id)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:12,cursor:'pointer'}}>Excluir</button>
+                          : <button onClick={()=>setConfirmDelete(u.id)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
                       )}
                     </div>
                   </td>
@@ -280,7 +280,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
       </>
     )} panel={editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
-        <div style={{fontSize:15,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Novo Usuário':'Editar Usuário'}</div>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Novo Usuário':'Editar Usuário'}</div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome Completo</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Usuário</label><input value={form.username} readOnly={editing!=='new'} onChange={e=>setForm({...form,username:e.target.value})} style={{...inpStyle(T),opacity:editing!=='new'?.6:1}}/></div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>E-mail</label><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} style={inpStyle(T)}/></div>
@@ -298,13 +298,13 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
           </select>
         </div>
         {editing!=='new'&&!isSystemUser(editing)&&(
-          <label style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,cursor:'pointer',fontSize:14,color:T.txt}}>
+          <label style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,cursor:'pointer',fontSize:13,color:T.txt}}>
             <input type="checkbox" checked={form.isActive} onChange={e=>setForm({...form,isActive:e.target.checked})}/> Conta ativa
           </label>
         )}
         <div style={{display:'flex',gap:8}}>
-          <button type="button" onClick={cancel} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
-          <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>{editing==='new'?'Criar Usuário':'Salvar'}</button>
+          <button type="button" onClick={cancel} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>{editing==='new'?'Criar Usuário':'Salvar'}</button>
         </div>
       </form>
     )}/>
@@ -360,7 +360,7 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
   return (
     <PanelLayout T={T} list={(
       <>
-        {can(PERMS.MANAGE_ROLES)&&<button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Função</button>}
+        {can(PERMS.MANAGE_ROLES)&&<button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Função</button>}
         <div style={{display:'flex',flexDirection:'column',gap:8}}>
           {roles.map(r=>{
             const su=subUnits.find(s=>s.id===r.subUnitId);
@@ -368,11 +368,11 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
               <div key={r.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
                 <div style={{width:3,height:28,borderRadius:1,background:su?.clr??'#94A3B8'}}/>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:14,fontWeight:600,color:T.txt}}>{r.name}{r.isSystem&&<span style={{...{fontFamily:"'DM Mono',monospace"},fontSize:11,color:T.dim,marginLeft:6}}>(sistema)</span>}</div>
-                  <div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>{su?su.fullName:'Institucional'} · {r.permissions.length} permissões · {roomsOfRole(r.id).length} salas</div>
+                  <div style={{fontSize:13,fontWeight:600,color:T.txt}}>{r.name}{r.isSystem&&<span style={{...{fontFamily:"'DM Mono',monospace"},fontSize:9,color:T.dim,marginLeft:6}}>(sistema)</span>}</div>
+                  <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{su?su.fullName:'Institucional'} · {r.permissions.length} permissões · {roomsOfRole(r.id).length} salas</div>
                 </div>
-                <button onClick={()=>startEdit(r)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:12,cursor:'pointer'}}>Editar</button>
-                {!r.isSystem&&<button onClick={()=>remove(r)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:12,cursor:'pointer'}}>Excluir</button>}
+                <button onClick={()=>startEdit(r)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
+                {!r.isSystem&&<button onClick={()=>remove(r)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>}
               </div>
             );
           })}
@@ -380,19 +380,19 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
       </>
     )} panel={confirmDelete?(
       <div>
-        <div style={{fontSize:15,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
-        <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:14,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+        <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
           A função <strong>{confirmDelete.role.name}</strong> possui <strong>{confirmDelete.courseCount} disciplina(s)</strong> associada(s) em todos os períodos. Ao excluir, todas serão removidas permanentemente.
         </div>
-        <div style={{fontSize:14,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>
+        <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>
         <div style={{display:'flex',gap:8}}>
-          <button type="button" onClick={()=>setConfirmDelete(null)} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
-          <button type="button" onClick={confirmRemove} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>Excluir tudo</button>
+          <button type="button" onClick={()=>setConfirmDelete(null)} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button type="button" onClick={confirmRemove} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Excluir tudo</button>
         </div>
       </div>
     ):editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
-        <div style={{fontSize:15,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Nova Função':'Editar Função'}</div>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Nova Função':'Editar Função'}</div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
         <div style={{marginBottom:12}}>
           <label style={lblStyle(T)}>Sub-unidade (vazio = institucional)</label>
@@ -408,23 +408,23 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
             return(
               <button key={key} type="button"
                 onClick={()=>{setForm(f=>({...f,permissions:[...PERM_PRESETS.find(p=>p.key===key).perms]}));setAdvOpen(false);}}
-                style={{padding:'5px 12px',borderRadius:5,fontSize:13,fontWeight:600,cursor:'pointer',border:`1px solid ${active?'#3b82f6':T.bdr2}`,background:active?'#3b82f618':'transparent',color:active?'#3b82f6':T.muted}}>
+                style={{padding:'5px 12px',borderRadius:5,fontSize:12,fontWeight:600,cursor:'pointer',border:`1px solid ${active?'#3b82f6':T.bdr2}`,background:active?'#3b82f618':'transparent',color:active?'#3b82f6':T.muted}}>
                 {label}
               </button>
             );
           })}
           {!PERM_PRESETS.some(p=>presetActive(p.key,form.permissions))&&form.permissions.length>0&&(
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>Personalizado</span>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>Personalizado</span>
           )}
           <button type="button" onClick={()=>setAdvOpen(v=>!v)}
-            style={{marginLeft:'auto',padding:'5px 10px',borderRadius:5,fontSize:12,border:`1px solid ${T.bdr2}`,background:'transparent',color:T.muted,cursor:'pointer'}}>
+            style={{marginLeft:'auto',padding:'5px 10px',borderRadius:5,fontSize:11,border:`1px solid ${T.bdr2}`,background:'transparent',color:T.muted,cursor:'pointer'}}>
             {advOpen?'Ocultar avançado ↑':'Avançado ↓'}
           </button>
         </div>
         {advOpen&&(
           <div style={{display:'flex',flexDirection:'column',gap:6,marginBottom:14,maxHeight:260,overflow:'auto'}}>
             {Object.values(PERMS).map(p=>(
-              <label key={p} style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:T.txt2,cursor:'pointer'}}>
+              <label key={p} style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:T.txt2,cursor:'pointer'}}>
                 <input type="checkbox" checked={form.permissions.includes(p)} onChange={()=>togglePerm(p)}/> {PERM_LABELS[p]??p}
               </label>
             ))}
@@ -439,9 +439,9 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
                 if(!bRooms.length) return null;
                 return(
                   <div key={b.id}>
-                    <div style={{fontSize:12,fontWeight:600,color:T.dim,textTransform:'uppercase',padding:'4px 0 2px'}}>{b.local} — {b.name}</div>
+                    <div style={{fontSize:10,fontWeight:600,color:T.dim,textTransform:'uppercase',padding:'4px 0 2px'}}>{b.local} — {b.name}</div>
                     {bRooms.map(room=>(
-                      <label key={room.id} style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:T.txt2,cursor:'pointer',paddingLeft:8}}>
+                      <label key={room.id} style={{display:'flex',alignItems:'center',gap:8,fontSize:12,color:T.txt2,cursor:'pointer',paddingLeft:8}}>
                         <input type="checkbox" checked={room.roleId===editing.id} onChange={e=>toggleRoom(room,e.target.checked)}/> {room.label}
                       </label>
                     ))}
@@ -452,8 +452,8 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
           </>
         )}
         <div style={{display:'flex',gap:8}}>
-          <button type="button" onClick={cancel} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
-          <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>Salvar</button>
+          <button type="button" onClick={cancel} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Salvar</button>
         </div>
       </form>
     )}/>
@@ -491,28 +491,28 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
   return (
     <PanelLayout T={T} list={(
       <>
-        {can(PERMS.MANAGE_SUB_UNITS)&&<button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sub-unidade</button>}
+        {can(PERMS.MANAGE_SUB_UNITS)&&<button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sub-unidade</button>}
         <div style={{display:'flex',flexDirection:'column',gap:8}}>
           {subUnits.map(s=>(
             <div key={s.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
               <div style={{width:3,height:28,borderRadius:1,background:s.clr}}/>
               <div style={{flex:1}}>
-                <div style={{fontSize:14,fontWeight:600,color:T.txt}}>{s.fullName}</div>
-                <div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>{s.name&&<span style={{marginRight:8}}>{s.name}</span>}{roles.filter(r=>r.subUnitId===s.id).length} funções</div>
+                <div style={{fontSize:13,fontWeight:600,color:T.txt}}>{s.fullName}</div>
+                <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{s.name&&<span style={{marginRight:8}}>{s.name}</span>}{roles.filter(r=>r.subUnitId===s.id).length} funções</div>
               </div>
-              <button onClick={()=>startEdit(s)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:12,cursor:'pointer'}}>Editar</button>
-              <button onClick={()=>remove(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:12,cursor:'pointer'}}>Excluir</button>
+              <button onClick={()=>startEdit(s)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
+              <button onClick={()=>remove(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
             </div>
           ))}
         </div>
       </>
     )} panel={editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
-        <div style={{fontSize:15,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Nova Sub-unidade':'Editar Sub-unidade'}</div>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Nova Sub-unidade':'Editar Sub-unidade'}</div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome curto</label><input value={form.name} maxLength={20} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome completo</label><input value={form.fullName} onChange={e=>setForm({...form,fullName:e.target.value})} style={inpStyle(T)}/></div>
         <button type="button" onClick={()=>setColorOpen(v=>!v)}
-          style={{width:'100%',marginBottom:colorOpen?8:16,padding:'6px 10px',borderRadius:5,fontSize:12,border:`1px solid ${T.bdr2}`,background:'transparent',color:T.muted,cursor:'pointer',textAlign:'left'}}>
+          style={{width:'100%',marginBottom:colorOpen?8:16,padding:'6px 10px',borderRadius:5,fontSize:11,border:`1px solid ${T.bdr2}`,background:'transparent',color:T.muted,cursor:'pointer',textAlign:'left'}}>
           {colorOpen?'Cores ↑':'Cores ↓'}
         </button>
         {colorOpen&&(
@@ -526,8 +526,8 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
           </div>
         )}
         <div style={{display:'flex',gap:8}}>
-          <button type="button" onClick={cancel} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
-          <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>Salvar</button>
+          <button type="button" onClick={cancel} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Salvar</button>
         </div>
       </form>
     )}/>
@@ -585,15 +585,15 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       <>
         <div style={{display:'flex',gap:6,marginBottom:14}}>
           {[['rooms','Salas'],['blocks','Blocos']].map(([k,l])=>(
-            <button key={k} onClick={()=>{setSub(k);cancelRoom();cancelBlock();}} style={{padding:'6px 14px',borderRadius:6,fontSize:13,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>{l}</button>
+            <button key={k} onClick={()=>{setSub(k);cancelRoom();cancelBlock();}} style={{padding:'6px 14px',borderRadius:6,fontSize:12,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>{l}</button>
           ))}
         </div>
         {sub==='rooms'?(
           <>
-            {can(PERMS.MANAGE_ROOMS)&&<button onClick={startCreateRoom} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sala</button>}
-            <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
+            {can(PERMS.MANAGE_ROOMS)&&<button onClick={startCreateRoom} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sala</button>}
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
               <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-                {['Sala','Bloco','Vagas','Função','Sub-unidade',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
+                {['Sala','Bloco','Vagas','Função','Sub-unidade',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
               </tr></thead>
               <tbody>
                 {rooms.map(r=>{
@@ -604,14 +604,14 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
                   return(
                     <tr key={r.id} style={{borderBottom:`1px solid ${T.bdr}`}}>
                       <td style={{padding:'7px 10px'}}>{r.label}</td>
-                      <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>{blockLabel(r.blockId)}</td>
+                      <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{blockLabel(r.blockId)}</td>
                       <td style={{padding:'7px 10px'}}>{r.cap}</td>
-                      <td style={{padding:'7px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:role.textClr,background:`${role.clr}22`,borderRadius:4,padding:'2px 6px'}}>{roleLabel}</span></td>
-                      <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>{su?su.fullName:'—'}</td>
+                      <td style={{padding:'7px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:role.textClr,background:`${role.clr}22`,borderRadius:4,padding:'2px 6px'}}>{roleLabel}</span></td>
+                      <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{su?su.fullName:'—'}</td>
                       <td style={{padding:'7px 10px'}}>
                         <div style={{display:'flex',gap:6}}>
-                          <button onClick={()=>startEditRoom(r)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:12,cursor:'pointer'}}>Editar</button>
-                          <button onClick={()=>removeRoom(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:12,cursor:'pointer'}}>Excluir</button>
+                          <button onClick={()=>startEditRoom(r)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
+                          <button onClick={()=>removeRoom(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
                         </div>
                       </td>
                     </tr>
@@ -622,13 +622,13 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
           </>
         ):(
           <>
-            {can(PERMS.MANAGE_BLOCKS)&&<button onClick={startCreateBlock} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Novo Bloco</button>}
+            {can(PERMS.MANAGE_BLOCKS)&&<button onClick={startCreateBlock} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Novo Bloco</button>}
             <div style={{display:'flex',flexDirection:'column',gap:8}}>
               {blocks.map(b=>(
                 <div key={b.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{flex:1,fontSize:14,color:T.txt}}>{b.local} — {b.name}</div>
-                  <button onClick={()=>startEditBlock(b)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:12,cursor:'pointer'}}>Editar</button>
-                  <button onClick={()=>removeBlock(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:12,cursor:'pointer'}}>Excluir</button>
+                  <div style={{flex:1,fontSize:13,color:T.txt}}>{b.local} — {b.name}</div>
+                  <button onClick={()=>startEditBlock(b)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
+                  <button onClick={()=>removeBlock(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
                 </div>
               ))}
             </div>
@@ -638,7 +638,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
     )} panel={
       editingRoom?(
         <form onSubmit={e=>{e.preventDefault();saveRoom();}}>
-          <div style={{fontSize:15,fontWeight:700,marginBottom:16,color:T.txt}}>{editingRoom==='new'?'Nova Sala':'Editar Sala'}</div>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editingRoom==='new'?'Nova Sala':'Editar Sala'}</div>
           <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome/Número</label><input value={roomForm.label} onChange={e=>setRoomForm({...roomForm,label:e.target.value})} style={inpStyle(T)}/></div>
           <div style={{display:'flex',gap:8,marginBottom:12}}>
             <div style={{flex:1}}><label style={lblStyle(T)}>Capacidade</label><input type="number" min={1} value={roomForm.cap} onChange={e=>setRoomForm({...roomForm,cap:e.target.value})} style={inpStyle(T)}/></div>
@@ -663,18 +663,18 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
             </select>
           </div>
           <div style={{display:'flex',gap:8}}>
-            <button type="button" onClick={cancelRoom} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
-            <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>Salvar</button>
+            <button type="button" onClick={cancelRoom} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+            <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Salvar</button>
           </div>
         </form>
       ):editingBlock?(
         <form onSubmit={e=>{e.preventDefault();saveBlock();}}>
-          <div style={{fontSize:15,fontWeight:700,marginBottom:16,color:T.txt}}>{editingBlock==='new'?'Novo Bloco':'Editar Bloco'}</div>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editingBlock==='new'?'Novo Bloco':'Editar Bloco'}</div>
           <div style={{marginBottom:12}}><label style={lblStyle(T)}>Centro (ex.: CCN1)</label><input value={blockForm.local} onChange={e=>setBlockForm({...blockForm,local:e.target.value})} style={inpStyle(T)}/></div>
           <div style={{marginBottom:16}}><label style={lblStyle(T)}>Nome do bloco (ex.: SG-04)</label><input value={blockForm.name} onChange={e=>setBlockForm({...blockForm,name:e.target.value})} style={inpStyle(T)}/></div>
           <div style={{display:'flex',gap:8}}>
-            <button type="button" onClick={cancelBlock} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
-            <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>Salvar</button>
+            <button type="button" onClick={cancelBlock} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+            <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Salvar</button>
           </div>
         </form>
       ):null

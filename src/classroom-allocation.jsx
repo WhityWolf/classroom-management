@@ -348,7 +348,7 @@ export default function App(){
 function AppRouter(){
   const{currentUser,isLoading}=useAuth();
   const{T}=useT();
-  if(isLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:13,color:T.dim}}>Carregando…</div>;
+  if(isLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>Carregando…</div>;
   if(!currentUser)return<LoginPage/>;
   return<Dashboard/>;
 }
@@ -737,8 +737,8 @@ function Dashboard(){
   const selBannerBg=dbg(d,theme);
   const mono       ={fontFamily:"'DM Mono',monospace"};
 
-  if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:13,color:T.dim}}>Carregando dados…</div>;
-  if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:13,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
+  if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>Carregando dados…</div>;
+  if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
   if(screen==='select')return<ScreenSelector onPick={setScreen} subUnits={subUnits}/>;
   if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} onBack={()=>setScreen('select')}/>;
   if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')}/>;
@@ -773,11 +773,11 @@ function Dashboard(){
       {/* Cabeçalho */}
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={()=>setScreen('select')} title="Voltar ao menu"
-          style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>☰</button>
+          style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         {isInstitutional?(
           <select value={activeRoleId??''} onChange={e=>{setActiveRoleId(e.target.value);setSelId(null);}}
             title="Função em exibição — filtra as disciplinas da barra lateral"
-            style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:dClr,fontSize:14,fontWeight:600,outline:'none',cursor:'pointer'}}>
+            style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:dClr,fontSize:13,fontWeight:600,outline:'none',cursor:'pointer'}}>
             <option value={ALL_ROLES}>Todas</option>
             {subUnits.map(su=>(
               <optgroup key={su.id} label={su.fullName}>
@@ -788,40 +788,40 @@ function Dashboard(){
         ):(
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <div style={{width:7,height:7,borderRadius:'50%',background:d.clr,boxShadow:`0 0 8px ${d.clr}99`}}/>
-            <span style={{fontSize:14,fontWeight:600,color:dClr}}>{d.full}</span>
+            <span style={{fontSize:13,fontWeight:600,color:dClr}}>{d.full}</span>
           </div>
         )}
         <div style={{width:1,height:20,background:T.bdr2}}/>
         <select value={selectedPeriod} onChange={e=>{setPeriodOverride(e.target.value===currentPeriod?null:e.target.value);setSelId(null);}}
-          title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:isPastPeriod?T.muted:dClr,fontSize:13,fontWeight:600,outline:'none',cursor:'pointer'}}>
+          title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:isPastPeriod?T.muted:dClr,fontSize:12,fontWeight:600,outline:'none',cursor:'pointer'}}>
           {allPeriods.map(p=><option key={p} value={p}>{p}{p===currentPeriod?' (atual)':' — somente leitura'}</option>)}
         </select>
-        {isInstitutional&&<button className="icon-btn" onClick={()=>setNewPeriodModal(true)} title="Criar novo período letivo" style={{padding:'5px 9px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:14,fontWeight:700,cursor:'pointer',lineHeight:1}}>+</button>}
-        {isPastPeriod&&<span style={{...mono,fontSize:11,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'3px 7px',whiteSpace:'nowrap'}}>🔒 PERÍODO PASSADO — SOMENTE LEITURA</span>}
+        {isInstitutional&&<button className="icon-btn" onClick={()=>setNewPeriodModal(true)} title="Criar novo período letivo" style={{padding:'5px 9px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,fontWeight:700,cursor:'pointer',lineHeight:1}}>+</button>}
+        {isPastPeriod&&<span style={{...mono,fontSize:9,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'3px 7px',whiteSpace:'nowrap'}}>🔒 PERÍODO PASSADO — SOMENTE LEITURA</span>}
         <div style={{flex:1}}/>
         {[['Total',stats.total,T.muted],['Alocadas',stats.done,theme==='light'?'#059669':'#34D399'],['Pendentes',stats.pend,theme==='light'?'#b45309':'#FBBF24'],['Outra Função',stats.cross,theme==='light'?'#5b21b6':'#A78BFA']].map(([l,v,c])=>(
           <div key={l} style={{textAlign:'center',padding:'0 12px',borderLeft:`1px solid ${T.bdr}`}}>
             <div style={{fontSize:18,fontWeight:700,color:c,lineHeight:1}}>{v}</div>
-            <div style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginTop:2}}>{l}</div>
+            <div style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginTop:2}}>{l}</div>
           </div>
         ))}
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
           <div style={{width:5,height:5,borderRadius:'50%',background:isInstitutional?(theme==='light'?'#5b21b6':'#A78BFA'):dClr}}/>
-          <span style={{...mono,fontSize:12,color:T.muted}}>{currentUser.name}</span>
-          <span style={{...mono,fontSize:11,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
-          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:11,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
+          <span style={{...mono,fontSize:10,color:T.muted}}>{currentUser.name}</span>
+          <span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
+          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         {isInstitutional&&(
           <>
-            <button className="icon-btn" onClick={()=>{setDeptPanel(true);setNotifPanel(false);}} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Coordenações</button>
-            <button className="icon-btn" onClick={()=>{setNotifPanel(v=>!v);markNotifsRead();}} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:unreadCount>0?(theme==='light'?'#b45309':'#FBBF24'):T.muted,fontSize:12,cursor:'pointer'}}>
-              🔔{unreadCount>0&&<span style={{marginLeft:4,background:'#ef4444',color:'#fff',borderRadius:10,padding:'0 5px',fontSize:11}}>{unreadCount}</span>}
+            <button className="icon-btn" onClick={()=>{setDeptPanel(true);setNotifPanel(false);}} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Coordenações</button>
+            <button className="icon-btn" onClick={()=>{setNotifPanel(v=>!v);markNotifsRead();}} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:unreadCount>0?(theme==='light'?'#b45309':'#FBBF24'):T.muted,fontSize:11,cursor:'pointer'}}>
+              🔔{unreadCount>0&&<span style={{marginLeft:4,background:'#ef4444',color:'#fff',borderRadius:10,padding:'0 5px',fontSize:9}}>{unreadCount}</span>}
             </button>
-            <button className="icon-btn" onClick={()=>setShowUsers(true)} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>👥 Usuários</button>
+            <button className="icon-btn" onClick={()=>setShowUsers(true)} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👥 Usuários</button>
           </>
         )}
-        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
-        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Sair</button>
+        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
 
       {/* Corpo */}
@@ -832,18 +832,18 @@ function Dashboard(){
           <div style={{padding:'10px 12px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
             <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Buscar disciplinas…" disabled={isLocked}
-              style={{width:'100%',padding:'5px 9px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:13,outline:'none',opacity:isLocked?.6:1}}/>
-            <div style={{fontSize:12,color:T.muted,marginTop:5}}>
+              style={{width:'100%',padding:'5px 9px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none',opacity:isLocked?.6:1}}/>
+            <div style={{fontSize:11,color:T.muted,marginTop:5}}>
               {pendingCount} pendente{pendingCount!==1?'s':''} · {allocatedCount} alocada{allocatedCount!==1?'s':''}
             </div>
           </div>
 
           {isLocked&&(
             <div style={{padding:'10px 14px',background:myStatus===DS.FORCE_FINISHED?(theme==='light'?'#fef2f2':'#1a0505'):(theme==='light'?'#f0fdf4':'#0a2a0a'),borderBottom:`1px solid ${myStatus===DS.FORCE_FINISHED?'#ef444433':'#34d39933'}`,flexShrink:0}}>
-              <div style={{fontSize:13,fontWeight:600,color:myStatus===DS.FORCE_FINISHED?(theme==='light'?'#b91c1c':'#ef4444'):(theme==='light'?'#15803d':'#34d399'),marginBottom:2}}>
+              <div style={{fontSize:12,fontWeight:600,color:myStatus===DS.FORCE_FINISHED?(theme==='light'?'#b91c1c':'#ef4444'):(theme==='light'?'#15803d':'#34d399'),marginBottom:2}}>
                 {myStatus===DS.FORCE_FINISHED?'🔒 Bloqueado pelo Diretor':'✓ Envio Concluído'}
               </div>
-              <div style={{fontSize:12,color:T.muted,lineHeight:1.4}}>
+              <div style={{fontSize:11,color:T.muted,lineHeight:1.4}}>
                 {myStatus===DS.FORCE_FINISHED?'Sua alocação foi bloqueada pelo diretor institucional.':'Você enviou suas alocações.'}
               </div>
             </div>
@@ -852,8 +852,8 @@ function Dashboard(){
           <div style={{flex:1,overflowY:'auto',padding:'5px'}}>
             {visibleSidebarCourses.length===0?(
               <div style={{textAlign:'center',padding:32,color:T.dim}}>
-                <div style={{fontSize:24,marginBottom:8}}>{search?'∅':'—'}</div>
-                <div style={{fontSize:14}}>{search?'Nenhum resultado':'Nenhuma disciplina cadastrada ainda'}</div>
+                <div style={{fontSize:25,marginBottom:8}}>{search?'∅':'—'}</div>
+                <div style={{fontSize:13}}>{search?'Nenhum resultado':'Nenhuma disciplina cadastrada ainda'}</div>
               </div>
             ):visibleSidebarCourses.map(c=>(
               <CourseCard key={c.id} course={c} activeRole={gRole(activeRoleId)} showRoleBadge={isInstitutional&&activeRoleId===ALL_ROLES}
@@ -871,12 +871,12 @@ function Dashboard(){
               {canManageCatalog&&activeRoleId!==ALL_ROLES&&(
                 <div style={{display:'flex',gap:6}}>
                   <button onClick={()=>setCreatingCourse(true)}
-                    style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:13,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
+                    style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
                     onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
                     + Nova Disciplina
                   </button>
                   <button onClick={()=>setImportingCourses(true)}
-                    style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:13,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
+                    style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
                     onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
                     ⇪ Importar ODS
                   </button>
@@ -884,7 +884,7 @@ function Dashboard(){
               )}
               {autoAllocInput.length>0&&(
                 <button onClick={handleAutoAllocate}
-                  style={{width:'100%',padding:'8px',background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,borderRadius:7,color:theme==='light'?'#1d4ed8':'#60A5FA',fontSize:13,fontWeight:600,cursor:'pointer',transition:'all .15s',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
+                  style={{width:'100%',padding:'8px',background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,borderRadius:7,color:theme==='light'?'#1d4ed8':'#60A5FA',fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
                   onMouseEnter={e=>{e.currentTarget.style.background=theme==='light'?'#dbeafe':'#1e3a5f';}}
                   onMouseLeave={e=>{e.currentTarget.style.background=theme==='light'?'#eff6ff':'#0d1f3d';}}>
                   ✨ Alocar Automaticamente
@@ -892,7 +892,7 @@ function Dashboard(){
               )}
               {!isInstitutional&&(
                 <button onClick={()=>setFinishConfirm(true)}
-                  style={{width:'100%',padding:'8px',background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,borderRadius:7,color:theme==='light'?'#15803d':'#34d399',fontSize:13,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
+                  style={{width:'100%',padding:'8px',background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,borderRadius:7,color:theme==='light'?'#15803d':'#34d399',fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
                   onMouseEnter={e=>{e.currentTarget.style.background=theme==='light'?'#dcfce7':'#0d3321';}}
                   onMouseLeave={e=>{e.currentTarget.style.background=theme==='light'?'#f0fdf4':'#0a2a0a';}}>
                   ✓ Marcar como Concluído
@@ -911,28 +911,28 @@ function Dashboard(){
                 return(
                   <button key={m} disabled={disabled} title={disabled?'Período passado é somente leitura — use Horários para consultar.':undefined}
                     className={`viewbtn${effectiveViewMode===m?' active':''}`} onClick={()=>!disabled&&setViewMode(m)}
-                    style={{padding:'4px 12px',fontSize:12,fontWeight:500,background:'transparent',border:'none',color:disabled?T.dim:(effectiveViewMode===m?dClr:T.muted),transition:'all .12s',cursor:disabled?'not-allowed':'pointer',opacity:disabled?.5:1}}>{lbl}</button>
+                    style={{padding:'4px 12px',fontSize:11,fontWeight:500,background:'transparent',border:'none',color:disabled?T.dim:(effectiveViewMode===m?dClr:T.muted),transition:'all .12s',cursor:disabled?'not-allowed':'pointer',opacity:disabled?.5:1}}>{lbl}</button>
                 );
               })}
             </div>
             <div style={{width:1,height:16,background:T.bdr2}}/>
             {effectiveViewMode==='grid'&&DAYS.map(dy=>(
-              <button key={dy} onClick={()=>setDay(dy)} style={{padding:'4px 10px',borderRadius:5,fontSize:12,fontWeight:500,background:day===dy?d.clr:'transparent',color:day===dy?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${day===dy?d.clr:T.bdr2}`,transition:'all .12s',cursor:'pointer'}}>{dy.slice(0,3)}</button>
+              <button key={dy} onClick={()=>setDay(dy)} style={{padding:'4px 10px',borderRadius:5,fontSize:11,fontWeight:500,background:day===dy?d.clr:'transparent',color:day===dy?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${day===dy?d.clr:T.bdr2}`,transition:'all .12s',cursor:'pointer'}}>{dy.slice(0,3)}</button>
             ))}
             <div style={{flex:1}}/>
-            <span style={{...mono,fontSize:12,color:T.dim}}>{isInstitutional?'Visão institucional — todas as salas visíveis':`Exibindo apenas salas da função ${gRole(currentUser.roleId)?.full}`}</span>
+            <span style={{...mono,fontSize:10,color:T.dim}}>{isInstitutional?'Visão institucional — todas as salas visíveis':`Exibindo apenas salas da função ${gRole(currentUser.roleId)?.full}`}</span>
           </div>
 
           {sel&&canAllocate&&(
             <div style={{display:'flex',alignItems:'center',gap:8,padding:'7px 16px',background:selBannerBg,borderBottom:`1px solid ${d.clr}44`,flexShrink:0}}>
               <div style={{width:6,height:6,borderRadius:'50%',background:d.clr,animation:'blink 1.5s infinite'}}/>
-              <span style={{...mono,fontSize:12,color:dClr,fontWeight:600}}>{sel.code}</span>
-              <span style={{fontSize:13,color:T.txt2,maxWidth:200,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{sel.name}</span>
-              <span style={{...mono,fontSize:12,color:T.muted}}>{fmtSchedule(sel)} · {sel.enroll} alunos</span>
+              <span style={{...mono,fontSize:11,color:dClr,fontWeight:600}}>{sel.code}</span>
+              <span style={{fontSize:12,color:T.txt2,maxWidth:200,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{sel.name}</span>
+              <span style={{...mono,fontSize:11,color:T.muted}}>{fmtSchedule(sel)} · {sel.enroll} alunos</span>
               <div style={{flex:1}}/>
-              {effectiveViewMode==='grid'&&!courseOccupiesDay(sel,day)&&<span style={{fontSize:12,color:theme==='light'?'#b45309':'#FBBF24'}}>Não ocorre na {day} — mude para {sel.blocks.flatMap(b=>b.days)[0]?.slice(0,3)}</span>}
-              {effectiveViewMode==='grid'&&courseOccupiesDay(sel,day)&&<span style={{fontSize:12,color:T.muted}}><span style={{color:d.clr}}>●</span> livre {canMerge&&<><span style={{color:'#F59E0B'}}>●</span> mesclar</>}</span>}
-              <button onClick={()=>setSelId(null)} style={{padding:'2px 8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:12,cursor:'pointer'}}>✕</button>
+              {effectiveViewMode==='grid'&&!courseOccupiesDay(sel,day)&&<span style={{fontSize:10,color:theme==='light'?'#b45309':'#FBBF24'}}>Não ocorre na {day} — mude para {sel.blocks.flatMap(b=>b.days)[0]?.slice(0,3)}</span>}
+              {effectiveViewMode==='grid'&&courseOccupiesDay(sel,day)&&<span style={{fontSize:10,color:T.muted}}><span style={{color:d.clr}}>●</span> livre {canMerge&&<><span style={{color:'#F59E0B'}}>●</span> mesclar</>}</span>}
+              <button onClick={()=>setSelId(null)} style={{padding:'2px 8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:10,cursor:'pointer'}}>✕</button>
             </div>
           )}
 
@@ -972,7 +972,7 @@ function Dashboard(){
         </div>
       )}
       {toast&&(
-        <div style={{position:'fixed',bottom:20,right:20,padding:'10px 16px',borderRadius:8,fontFamily:"'DM Mono',monospace",fontSize:13,zIndex:300,animation:'fadeIn .2s ease',boxShadow:T.shadowMd,
+        <div style={{position:'fixed',bottom:20,right:20,padding:'10px 16px',borderRadius:8,fontFamily:"'DM Mono',monospace",fontSize:12,zIndex:300,animation:'fadeIn .2s ease',boxShadow:T.shadowMd,
           background:toast.type==='warn'?(theme==='light'?'#fffbeb':'#2a1a00'):toast.type==='err'?(theme==='light'?'#fef2f2':'#2a0a0a'):(theme==='light'?'#f0fdf4':'#0a2a0a'),
           border:`1px solid ${toast.type==='warn'?'#F59E0B44':toast.type==='err'?'#ef444444':'#34d39944'}`,
           color:toast.type==='warn'?(theme==='light'?'#92400e':'#FBBF24'):toast.type==='err'?(theme==='light'?'#b91c1c':'#ef4444'):(theme==='light'?'#15803d':'#34d399')}}>
@@ -1014,17 +1014,17 @@ function ScreenSelector({onPick,subUnits}){
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
         <div style={{flex:1}}/>
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
-          <span style={{...mono,fontSize:12,color:T.muted}}>{currentUser.name}</span>
-          <span style={{...mono,fontSize:11,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
-          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:11,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
+          <span style={{...mono,fontSize:10,color:T.muted}}>{currentUser.name}</span>
+          <span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
+          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
-        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
-        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Sair</button>
+        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
       <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,animation:'fadeIn .2s ease'}}>
         <div style={{textAlign:'center'}}>
-          <div style={{fontSize:20,fontWeight:700,marginBottom:4}}>O que você quer fazer?</div>
-          <div style={{...mono,fontSize:13,color:T.dim}}>Sistema de Alocação de Salas — CCN/UFPI</div>
+          <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>O que você quer fazer?</div>
+          <div style={{...mono,fontSize:12,color:T.dim}}>Sistema de Alocação de Salas — CCN/UFPI</div>
         </div>
         <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center'}}>
           {cards.map(c=>(
@@ -1032,9 +1032,9 @@ function ScreenSelector({onPick,subUnits}){
               style={{width:260,padding:'28px 24px',background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,cursor:'pointer',textAlign:'left',transition:'all .15s',boxShadow:T.shadowSm}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;e.currentTarget.style.boxShadow=T.shadowMd;}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr;e.currentTarget.style.boxShadow=T.shadowSm;}}>
-              <div style={{fontSize:30,marginBottom:14}}>{c.icon}</div>
+              <div style={{fontSize:31,marginBottom:14}}>{c.icon}</div>
               <div style={{fontSize:16,fontWeight:700,color:T.txt,marginBottom:6}}>{c.title}</div>
-              <div style={{fontSize:13,color:T.muted,lineHeight:1.5}}>{c.desc}</div>
+              <div style={{fontSize:12,color:T.muted,lineHeight:1.5}}>{c.desc}</div>
             </button>
           ))}
         </div>
@@ -1177,48 +1177,48 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
         .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
       `}</style>
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
-        <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>☰</button>
-        <span style={{fontSize:15,fontWeight:700,color:T.txt}}>🗺 Mapa de Salas</span>
+        <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
+        <span style={{fontSize:14,fontWeight:700,color:T.txt}}>🗺 Mapa de Salas</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
         <select value={selectedPeriod} onChange={e=>setPeriodOverride(e.target.value===currentPeriod?null:e.target.value)}
-          title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,fontWeight:600,outline:'none',cursor:'pointer'}}>
+          title="Período letivo em exibição" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,fontWeight:600,outline:'none',cursor:'pointer'}}>
           {allPeriods.map(p=><option key={p} value={p}>{p}{p===currentPeriod?' (atual)':''}</option>)}
         </select>
         <div style={{width:1,height:16,background:T.bdr2}}/>
         <select value={roomFilter} onChange={e=>setRoomFilter(e.target.value)}
-          title="Filtrar salas" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,fontWeight:600,outline:'none',cursor:'pointer'}}>
+          title="Filtrar salas" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,fontWeight:600,outline:'none',cursor:'pointer'}}>
           <option value="all">Todas as salas</option>
           <option value="allocated">Apenas alocadas</option>
           <option value="empty">Apenas vazias</option>
         </select>
         <div style={{width:1,height:16,background:T.bdr2}}/>
         <select value={cellMode} onChange={e=>setCellMode(e.target.value)}
-          title="Detalhamento das disciplinas exibido em cada célula" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,fontWeight:600,outline:'none',cursor:'pointer'}}>
+          title="Detalhamento das disciplinas exibido em cada célula" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,fontWeight:600,outline:'none',cursor:'pointer'}}>
           <option value="padrao">Padrão</option>
           <option value="detalhado">Detalhado</option>
           <option value="simples">Simples</option>
         </select>
         <div style={{flex:1}}/>
-        <span style={{...mono,fontSize:12,color:T.dim}}>{allocatedRooms.length} sala{allocatedRooms.length!==1?'s':''} alocada{allocatedRooms.length!==1?'s':''}</span>
+        <span style={{...mono,fontSize:10,color:T.dim}}>{allocatedRooms.length} sala{allocatedRooms.length!==1?'s':''} alocada{allocatedRooms.length!==1?'s':''}</span>
         <button onClick={generatePdf} disabled={allocatedRooms.length===0} title="Gerar PDF com o mapa completo"
-          style={{padding:'5px 12px',background:theme==='light'?'#0f172a':'#e2e8f0',border:'none',borderRadius:6,color:theme==='light'?'#f1f5f9':'#0f172a',fontSize:13,fontWeight:600,cursor:allocatedRooms.length===0?'not-allowed':'pointer',opacity:allocatedRooms.length===0?.4:1,transition:'opacity .15s'}}>
+          style={{padding:'5px 12px',background:theme==='light'?'#0f172a':'#e2e8f0',border:'none',borderRadius:6,color:theme==='light'?'#f1f5f9':'#0f172a',fontSize:12,fontWeight:600,cursor:allocatedRooms.length===0?'not-allowed':'pointer',opacity:allocatedRooms.length===0?.4:1,transition:'opacity .15s'}}>
           ⬇ PDF
         </button>
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
-          <span style={{...mono,fontSize:12,color:T.muted}}>{currentUser.name}</span>
-          <span style={{...mono,fontSize:11,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
-          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:11,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
+          <span style={{...mono,fontSize:10,color:T.muted}}>{currentUser.name}</span>
+          <span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
+          {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
-        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
-        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Sair</button>
+        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
       {presentGroups.length>0&&(
         <div style={{display:'flex',alignItems:'center',gap:14,padding:'7px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,flexWrap:'wrap'}}>
-          <span style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>Legenda</span>
+          <span style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>Legenda</span>
           {presentGroups.map(dp=>(
             <div key={dp.subUnitFull} style={{display:'flex',alignItems:'center',gap:5}}>
               <div style={{width:8,height:8,borderRadius:2,background:dp.clr,flexShrink:0}}/>
-              <span style={{...mono,fontSize:12,color:T.muted}}>{dp.subUnitFull}</span>
+              <span style={{...mono,fontSize:10,color:T.muted}}>{dp.subUnitFull}</span>
             </div>
           ))}
         </div>
@@ -1242,8 +1242,8 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
   const groupCounts=useMemo(()=>{const m={};sorted.forEach(r=>{const g=groupOf(r);m[g]=(m[g]||0)+1;});return m;},[sorted]);
   if(sorted.length===0)return(
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',flexDirection:'column',gap:10,padding:40}}>
-      <div style={{fontSize:32,opacity:.15}}>🗺</div>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:13,color:T.dim}}>Nenhuma sala cadastrada.</div>
+      <div style={{fontSize:33,opacity:.15}}>🗺</div>
+      <div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>Nenhuma sala cadastrada.</div>
     </div>
   );
   const tableBdrClr=theme==='light'?'#b8c4d0':'#253355';
@@ -1269,15 +1269,15 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
         return(
           <div key={grp.name}>
             <div style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',marginBottom:14,background:`${rd.clr}${theme==='light'?'14':'10'}`,borderLeft:`3px solid ${rd.clr}`,borderRadius:'0 6px 6px 0'}}>
-              <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:700,color:rdClr,letterSpacing:1,textTransform:'uppercase'}}>{grp.name}</span>
-              <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>· {groupCounts[grp.name]} sala{groupCounts[grp.name]!==1?'s':''}</span>
+              <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,fontWeight:700,color:rdClr,letterSpacing:1,textTransform:'uppercase'}}>{grp.name}</span>
+              <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>· {groupCounts[grp.name]} sala{groupCounts[grp.name]!==1?'s':''}</span>
             </div>
             <div style={{display:'flex',flexDirection:'column',gap:20}}>
               {grp.blocks.map(blk=>(
                 <div key={blk.blockId}>
                   <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,paddingLeft:10}}>
                     <div style={{width:2,height:12,borderRadius:1,background:T.bdr2,flexShrink:0}}/>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:600,color:T.txt2,letterSpacing:.5}}>{blk.label}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:600,color:T.txt2,letterSpacing:.5}}>{blk.label}</span>
                     <div style={{flex:1,height:1,background:T.bdr}}/>
                   </div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:16}}>
@@ -1287,7 +1287,7 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
                       return(
                         <div key={room.id} style={{flex:'1 1 620px',minWidth:520,border:`1px solid ${tableBdrClr}`,borderRadius:8,overflow:'hidden',background:T.surface}}>
                           <div style={{padding:'6px 10px',borderBottom:`1px solid ${tableBdrClr}`,borderLeft:`3px solid ${rdR.clr}`,background:`${rdR.clr}${theme==='light'?'10':'0a'}`,textAlign:'center'}}>
-                            <span title={`${room.cap} alunos · ${getRoomResponsible(room)}`} style={{fontFamily:"'DM Mono',monospace",fontSize:14,fontWeight:700,color:rdRClr,cursor:'help'}}>{room.label}</span>
+                            <span title={`${room.cap} alunos · ${getRoomResponsible(room)}`} style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:700,color:rdRClr,cursor:'help'}}>{room.label}</span>
                           </div>
                           <div>
                       <table style={{borderCollapse:'collapse',width:'100%',tableLayout:'fixed'}}>
@@ -1297,14 +1297,14 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
                         </colgroup>
                         <thead>
                           <tr style={{background:T.surface}}>
-                            <th style={{padding:'5px 6px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim,fontWeight:400,borderBottom:thBdr,borderRight:thBdr,letterSpacing:.5,textTransform:'uppercase'}}>Horário</th>
-                            {DAYS.map(d=><th key={d} style={{padding:'5px 4px',textAlign:'center',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim,fontWeight:600,borderBottom:thBdr,borderLeft:thBdr}}>{d.slice(0,3)}</th>)}
+                            <th style={{padding:'5px 6px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,fontWeight:400,borderBottom:thBdr,borderRight:thBdr,letterSpacing:.5,textTransform:'uppercase'}}>Horário</th>
+                            {DAYS.map(d=><th key={d} style={{padding:'5px 4px',textAlign:'center',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,fontWeight:600,borderBottom:thBdr,borderLeft:thBdr}}>{d.slice(0,3)}</th>)}
                           </tr>
                         </thead>
                         <tbody>
                           {mapHours.map(h=>(
                             <tr key={h} style={{background:shiftBg(h)}}>
-                              <td style={{padding:'3px 6px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim,borderBottom:thBdr,borderRight:thBdr,whiteSpace:'nowrap'}}>{h}:00–{h+1}:00</td>
+                              <td style={{padding:'3px 6px',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,borderBottom:thBdr,borderRight:thBdr,whiteSpace:'nowrap'}}>{h}:00–{h+1}:00</td>
                               {DAYS.map(d=>{
                                 const cell=colMaps[d][h];
                                 if(cell===null)return null;
@@ -1315,11 +1315,11 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
                                   <td key={d} rowSpan={cell.span}
                                     title={content.tooltip}
                                     style={{padding:'3px 4px',borderBottom:thBdr,borderLeft:`2px solid ${cd.clr}`,verticalAlign:'top',background:`${cd.clr}${theme==='light'?'1e':'16'}`,overflow:'hidden'}}>
-                                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:cdClr,fontWeight:700,overflowWrap:'anywhere',lineHeight:1.2}}>{content.primary}</div>
-                                    {content.mode==='detalhado'&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{content.name}</div>}
-                                    {content.teacher&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{content.teacher}</div>}
-                                    {content.mode==='detalhado'&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{content.timeRange} · {content.enroll} alunos</div>}
-                                    {content.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:'#d97706'}}>+{content.merged}</span>}
+                                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:cdClr,fontWeight:700,overflowWrap:'anywhere',lineHeight:1.2}}>{content.primary}</div>
+                                    {content.mode==='detalhado'&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{content.name}</div>}
+                                    {content.teacher&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{content.teacher}</div>}
+                                    {content.mode==='detalhado'&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{content.timeRange} · {content.enroll} alunos</div>}
+                                    {content.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:'#d97706'}}>+{content.merged}</span>}
                                   </td>
                                 );
                               })}
@@ -1354,48 +1354,48 @@ function CourseCard({course,activeRole,showRoleBadge,selected,locked,roomLabel,o
       style={{padding:'8px 10px',borderRadius:6,marginBottom:2,cursor:(locked||!onSelect)?'default':'pointer',background:'transparent',border:`1px solid ${selected?activeRole.clr:T.bdr}`,transition:'background .1s, border-color .1s, opacity .15s'}}>
       {showRoleBadge&&(
         <div style={{marginBottom:4}} onClick={onSelect}>
-          <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.full}</span>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:badgeClr,background:`${cd.clr}${theme==='light'?'22':'14'}`,border:`1px solid ${cd.clr}44`,borderRadius:3,padding:'1px 4px'}}>{cd.full}</span>
         </div>
       )}
       <div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}>
         <div style={{display:'flex',alignItems:'center',gap:5}}>
-          <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:showRoleBadge?badgeClr:dtc(activeRole,theme)}} onClick={onSelect}>{course.code}</span>
-          {course.sec!=null&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:3,padding:'1px 4px'}} onClick={onSelect}>Turma {course.sec}</span>}
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:showRoleBadge?badgeClr:dtc(activeRole,theme)}} onClick={onSelect}>{course.code}</span>
+          {course.sec!=null&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:3,padding:'1px 4px'}} onClick={onSelect}>Turma {course.sec}</span>}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:4}}>
-          <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}} onClick={onSelect}>{course.enroll} alunos</span>
+          <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}} onClick={onSelect}>{course.enroll} alunos</span>
           {onEdit&&!locked&&(
             <button onClick={e=>{e.stopPropagation();onEdit();}} title="Editar disciplina"
-              style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:11,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
+              style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:9,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;e.currentTarget.style.color=T.txt;}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>✏</button>
           )}
           {onRemove&&(
             <button onClick={e=>{e.stopPropagation();onRemove();}} title="Remover alocação"
-              style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:11,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
+              style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:9,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor='#ef4444';e.currentTarget.style.color='#ef4444';}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>✕</button>
           )}
           {onDelete&&!confirmDel&&(
             <button onClick={e=>{e.stopPropagation();setConfirmDel(true);}} title="Excluir disciplina"
-              style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:11,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
+              style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:9,padding:'1px 4px',cursor:'pointer',lineHeight:1.3,transition:'all .1s'}}
               onMouseEnter={e=>{e.currentTarget.style.borderColor='#ef4444';e.currentTarget.style.color='#ef4444';}}
               onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>🗑</button>
           )}
           {onDelete&&confirmDel&&(
             <>
               <button onClick={e=>{e.stopPropagation();onDelete();}} title="Confirmar exclusão"
-                style={{background:'#ef4444',border:'none',borderRadius:3,color:'#fff',fontSize:11,padding:'1px 6px',cursor:'pointer',lineHeight:1.3,fontWeight:600}}>Excluir</button>
+                style={{background:'#ef4444',border:'none',borderRadius:3,color:'#fff',fontSize:9,padding:'1px 6px',cursor:'pointer',lineHeight:1.3,fontWeight:600}}>Excluir</button>
               <button onClick={e=>{e.stopPropagation();setConfirmDel(false);}} title="Cancelar"
-                style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:11,padding:'1px 4px',cursor:'pointer',lineHeight:1.3}}>✕</button>
+                style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:9,padding:'1px 4px',cursor:'pointer',lineHeight:1.3}}>✕</button>
             </>
           )}
         </div>
       </div>
-      <div style={{fontSize:13,fontWeight:500,color:T.txt,marginBottom:2,lineHeight:1.3}} onClick={onSelect}>{course.name}</div>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.muted}} onClick={onSelect}>{fmtSchedule(course)}</div>
-      {course.teacher&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} onClick={onSelect} title={course.teacher}>👤 {course.teacher}</div>}
-      {roomLabel&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:badgeClr,marginTop:2}}>📍 {roomLabel}</div>}
+      <div style={{fontSize:12,fontWeight:500,color:T.txt,marginBottom:2,lineHeight:1.3}} onClick={onSelect}>{course.name}</div>
+      <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.muted}} onClick={onSelect}>{fmtSchedule(course)}</div>
+      {course.teacher&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} onClick={onSelect} title={course.teacher}>👤 {course.teacher}</div>}
+      {roomLabel&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:badgeClr,marginTop:2}}>📍 {roomLabel}</div>}
     </div>
   );
 }
@@ -1415,8 +1415,8 @@ function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,ca
       <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
       <thead>
         <tr style={{position:'sticky',top:0,zIndex:5,background:T.surface,boxShadow:theme==='light'?'0 1px 2px rgba(0,0,0,.06)':'none'}}>
-          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
-          {HOURS.map(h=><th key={h} style={{padding:'7px 0 7px 5px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`}}>{h}:00</th>)}
+          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
+          {HOURS.map(h=><th key={h} style={{padding:'7px 0 7px 5px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`}}>{h}:00</th>)}
         </tr>
       </thead>
       <tbody>
@@ -1433,18 +1433,18 @@ function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,ca
           const rowBg=isOwn?(theme==='light'?'#ffffff':T.bg):(theme==='light'?T.faint:T.inner);
           return(
             <Fragment key={room.id}>
-              {showSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:700,color:T.txt2,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outras Funções ↓</td></tr>}
-              {showBlockSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{gBlockLabel(room.blockId)}</td></tr>}
+              {showSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:T.txt2,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outras Funções ↓</td></tr>}
+              {showBlockSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{gBlockLabel(room.blockId)}</td></tr>}
               <tr style={{borderBottom:`1px solid ${T.bdr}`,background:rowBg}}>
                 <td style={{padding:'0 6px 0 10px',height:RH}}>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
                     <div style={{width:2,height:18,borderRadius:1,background:rd.clr,opacity:isOwn?1:0.4}}/>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:isOwn?rdClr:T.muted,whiteSpace:'nowrap'}}>{room.label}</span>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:capWarn&&sel?'#d97706':T.dim}}>{room.cap}{capWarn&&sel?'⚠':''}</span>
-                    {room.features.length>0&&<span title={room.features.join(', ')} style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim,opacity:.7}}>⚙{room.features.length}</span>}
-                    {room.desc&&<span title={room.desc} style={{fontSize:12,color:T.dim,opacity:.7}}>💬</span>}
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:isOwn?rdClr:T.muted,whiteSpace:'nowrap'}}>{room.label}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:capWarn&&sel?'#d97706':T.dim}}>{room.cap}{capWarn&&sel?'⚠':''}</span>
+                    {room.features.length>0&&<span title={room.features.join(', ')} style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,opacity:.7}}>⚙{room.features.length}</span>}
+                    {room.desc&&<span title={room.desc} style={{fontSize:10,color:T.dim,opacity:.7}}>💬</span>}
                     {canEditFeatures&&<button onClick={()=>onEditFeatures(room.id)} title="Editar recursos"
-                      style={{background:'none',border:'none',color:T.dim,fontSize:12,padding:'0 1px',lineHeight:1,opacity:0,transition:'opacity .1s',cursor:'pointer'}}
+                      style={{background:'none',border:'none',color:T.dim,fontSize:10,padding:'0 1px',lineHeight:1,opacity:0,transition:'opacity .1s',cursor:'pointer'}}
                       onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=0}>✏</button>}
                   </div>
                 </td>
@@ -1458,10 +1458,10 @@ function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,ca
                         <div onClick={e=>{if(isMine&&canDealloc&&!isMergeZone){e.stopPropagation();onDealloc(slot.c.id);}}} className={isMine&&canDealloc?'chip-own':''}
                           title={`${slot.c.name}${slot.c.sec!=null?` · Turma ${slot.c.sec}`:''}${slot.c.teacher?` · ${slot.c.teacher}`:''} · ${fmtHour(slotBlock.sh)}–${fmtHour(slotBlock.eh)} · ${slot.c.enroll} alunos${isMine&&canDealloc?'\nClique para desalocar':''}${isMergeZone?'\nClique para mesclar':''}`}
                           style={{height:'100%',padding:'0 5px',borderRadius:3,background:isMine?`${cd.clr}${theme==='light'?'28':'22'}`:`${cd.clr}${theme==='light'?'18':'0e'}`,borderLeft:`2px solid ${isMergeZone?'#F59E0B':cd.clr}`,display:'flex',alignItems:'center',gap:4,overflow:'hidden',cursor:isMergeZone?'pointer':isMine&&canDealloc?'pointer':'default',transition:'filter .12s'}}>
-                          <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:isMergeZone?'#d97706':cdClr,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{slot.c.code}</span>
-                          {slot.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:'#d97706',background:'#F59E0B22',borderRadius:2,padding:'0 3px',flexShrink:0}}>+{slot.merged}</span>}
-                          {isMergeZone&&<span style={{fontSize:12,flexShrink:0}}>⇄</span>}
-                          {isMine&&canEditCourse&&<button onClick={e=>{e.stopPropagation();onEditCourse(slot.c);}} title="Editar" style={{background:'none',border:'none',color:cdClr,fontSize:11,padding:0,cursor:'pointer',opacity:.7,flexShrink:0}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.7}>✏</button>}
+                          <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:isMergeZone?'#d97706':cdClr,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',flex:1}}>{slot.c.code}</span>
+                          {slot.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:'#d97706',background:'#F59E0B22',borderRadius:2,padding:'0 3px',flexShrink:0}}>+{slot.merged}</span>}
+                          {isMergeZone&&<span style={{fontSize:10,flexShrink:0}}>⇄</span>}
+                          {isMine&&canEditCourse&&<button onClick={e=>{e.stopPropagation();onEditCourse(slot.c);}} title="Editar" style={{background:'none',border:'none',color:cdClr,fontSize:9,padding:0,cursor:'pointer',opacity:.7,flexShrink:0}} onMouseEnter={e=>e.currentTarget.style.opacity=1} onMouseLeave={e=>e.currentTarget.style.opacity=.7}>✏</button>}
                         </div>
                       </td>
                     );
@@ -1469,7 +1469,7 @@ function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,ca
                   const hlFree=canAllocate&&free&&dayOk&&slot.h>=selBlock?.sh&&slot.h<selBlock?.eh;
                   return(
                     <td key={si} style={{padding:'2px 2px',height:RH,verticalAlign:'middle',background:hlFree?`${dept.clr}${theme==='light'?'22':'1a'}`:'transparent',cursor:hlFree?'pointer':'default',transition:'background .1s'}} className={hlFree?'gridcell-hl':''} onClick={()=>hlFree&&onTryAlloc(room.id)}>
-                      {hlFree&&<div style={{height:'100%',borderRadius:3,border:`1px dashed ${dept.clr}${theme==='light'?'88':'44'}`,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:13,color:`${dept.clr}${theme==='light'?'aa':'66'}`}}>+</span></div>}
+                      {hlFree&&<div style={{height:'100%',borderRadius:3,border:`1px dashed ${dept.clr}${theme==='light'?'88':'44'}`,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{fontSize:12,color:`${dept.clr}${theme==='light'?'aa':'66'}`}}>+</span></div>}
                     </td>
                   );
                 })}
@@ -1489,8 +1489,8 @@ function ListView({rooms,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,ca
   const sorted=useMemo(()=>[...rooms.filter(r=>r.roleId===roleId),...rooms.filter(r=>r.roleId!==roleId)],[rooms,roleId]);
   if(!sel)return(
     <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',flexDirection:'column',gap:12}}>
-      <div style={{fontSize:36,opacity:.12}}>≡</div>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:13,color:T.dim}}>{canAllocate?'Selecione uma disciplina à esquerda para ver a disponibilidade das salas':'Vista somente leitura'}</div>
+      <div style={{fontSize:37,opacity:.12}}>≡</div>
+      <div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>{canAllocate?'Selecione uma disciplina à esquerda para ver a disponibilidade das salas':'Vista somente leitura'}</div>
     </div>
   );
   const own=sorted.filter(r=>r.roleId===roleId),oth=sorted.filter(r=>r.roleId!==roleId);
@@ -1515,17 +1515,17 @@ function RoomSection({title,rooms,alloc,courses,sel,roleId,dept,canAllocate,canD
   return(
     <div>
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:10}}>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:700,color:T.txt2,textTransform:'uppercase',letterSpacing:1}}>{title}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,fontWeight:700,color:T.txt2,textTransform:'uppercase',letterSpacing:1}}>{title}</span>
         <div style={{flex:1,height:1,background:T.bdr}}/>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:theme==='light'?'#059669':'#34D399'}}>{free.length} livres</span>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.muted}}>/</span>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:theme==='light'?'#d97706':'#F59E0B'}}>{busy.length} {canMerge?'disponíveis para mescla':'ocupadas'}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:theme==='light'?'#059669':'#34D399'}}>{free.length} livres</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.muted}}>/</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:theme==='light'?'#d97706':'#F59E0B'}}>{busy.length} {canMerge?'disponíveis para mescla':'ocupadas'}</span>
       </div>
       {byBlock.map(([blockLabel,bRooms])=>{
         const bSorted=[...bRooms].sort((a,b)=>(freeSet.has(b.id)?1:0)-(freeSet.has(a.id)?1:0));
         return(
           <div key={blockLabel} style={{marginBottom:14}}>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:600,color:T.txt2,marginBottom:6,paddingLeft:2,letterSpacing:.5}}>{blockLabel}</div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:600,color:T.txt2,marginBottom:6,paddingLeft:2,letterSpacing:.5}}>{blockLabel}</div>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))',gap:8}}>
               {bSorted.map(r=><RoomCard key={r.id} room={r} sel={sel} alloc={alloc} courses={courses} roleId={roleId} dept={dept} status={freeSet.has(r.id)?'available':'busy'} canAllocate={canAllocate} canDealloc={canDealloc} canMerge={canMerge} canEditFeatures={canEditFeatures} canEditCourse={canEditCourse} onTryAlloc={onTryAlloc} onDealloc={onDealloc} onEditFeatures={onEditFeatures} onEditCourse={onEditCourse}/>)}
             </div>
@@ -1553,53 +1553,53 @@ function RoomCard({room,sel,alloc,courses,roleId,dept,status,canAllocate,canDeal
       style={{borderRadius:8,padding:'12px 14px',background:avail?(hov&&clickable?`${dept.clr}18`:T.surface):(theme==='light'?T.card:T.inner),border:`1px solid ${avail?(hov&&clickable?dept.clr:`${dept.clr}33`):T.bdr}`,cursor:clickable?'pointer':'default',transition:'all .15s',boxShadow:avail&&hov&&clickable?`0 4px 12px ${dept.clr}22`:T.shadowSm}}>
       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:6}}>
         <div style={{width:2,height:16,borderRadius:1,background:rd.clr,opacity:isOwn?1:0.5}}/>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:500,color:isOwn?rdClr:T.muted}}>{room.label}</span>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:capWarn?'#d97706':T.dim,marginLeft:'auto'}}>limite {room.cap}{capWarn?'⚠':''}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:500,color:isOwn?rdClr:T.muted}}>{room.label}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:capWarn?'#d97706':T.dim,marginLeft:'auto'}}>limite {room.cap}{capWarn?'⚠':''}</span>
         {canEditFeatures&&(
           <button onClick={e=>{e.stopPropagation();onEditFeatures(room.id);}} className="feat-btn"
             title="Editar recursos da sala"
-            style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:11,padding:'1px 5px',opacity:0,transition:'opacity .15s',cursor:'pointer'}}
+            style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:9,padding:'1px 5px',opacity:0,transition:'opacity .15s',cursor:'pointer'}}
             onMouseEnter={e=>{e.stopPropagation();e.currentTarget.style.borderColor=T.muted;}}
             onMouseLeave={e=>e.currentTarget.style.borderColor=T.bdr2}>⚙ editar</button>
         )}
       </div>
-      <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim,marginBottom:6}}>{room.type} · Andar {room.floor}</div>
+      <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginBottom:6}}>{room.type} · Andar {room.floor}</div>
       {room.features.length>0&&(
         <div style={{display:'flex',flexWrap:'wrap',gap:3,marginBottom:6}}>
-          {room.features.map(f=><span key={f} style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.muted,border:`1px solid ${T.bdr}`,borderRadius:3,padding:'1px 4px',background:T.inner}}>{f}</span>)}
+          {room.features.map(f=><span key={f} style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.muted,border:`1px solid ${T.bdr}`,borderRadius:3,padding:'1px 4px',background:T.inner}}>{f}</span>)}
         </div>
       )}
       {room.desc&&(
-        <div style={{fontSize:12,color:T.muted,lineHeight:1.5,marginBottom:8,fontStyle:'italic',borderLeft:`2px solid ${rd.clr}44`,paddingLeft:6}}>{room.desc}</div>
+        <div style={{fontSize:11,color:T.muted,lineHeight:1.5,marginBottom:8,fontStyle:'italic',borderLeft:`2px solid ${rd.clr}44`,paddingLeft:6}}>{room.desc}</div>
       )}
       <CapacityBar cap={room.cap} enroll={sel?.enroll||0} conflicts={avail?[]:conflicts} avail={avail}/>
       {avail?(
         <div style={{display:'flex',alignItems:'center',gap:6,marginTop:8}}>
           <div style={{width:5,height:5,borderRadius:'50%',background:theme==='light'?'#059669':'#34D399'}}/>
-          <span style={{fontSize:12,color:theme==='light'?'#059669':'#34D399',fontFamily:"'DM Mono',monospace"}}>Disponível</span>
-          {capWarn&&<span style={{fontSize:11,color:'#d97706',marginLeft:'auto'}}>⚠ abaixo da capacidade</span>}
-          {hov&&clickable&&!capWarn&&<span style={{fontSize:11,color:dtc(dept,theme),marginLeft:'auto'}}>Clique para alocar →</span>}
+          <span style={{fontSize:10,color:theme==='light'?'#059669':'#34D399',fontFamily:"'DM Mono',monospace"}}>Disponível</span>
+          {capWarn&&<span style={{fontSize:9,color:'#d97706',marginLeft:'auto'}}>⚠ abaixo da capacidade</span>}
+          {hov&&clickable&&!capWarn&&<span style={{fontSize:9,color:dtc(dept,theme),marginLeft:'auto'}}>Clique para alocar →</span>}
         </div>
       ):(
         <div style={{marginTop:8}}>
           <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:6}}>
             <div style={{width:5,height:5,borderRadius:'50%',background:'#F59E0B'}}/>
-            <span style={{fontSize:12,color:theme==='light'?'#d97706':'#F59E0B',fontFamily:"'DM Mono',monospace"}}>{conflicts.length} conflito{conflicts.length!==1?'s':''}</span>
+            <span style={{fontSize:10,color:theme==='light'?'#d97706':'#F59E0B',fontFamily:"'DM Mono',monospace"}}>{conflicts.length} conflito{conflicts.length!==1?'s':''}</span>
           </div>
           {conflicts.map(c=>{
             const cd=gRole(c.roleId),cdClr=dtc(cd,theme),isMine=c.roleId===roleId;
             return(
               <div key={c.id} title={[c.sec!=null?`Turma ${c.sec}`:null,c.teacher].filter(Boolean).join(' · ')||undefined} style={{display:'flex',alignItems:'center',gap:5,padding:'3px 6px',background:`${cd.clr}${theme==='light'?'18':'0e'}`,borderRadius:4,marginBottom:2}}>
                 <div style={{width:2,height:10,borderRadius:1,background:cd.clr}}/>
-                <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:cdClr,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.code}</span>
-                <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.muted}}>{c.enroll} al.</span>
-                {isMine&&canDealloc&&<button onClick={e=>{e.stopPropagation();onDealloc(c.id);}} style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:10,padding:'1px 4px',cursor:'pointer',lineHeight:1.2}} onMouseEnter={e=>{e.currentTarget.style.borderColor='#ef4444';e.currentTarget.style.color='#ef4444';}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>✕</button>}
-                {isMine&&canEditCourse&&<button onClick={e=>{e.stopPropagation();onEditCourse(c);}} style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:10,padding:'1px 4px',cursor:'pointer',lineHeight:1.2}} onMouseEnter={e=>e.currentTarget.style.borderColor=T.muted} onMouseLeave={e=>e.currentTarget.style.borderColor=T.bdr2}>✏</button>}
+                <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:cdClr,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.code}</span>
+                <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.muted}}>{c.enroll} al.</span>
+                {isMine&&canDealloc&&<button onClick={e=>{e.stopPropagation();onDealloc(c.id);}} style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:8,padding:'1px 4px',cursor:'pointer',lineHeight:1.2}} onMouseEnter={e=>{e.currentTarget.style.borderColor='#ef4444';e.currentTarget.style.color='#ef4444';}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>✕</button>}
+                {isMine&&canEditCourse&&<button onClick={e=>{e.stopPropagation();onEditCourse(c);}} style={{background:'none',border:`1px solid ${T.bdr2}`,borderRadius:3,color:T.muted,fontSize:8,padding:'1px 4px',cursor:'pointer',lineHeight:1.2}} onMouseEnter={e=>e.currentTarget.style.borderColor=T.muted} onMouseLeave={e=>e.currentTarget.style.borderColor=T.bdr2}>✏</button>}
               </div>
             );
           })}
           {canMerge&&canAllocate&&(
-            <button onClick={e=>{e.stopPropagation();onTryAlloc(room.id);}} style={{width:'100%',marginTop:8,padding:'6px',borderRadius:5,background:overCap?(theme==='light'?'#fef3c7':'#3a1a0a'):(theme==='light'?'#fefce8':'#1a1400'),border:`1px solid ${overCap?'#F59E0B':'#F59E0B88'}`,color:theme==='light'?overCap?'#92400e':'#78350f':'#d4a017',fontSize:12,fontWeight:600,transition:'all .12s',cursor:'pointer'}}>
+            <button onClick={e=>{e.stopPropagation();onTryAlloc(room.id);}} style={{width:'100%',marginTop:8,padding:'6px',borderRadius:5,background:overCap?(theme==='light'?'#fef3c7':'#3a1a0a'):(theme==='light'?'#fefce8':'#1a1400'),border:`1px solid ${overCap?'#F59E0B':'#F59E0B88'}`,color:theme==='light'?overCap?'#92400e':'#78350f':'#d4a017',fontSize:11,fontWeight:600,transition:'all .12s',cursor:'pointer'}}>
               ⇄ Mesclar Turmas{overCap?' ⚠':''}
             </button>
           )}
@@ -1619,16 +1619,16 @@ function CapacityBar({cap,enroll,conflicts,avail}){
   return(
     <div>
       <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{avail?`${enroll} / ${cap} vagas`:`${total} / ${cap} vagas${over?' (acima do limite)':''}`}</span>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:pctColor}}>{Math.round(total/cap*100)}%</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim}}>{avail?`${enroll} / ${cap} vagas`:`${total} / ${cap} vagas${over?' (acima do limite)':''}`}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:pctColor}}>{Math.round(total/cap*100)}%</span>
       </div>
       <div style={{height:5,borderRadius:3,background:T.barTrack,overflow:'hidden',display:'flex'}}>
         {avail?<div style={{width:`${pctTotal}%`,background:pctColor,borderRadius:3,transition:'width .3s'}}/>:
           <><div style={{width:`${pctEx}%`,background:T.barExist,borderRadius:'3px 0 0 3px',flexShrink:0}}/><div style={{width:`${pctNew}%`,background:over?'#ef4444':'#F59E0B',flexShrink:0}}/></>}
       </div>
       {!avail&&<div style={{display:'flex',gap:10,marginTop:3}}>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.barExist}}>■ existente {existing}</span>
-        <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:over?'#ef4444':'#d97706'}}>■ entrante {enroll}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.barExist}}>■ existente {existing}</span>
+        <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:over?'#ef4444':'#d97706'}}>■ entrante {enroll}</span>
       </div>}
     </div>
   );
@@ -1661,40 +1661,40 @@ function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,
         {/* Cabeçalho */}
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:20,flexShrink:0}}>
           <div style={{width:3,height:20,borderRadius:1,background:rd.clr}}/>
-          <span style={{...mono,fontSize:13,color:rdClr,fontWeight:500}}>{room.label}</span>
-          <span style={{...mono,fontSize:12,color:T.dim}}>{room.type} · Limite {room.cap} · Andar {room.floor}</span>
+          <span style={{...mono,fontSize:12,color:rdClr,fontWeight:500}}>{room.label}</span>
+          <span style={{...mono,fontSize:10,color:T.dim}}>{room.type} · Limite {room.cap} · Andar {room.floor}</span>
           <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
         </div>
 
         <div style={{flex:1,overflowY:'auto',paddingRight:4}}>
           {/* Descrição */}
           <div style={{marginBottom:20}}>
-            <div style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Descrição da Sala</div>
+            <div style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>Descrição da Sala</div>
             <textarea
               value={desc}
               onChange={e=>setDesc(e.target.value)}
               placeholder="Observações sobre o espaço, instruções de acesso, particularidades…"
               rows={3}
               style={{width:'100%',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,
-                color:T.txt,fontSize:14,padding:'9px 12px',outline:'none',resize:'vertical',
+                color:T.txt,fontSize:13,padding:'9px 12px',outline:'none',resize:'vertical',
                 lineHeight:1.6,fontFamily:"'DM Sans',sans-serif"}}/>
           </div>
 
           {/* Recursos */}
-          <div style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginBottom:14}}>
+          <div style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginBottom:14}}>
             Recursos e Equipamentos — {selected.size} selecionados
           </div>
           <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:14}}>
-            {featureOptions.length===0&&<span style={{...mono,fontSize:12,color:T.dim}}>Nenhum recurso cadastrado ainda.</span>}
+            {featureOptions.length===0&&<span style={{...mono,fontSize:11,color:T.dim}}>Nenhum recurso cadastrado ainda.</span>}
             {featureOptions.map(f=>{
               const active=selected.has(f);
               return(
                 <div key={f} style={{display:'flex',alignItems:'center',borderRadius:6,border:`1px solid ${active?rd.clr:T.bdr2}`,background:active?(theme==='light'?`${rd.clr}22`:`${rd.clr}18`):'transparent',overflow:'hidden'}}>
-                  <button onClick={()=>toggle(f)} style={{padding:'5px 4px 5px 10px',border:'none',background:'none',fontSize:13,cursor:'pointer',color:active?rdClr:T.muted,fontWeight:active?600:400}}>
+                  <button onClick={()=>toggle(f)} style={{padding:'5px 4px 5px 10px',border:'none',background:'none',fontSize:12,cursor:'pointer',color:active?rdClr:T.muted,fontWeight:active?600:400}}>
                     {active?'✓ ':''}{f}
                   </button>
                   <button onClick={()=>removeOption(f)} title="Remover este recurso do catálogo"
-                    style={{padding:'5px 8px',border:'none',background:'none',cursor:'pointer',fontSize:12,color:T.dim,lineHeight:1}}
+                    style={{padding:'5px 8px',border:'none',background:'none',cursor:'pointer',fontSize:10,color:T.dim,lineHeight:1}}
                     onMouseEnter={e=>e.currentTarget.style.color='#ef4444'} onMouseLeave={e=>e.currentTarget.style.color=T.dim}>✕</button>
                 </div>
               );
@@ -1704,14 +1704,14 @@ function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,
             <input value={newOption} onChange={e=>setNewOption(e.target.value)}
               onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();submitNewOption();}}}
               placeholder="Novo recurso (ex.: Sala com microscópio)"
-              style={{flex:1,padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:14,outline:'none'}}/>
-            <button onClick={submitNewOption} disabled={!newOption.trim()} style={{padding:'7px 14px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:newOption.trim()?T.txt:T.dim,fontSize:13,cursor:newOption.trim()?'pointer':'default'}}>+ Adicionar</button>
+              style={{flex:1,padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:13,outline:'none'}}/>
+            <button onClick={submitNewOption} disabled={!newOption.trim()} style={{padding:'7px 14px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:newOption.trim()?T.txt:T.dim,fontSize:12,cursor:newOption.trim()?'pointer':'default'}}>+ Adicionar</button>
           </div>
         </div>
 
         <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:16,flexShrink:0,borderTop:`1px solid ${T.bdr}`,paddingTop:16}}>
-          <button onClick={onClose} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
-          <button onClick={()=>onSave(room.id,[...selected],desc.trim())} style={{padding:'8px 20px',background:dept.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:13,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>Salvar</button>
+          <button onClick={onClose} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={()=>onSave(room.id,[...selected],desc.trim())} style={{padding:'8px 20px',background:dept.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:12,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>Salvar</button>
         </div>
       </div>
     </div>
@@ -1735,19 +1735,19 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
             <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19}}>✨</div>
             <div>
               <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Pré-visualização da Alocação Automática</div>
-              <div style={{...mono,fontSize:12,color:T.dim,marginTop:2}}>Revise antes de aplicar — a ação não pode ser desfeita automaticamente</div>
+              <div style={{...mono,fontSize:10,color:T.dim,marginTop:2}}>Revise antes de aplicar — a ação não pode ser desfeita automaticamente</div>
             </div>
             <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
           </div>
           <div style={{display:'flex',gap:8}}>
             <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,borderRadius:7,textAlign:'center'}}>
-              <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#15803d':'#34D399',lineHeight:1}}>{placedCount}</div>
-              <div style={{...mono,fontSize:11,color:T.dim,marginTop:2}}>PARA ALOCAR</div>
+              <div style={{fontSize:23,fontWeight:700,color:theme==='light'?'#15803d':'#34D399',lineHeight:1}}>{placedCount}</div>
+              <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>PARA ALOCAR</div>
             </div>
             {failedCount>0&&(
               <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:7,textAlign:'center'}}>
-                <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1}}>{failedCount}</div>
-                <div style={{...mono,fontSize:11,color:T.dim,marginTop:2}}>NÃO ALOCÁVEIS</div>
+                <div style={{fontSize:23,fontWeight:700,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1}}>{failedCount}</div>
+                <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>NÃO ALOCÁVEIS</div>
               </div>
             )}
           </div>
@@ -1755,13 +1755,13 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
         <div style={{display:'flex',gap:0,borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
           {[['placed',`✓ Proposto (${placedCount})`],['failed',`⚠ Não alocável (${failedCount})`]].map(([key,label])=>(
             failedCount===0&&key==='failed'?null:(
-              <button key={key} onClick={()=>setTab(key)} style={{flex:1,padding:'9px',fontSize:13,fontWeight:500,cursor:'pointer',background:'transparent',border:'none',borderBottom:`2px solid ${tab===key?dept.clr:'transparent'}`,color:tab===key?dClr:T.muted,transition:'all .12s'}}>{label}</button>
+              <button key={key} onClick={()=>setTab(key)} style={{flex:1,padding:'9px',fontSize:12,fontWeight:500,cursor:'pointer',background:'transparent',border:'none',borderBottom:`2px solid ${tab===key?dept.clr:'transparent'}`,color:tab===key?dClr:T.muted,transition:'all .12s'}}>{label}</button>
             )
           ))}
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'8px 0'}}>
           {tab==='placed'?(
-            assignments.length===0?<div style={{textAlign:'center',padding:32,color:T.dim,fontSize:14}}>Nada para alocar.</div>
+            assignments.length===0?<div style={{textAlign:'center',padding:32,color:T.dim,fontSize:13}}>Nada para alocar.</div>
             :assignments.map(({course,room},i)=>{
               const cd=gRole(course.roleId),cdClr=dtc(cd,theme);
               const rd=gRole(room.roleId),rdClr=dtc(rd,theme);
@@ -1771,24 +1771,24 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
                   <div style={{width:2,height:36,borderRadius:1,background:cd.clr,flexShrink:0}}/>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
-                      <span style={{...mono,fontSize:12,color:cdClr}}>{course.code}</span>
-                      <span style={{fontSize:13,color:T.txt,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{course.name}</span>
+                      <span style={{...mono,fontSize:10,color:cdClr}}>{course.code}</span>
+                      <span style={{fontSize:12,color:T.txt,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{course.name}</span>
                     </div>
-                    <div style={{...mono,fontSize:12,color:T.dim}}>{fmtSchedule(course)} · {course.enroll} alunos</div>
+                    <div style={{...mono,fontSize:10,color:T.dim}}>{fmtSchedule(course)} · {course.enroll} alunos</div>
                   </div>
                   <div style={{fontSize:15,color:T.dim,flexShrink:0}}>→</div>
                   <div style={{textAlign:'right',flexShrink:0}}>
                     <div style={{display:'flex',alignItems:'center',gap:5,justifyContent:'flex-end',marginBottom:2}}>
-                      {crossRole&&<span style={{...mono,fontSize:10,color:theme==='light'?'#d97706':'#FBBF24',border:`1px solid ${theme==='light'?'#fcd34d':'#FBBF2444'}`,borderRadius:3,padding:'1px 4px'}}>outra função</span>}
-                      <span style={{...mono,fontSize:13,fontWeight:600,color:rdClr}}>{room.label}</span>
+                      {crossRole&&<span style={{...mono,fontSize:8,color:theme==='light'?'#d97706':'#FBBF24',border:`1px solid ${theme==='light'?'#fcd34d':'#FBBF2444'}`,borderRadius:3,padding:'1px 4px'}}>outra função</span>}
+                      <span style={{...mono,fontSize:12,fontWeight:600,color:rdClr}}>{room.label}</span>
                     </div>
-                    <div style={{...mono,fontSize:12,color:T.dim}}>limite {room.cap} · {room.type}</div>
+                    <div style={{...mono,fontSize:10,color:T.dim}}>limite {room.cap} · {room.type}</div>
                   </div>
                 </div>
               );
             })
           ):(
-            failed.length===0?<div style={{textAlign:'center',padding:32,color:T.dim,fontSize:14}}>Todas as disciplinas foram alocadas!</div>
+            failed.length===0?<div style={{textAlign:'center',padding:32,color:T.dim,fontSize:13}}>Todas as disciplinas foram alocadas!</div>
             :failed.map(({course,reason},i)=>{
               const cd=gRole(course.roleId),cdClr=dtc(cd,theme);
               return(
@@ -1796,11 +1796,11 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
                   <div style={{width:2,height:36,borderRadius:1,background:'#ef4444',flexShrink:0,marginTop:2}}/>
                   <div>
                     <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
-                      <span style={{...mono,fontSize:12,color:cdClr}}>{course.code}</span>
-                      <span style={{fontSize:13,color:T.txt,fontWeight:500}}>{course.name}</span>
-                      <span style={{...mono,fontSize:12,color:T.dim}}>· {course.enroll} alunos</span>
+                      <span style={{...mono,fontSize:10,color:cdClr}}>{course.code}</span>
+                      <span style={{fontSize:12,color:T.txt,fontWeight:500}}>{course.name}</span>
+                      <span style={{...mono,fontSize:10,color:T.dim}}>· {course.enroll} alunos</span>
                     </div>
-                    <div style={{fontSize:12,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.4}}>{reason}</div>
+                    <div style={{fontSize:11,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.4}}>{reason}</div>
                   </div>
                 </div>
               );
@@ -1808,11 +1808,11 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
           )}
         </div>
         <div style={{padding:'16px 20px',borderTop:`1px solid ${T.bdr}`,flexShrink:0}}>
-          {failedCount>0&&<div style={{fontSize:12,color:T.muted,marginBottom:12,lineHeight:1.5}}>ⓘ {failedCount} disciplina{failedCount!==1?'s':''} não {failedCount!==1?'puderam':'pôde'} ser alocada{failedCount!==1?'s':''} e permanecerá{failedCount!==1?'o':''} pendente{failedCount!==1?'s':''}. Você pode resolvê-{failedCount!==1?'las':'la'} manualmente após aplicar, ou deixar para o diretor resolver.</div>}
+          {failedCount>0&&<div style={{fontSize:11,color:T.muted,marginBottom:12,lineHeight:1.5}}>ⓘ {failedCount} disciplina{failedCount!==1?'s':''} não {failedCount!==1?'puderam':'pôde'} ser alocada{failedCount!==1?'s':''} e permanecerá{failedCount!==1?'o':''} pendente{failedCount!==1?'s':''}. Você pode resolvê-{failedCount!==1?'las':'la'} manualmente após aplicar, ou deixar para o diretor resolver.</div>}
           <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-            <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
+            <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
             <button onClick={onApply} disabled={placedCount===0}
-              style={{padding:'8px 22px',borderRadius:7,fontSize:13,fontWeight:700,cursor:placedCount===0?'not-allowed':'pointer',background:placedCount===0?T.inner:dept.clr,border:'none',color:placedCount===0?T.dim:(theme==='light'?'#fff':'#000'),transition:'all .15s'}}
+              style={{padding:'8px 22px',borderRadius:7,fontSize:12,fontWeight:700,cursor:placedCount===0?'not-allowed':'pointer',background:placedCount===0?T.inner:dept.clr,border:'none',color:placedCount===0?T.dim:(theme==='light'?'#fff':'#000'),transition:'all .15s'}}
               onMouseEnter={e=>{if(placedCount>0)e.currentTarget.style.filter='brightness(1.08)';}}
               onMouseLeave={e=>e.currentTarget.style.filter='none'}>
               ✨ Aplicar {placedCount} Alocaç{placedCount!==1?'ões':'ão'}
@@ -1834,19 +1834,19 @@ function FinishConfirmModal({roleName,remaining,onConfirm,onCancel}){
           <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19}}>✓</div>
           <div>
             <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Marcar Alocação como Concluída?</div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim,marginTop:2}}>{roleName}</div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim,marginTop:2}}>{roleName}</div>
           </div>
           <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
         </div>
-        <div style={{background:T.inner,borderRadius:8,padding:'12px 14px',marginBottom:16,border:`1px solid ${T.bdr}`,fontSize:14,color:T.txt2,lineHeight:1.6}}>
+        <div style={{background:T.inner,borderRadius:8,padding:'12px 14px',marginBottom:16,border:`1px solid ${T.bdr}`,fontSize:13,color:T.txt2,lineHeight:1.6}}>
           {remaining>0?<>Você possui <strong style={{color:theme==='light'?'#b45309':'#FBBF24'}}>{remaining} disciplina{remaining!==1?'s':''} não alocada{remaining!==1?'s':''}</strong>. Elas serão tratadas pelo diretor para alocação em outros departamentos.</>:<>Todas as suas disciplinas estão alocadas.</>}
         </div>
-        <div style={{background:theme==='light'?'#fef2f2':'#1a0505',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444433'}`,borderRadius:8,padding:'10px 14px',marginBottom:20,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444'}}>
+        <div style={{background:theme==='light'?'#fef2f2':'#1a0505',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444433'}`,borderRadius:8,padding:'10px 14px',marginBottom:20,fontSize:12,color:theme==='light'?'#b91c1c':'#ef4444'}}>
           ⚠ Após o envio, você <strong>não poderá fazer alterações</strong> a menos que o diretor reabra sua alocação.
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
-          <button onClick={onConfirm} style={{padding:'8px 20px',borderRadius:7,fontSize:13,fontWeight:700,background:theme==='light'?'#059669':'#34D399',border:'none',color:'#fff',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={onConfirm} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,background:theme==='light'?'#059669':'#34D399',border:'none',color:'#fff',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
             ✓ Confirmar e Notificar o Diretor
           </button>
         </div>
@@ -1879,17 +1879,17 @@ function NewPeriodModal({currentPeriod,onConfirm,onCancel}){
           <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Novo Período Letivo</div>
           <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
         </div>
-        <div style={{fontSize:13,color:T.txt2,lineHeight:1.6,marginBottom:14}}>
+        <div style={{fontSize:12,color:T.txt2,lineHeight:1.6,marginBottom:14}}>
           O período atual ({currentPeriod}) vira somente leitura assim que um período posterior existir. Disciplinas novas (criadas ou importadas) entram no período selecionado.
         </div>
-        <label style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Período (AAAA.N)</label>
+        <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Período (AAAA.N)</label>
         <input autoFocus value={value} onChange={e=>{setValue(e.target.value);setError(null);}} onKeyDown={e=>e.key==='Enter'&&submit()}
           placeholder={`ex.: ${currentPeriod.split('.')[0]}.${Number(currentPeriod.split('.')[1]||1)+1}`}
-          style={{width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:14,outline:'none',marginBottom:6}}/>
-        {error&&<div style={{fontSize:12,color:'#ef4444',marginBottom:10}}>{error}</div>}
+          style={{width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:13,outline:'none',marginBottom:6}}/>
+        {error&&<div style={{fontSize:11,color:'#ef4444',marginBottom:10}}>{error}</div>}
         <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:14}}>
-          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
-          <button onClick={submit} style={{padding:'8px 20px',borderRadius:7,fontSize:13,fontWeight:700,background:'#60A5FA',border:'none',color:'#000',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={submit} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,background:'#60A5FA',border:'none',color:'#000',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
             Criar e Selecionar
           </button>
         </div>
@@ -1923,19 +1923,19 @@ function CoordinationStatusPanel({roles,subUnits,coordinationStatuses,notificati
               <div key={role.id} style={{padding:'12px 14px',background:T.card,border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
                 <div style={{width:3,height:32,borderRadius:1,background:rd.clr}}/>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:14,fontWeight:600,color:cd}}>{rd.subUnitFull} — {rd.full}</div>
-                  {lastFinish&&<div style={{...mono,fontSize:12,color:T.dim,marginTop:2}}>{lastFinish.userName} · {new Date(lastFinish.timestamp).toLocaleString('pt-BR')}</div>}
+                  <div style={{fontSize:13,fontWeight:600,color:cd}}>{rd.subUnitFull} — {rd.full}</div>
+                  {lastFinish&&<div style={{...mono,fontSize:10,color:T.dim,marginTop:2}}>{lastFinish.userName} · {new Date(lastFinish.timestamp).toLocaleString('pt-BR')}</div>}
                 </div>
-                <span style={{...mono,fontSize:12,padding:'2px 8px',borderRadius:4,background:`${statusColor[status]}${theme==='light'?'22':'18'}`,border:`1px solid ${statusColor[status]}44`,color:statusColor[status]}}>{statusLabel[status]}</span>
+                <span style={{...mono,fontSize:10,padding:'2px 8px',borderRadius:4,background:`${statusColor[status]}${theme==='light'?'22':'18'}`,border:`1px solid ${statusColor[status]}44`,color:statusColor[status]}}>{statusLabel[status]}</span>
                 <div style={{display:'flex',gap:6}}>
-                  {status!==DS.ACTIVE&&<button onClick={()=>onReopen(role.id)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:12,cursor:'pointer'}} onMouseEnter={e=>{e.currentTarget.style.borderColor=theme==='light'?'#1d4ed8':'#60A5FA';e.currentTarget.style.color=theme==='light'?'#1d4ed8':'#60A5FA';}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>Reabrir</button>}
-                  {status===DS.ACTIVE&&<button onClick={()=>onForceFinish(role.id)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444444',borderRadius:5,color:theme==='light'?'#b91c1c':'#ef4444',fontSize:12,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.borderColor='#ef4444'} onMouseLeave={e=>e.currentTarget.style.borderColor='#ef444444'}>Forçar Conclusão</button>}
+                  {status!==DS.ACTIVE&&<button onClick={()=>onReopen(role.id)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}} onMouseEnter={e=>{e.currentTarget.style.borderColor=theme==='light'?'#1d4ed8':'#60A5FA';e.currentTarget.style.color=theme==='light'?'#1d4ed8':'#60A5FA';}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;e.currentTarget.style.color=T.muted;}}>Reabrir</button>}
+                  {status===DS.ACTIVE&&<button onClick={()=>onForceFinish(role.id)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444444',borderRadius:5,color:theme==='light'?'#b91c1c':'#ef4444',fontSize:11,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.borderColor='#ef4444'} onMouseLeave={e=>e.currentTarget.style.borderColor='#ef444444'}>Forçar Conclusão</button>}
                 </div>
               </div>
             );
           })}
         </div>
-        <div style={{...mono,fontSize:12,color:T.dim,borderTop:`1px solid ${T.bdr}`,paddingTop:12,lineHeight:1.6}}>
+        <div style={{...mono,fontSize:10,color:T.dim,borderTop:`1px solid ${T.bdr}`,paddingTop:12,lineHeight:1.6}}>
           <strong>Reabrir</strong> — permite à coordenação fazer novas alterações.<br/>
           <strong>Forçar Conclusão</strong> — bloqueia a coordenação sem necessidade de ação dela.
         </div>
@@ -1952,11 +1952,11 @@ function NotifPanel({notifications,onClose}){
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'transparent',display:'flex',alignItems:'flex-start',justifyContent:'flex-end',zIndex:150,paddingTop:52,paddingRight:16}}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:10,width:340,animation:'slideIn .15s ease',boxShadow:T.shadowMd,overflow:'hidden',maxHeight:'70vh',display:'flex',flexDirection:'column'}}>
         <div style={{padding:'12px 16px',borderBottom:`1px solid ${T.bdr}`,display:'flex',alignItems:'center'}}>
-          <span style={{fontSize:15,fontWeight:600,color:T.txt}}>Notificações</span>
+          <span style={{fontSize:14,fontWeight:600,color:T.txt}}>Notificações</span>
           <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:15,cursor:'pointer'}}>✕</button>
         </div>
         <div style={{flex:1,overflowY:'auto'}}>
-          {notifications.length===0?<div style={{padding:24,textAlign:'center',color:T.dim,fontSize:14}}>Nenhuma notificação ainda</div>
+          {notifications.length===0?<div style={{padding:24,textAlign:'center',color:T.dim,fontSize:13}}>Nenhuma notificação ainda</div>
           :[...notifications].reverse().map(n=>{
             const role=gRole(n.roleId),dClr=role?dtc(role,theme):T.muted;
             return(
@@ -1964,9 +1964,9 @@ function NotifPanel({notifications,onClose}){
                 <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
                   <div style={{width:3,height:36,borderRadius:1,background:role?.clr||T.muted,flexShrink:0,marginTop:2}}/>
                   <div>
-                    <div style={{fontSize:14,color:T.txt,fontWeight:500,marginBottom:2}}>Alocação de {n.roleName} enviada</div>
-                    <div style={{fontSize:13,color:T.muted,marginBottom:2}}>Por {n.userName}</div>
-                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>{new Date(n.timestamp).toLocaleString('pt-BR')}</div>
+                    <div style={{fontSize:13,color:T.txt,fontWeight:500,marginBottom:2}}>Alocação de {n.roleName} enviada</div>
+                    <div style={{fontSize:12,color:T.muted,marginBottom:2}}>Por {n.userName}</div>
+                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{new Date(n.timestamp).toLocaleString('pt-BR')}</div>
                   </div>
                 </div>
               </div>
@@ -2030,21 +2030,21 @@ function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onS
       onCreate({id:courseId(effectiveRoleId,code.trim(),secNum,period),code:code.trim(),name:name.trim(),sec:secNum,roleId:effectiveRoleId,period,teacher:teacher.trim(),blocks,enroll:Number(enroll)});
     }
   };
-  const inp={width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:14,outline:'none'};
+  const inp={width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:13,outline:'none'};
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
       <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:440,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
           <div style={{width:3,height:20,borderRadius:1,background:cd.clr}}/>
-          {course&&<span style={{...mono,fontSize:12,color:cdClr,fontWeight:500}}>{course.code}</span>}
+          {course&&<span style={{...mono,fontSize:11,color:cdClr,fontWeight:500}}>{course.code}</span>}
           <span style={{fontSize:15,fontWeight:700,color:T.txt}}>{course?'Editar Disciplina':'Nova Disciplina'}</span>
-          {!course&&<span style={{...mono,fontSize:12,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:4,padding:'2px 6px'}}>{period}</span>}
-          {course&&hasAnyAllocation(course)&&<span style={{...mono,fontSize:12,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fef3c7':'#3a1a0a',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'2px 6px',marginLeft:'auto'}}>⚠ Alteração de horário pode remover a sala de algum dia</span>}
+          {!course&&<span style={{...mono,fontSize:10,color:T.dim,border:`1px solid ${T.bdr2}`,borderRadius:4,padding:'2px 6px'}}>{period}</span>}
+          {course&&hasAnyAllocation(course)&&<span style={{...mono,fontSize:10,color:theme==='light'?'#b45309':'#FBBF24',background:theme==='light'?'#fef3c7':'#3a1a0a',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:4,padding:'2px 6px',marginLeft:'auto'}}>⚠ Alteração de horário pode remover a sala de algum dia</span>}
           <button onClick={onCancel} style={{background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer',marginLeft:course&&hasAnyAllocation(course)?0:'auto'}}>✕</button>
         </div>
         {!course&&isInstitutional&&(
           <div style={{marginBottom:12}}>
-            <label style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Função</label>
+            <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Função</label>
             <select value={roleId} onChange={e=>setRoleId(e.target.value)} style={{...inp,cursor:'pointer'}}>
               {roles.filter(r=>r.subUnitId).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
@@ -2052,66 +2052,66 @@ function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onS
         )}
         <div style={{display:'flex',gap:10,marginBottom:12}}>
           <div style={{flex:2}}>
-            <label style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Código</label>
+            <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Código</label>
             <input value={code} onChange={e=>setCode(e.target.value)} style={inp}/>
-            {errors.code&&<div style={{fontSize:12,color:'#ef4444',marginTop:3}}>{errors.code}</div>}
+            {errors.code&&<div style={{fontSize:11,color:'#ef4444',marginTop:3}}>{errors.code}</div>}
           </div>
           <div style={{flex:1}}>
-            <label style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Turma</label>
+            <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Turma</label>
             <input type="number" min={1} value={sec} onChange={e=>setSec(e.target.value)} style={inp} placeholder="—"/>
-            {errors.sec&&<div style={{fontSize:12,color:'#ef4444',marginTop:3}}>{errors.sec}</div>}
+            {errors.sec&&<div style={{fontSize:11,color:'#ef4444',marginTop:3}}>{errors.sec}</div>}
           </div>
         </div>
         <div style={{marginBottom:12}}>
-          <label style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Nome da Disciplina</label>
+          <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Nome da Disciplina</label>
           <input value={name} onChange={e=>setName(e.target.value)} style={inp}/>
-          {errors.name&&<div style={{fontSize:12,color:'#ef4444',marginTop:3}}>{errors.name}</div>}
+          {errors.name&&<div style={{fontSize:11,color:'#ef4444',marginTop:3}}>{errors.name}</div>}
         </div>
         <div style={{marginBottom:12}}>
-          <label style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Docente(s)</label>
+          <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Docente(s)</label>
           <input value={teacher} onChange={e=>setTeacher(e.target.value)} placeholder="A definir" style={inp}/>
         </div>
-        {errors.blocks&&<div style={{fontSize:12,color:'#ef4444',marginBottom:8}}>{errors.blocks}</div>}
+        {errors.blocks&&<div style={{fontSize:11,color:'#ef4444',marginBottom:8}}>{errors.blocks}</div>}
         {blocks.map((block,i)=>(
           <div key={i} style={{border:`1px solid ${T.bdr}`,borderRadius:8,padding:10,marginBottom:10}}>
             <div style={{display:'flex',alignItems:'center',marginBottom:8}}>
-              <label style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>Horário{blocks.length>1?` ${i+1}`:''}</label>
-              {blocks.length>1&&<button type="button" onClick={()=>removeBlock(i)} title="Remover este horário" style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:15,cursor:'pointer'}}>✕</button>}
+              <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>Horário{blocks.length>1?` ${i+1}`:''}</label>
+              {blocks.length>1&&<button type="button" onClick={()=>removeBlock(i)} title="Remover este horário" style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:14,cursor:'pointer'}}>✕</button>}
             </div>
             <div style={{marginBottom:8}}>
               <div style={{display:'flex',gap:5,flexWrap:'wrap'}}>
                 {DAYS.map(day=>(
-                  <button key={day} type="button" onClick={()=>toggleBlockDay(i,day)} style={{padding:'5px 8px',borderRadius:5,fontSize:12,fontWeight:500,cursor:'pointer',transition:'all .1s',background:block.days.includes(day)?cd.clr:'transparent',color:block.days.includes(day)?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${block.days.includes(day)?cd.clr:T.bdr2}`}}>{day.slice(0,3)}</button>
+                  <button key={day} type="button" onClick={()=>toggleBlockDay(i,day)} style={{padding:'5px 8px',borderRadius:5,fontSize:11,fontWeight:500,cursor:'pointer',transition:'all .1s',background:block.days.includes(day)?cd.clr:'transparent',color:block.days.includes(day)?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${block.days.includes(day)?cd.clr:T.bdr2}`}}>{day.slice(0,3)}</button>
                 ))}
               </div>
-              {blockErrors[i]?.days&&<div style={{fontSize:12,color:'#ef4444',marginTop:3}}>{blockErrors[i].days}</div>}
+              {blockErrors[i]?.days&&<div style={{fontSize:11,color:'#ef4444',marginTop:3}}>{blockErrors[i].days}</div>}
             </div>
             <div style={{display:'flex',gap:10}}>
               <div style={{flex:1}}>
-                <label style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Início</label>
+                <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Início</label>
                 <select value={block.sh} onChange={e=>{const v=Number(e.target.value);updateBlock(i,{sh:v,eh:block.eh<=v?v+1:block.eh});}} style={{...inp,cursor:'pointer'}}>
                   {HOURS.map(h=><option key={h} value={h}>{fmtHour(h)}</option>)}
                 </select>
               </div>
               <div style={{flex:1}}>
-                <label style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Término</label>
+                <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Término</label>
                 <select value={block.eh} onChange={e=>updateBlock(i,{eh:Number(e.target.value)})} style={{...inp,cursor:'pointer'}}>
                   {HOURS.filter(h=>h>block.sh).concat([22]).map(h=><option key={h} value={h}>{fmtHour(h)}</option>)}
                 </select>
-                {blockErrors[i]?.eh&&<div style={{fontSize:12,color:'#ef4444',marginTop:3}}>{blockErrors[i].eh}</div>}
+                {blockErrors[i]?.eh&&<div style={{fontSize:11,color:'#ef4444',marginTop:3}}>{blockErrors[i].eh}</div>}
               </div>
             </div>
           </div>
         ))}
-        <button type="button" onClick={addBlock} style={{width:'100%',padding:'8px',marginBottom:20,background:'transparent',border:`1px dashed ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}}>+ Adicionar outro horário</button>
+        <button type="button" onClick={addBlock} style={{width:'100%',padding:'8px',marginBottom:20,background:'transparent',border:`1px dashed ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>+ Adicionar outro horário</button>
         <div style={{marginBottom:20}}>
-          <label style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Alunos Matriculados</label>
+          <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Alunos Matriculados</label>
           <input type="number" min={1} max={1000} value={enroll} onChange={e=>setEnroll(e.target.value)} style={inp}/>
-          {errors.enroll&&<div style={{fontSize:12,color:'#ef4444',marginTop:3}}>{errors.enroll}</div>}
+          {errors.enroll&&<div style={{fontSize:11,color:'#ef4444',marginTop:3}}>{errors.enroll}</div>}
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
-          <button onClick={handleSave} style={{padding:'8px 20px',background:cd.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:13,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>{course?'Salvar Alterações':'Criar Disciplina'}</button>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={handleSave} style={{padding:'8px 20px',background:cd.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:12,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>{course?'Salvar Alterações':'Criar Disciplina'}</button>
         </div>
       </div>
     </div>
@@ -2170,24 +2170,24 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
                 <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19}}>⇪</div>
                 <div>
                   <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Importar Disciplinas — {roleName} <span style={{color:T.dim,fontWeight:400}}>({period})</span></div>
-                  <div style={{...mono,fontSize:12,color:T.dim,marginTop:2}}>Substitui as disciplinas do departamento neste período — outros períodos não são afetados</div>
+                  <div style={{...mono,fontSize:10,color:T.dim,marginTop:2}}>Substitui as disciplinas do departamento neste período — outros períodos não são afetados</div>
                 </div>
                 <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
               </div>
-              <div style={{background:T.inner,borderRadius:8,padding:'12px 14px',marginBottom:16,border:`1px solid ${T.bdr}`,fontSize:13,color:T.txt2,lineHeight:1.7}}>
+              <div style={{background:T.inner,borderRadius:8,padding:'12px 14px',marginBottom:16,border:`1px solid ${T.bdr}`,fontSize:12,color:T.txt2,lineHeight:1.7}}>
                 Arquivo <strong>.ods, .xlsx ou .csv</strong> com <strong>uma linha por disciplina/turma</strong>, nas colunas: Código, Nome, Turma, Docente(s), Horário, Alunos Mat.
                 <br/>"Turma" pode ficar em branco — só é necessário preencher se o mesmo código tiver mais de uma turma no arquivo, para diferenciá-las (o sistema nunca numera automaticamente).
                 <br/>Horário usa o código do SIGAA (ex.: <span style={mono}>35M34</span>), podendo ter mais de um bloco separado por espaço quando a turma tem dias/horários diferentes (ex.: <span style={mono}>2T456 6T56</span>).
               </div>
-              <button type="button" onClick={downloadCourseTemplate} style={{display:'flex',alignItems:'center',gap:6,width:'100%',padding:'9px 12px',marginBottom:16,background:'transparent',border:`1px dashed ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:13,fontWeight:600,cursor:'pointer'}}
+              <button type="button" onClick={downloadCourseTemplate} style={{display:'flex',alignItems:'center',gap:6,width:'100%',padding:'9px 12px',marginBottom:16,background:'transparent',border:`1px dashed ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:12,fontWeight:600,cursor:'pointer'}}
                 onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
                 ⇩ Baixar modelo (.ods) com exemplos preenchidos
               </button>
-              <input type="file" accept=".csv,.ods,.xlsx,.xls" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}} style={{...mono,fontSize:13,color:T.txt}}/>
-              {parseError&&<div style={{fontSize:13,color:'#ef4444',marginTop:10}}>{parseError}</div>}
+              <input type="file" accept=".csv,.ods,.xlsx,.xls" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}} style={{...mono,fontSize:12,color:T.txt}}/>
+              {parseError&&<div style={{fontSize:12,color:'#ef4444',marginTop:10}}>{parseError}</div>}
             </div>
             <div style={{padding:'14px 20px',borderTop:`1px solid ${T.bdr}`,display:'flex',justifyContent:'flex-end'}}>
-              <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
+              <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
             </div>
           </>
         )}
@@ -2199,19 +2199,19 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
                 <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19}}>⇪</div>
                 <div>
                   <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Pré-visualização do Import</div>
-                  <div style={{...mono,fontSize:12,color:T.dim,marginTop:2}}>Revise antes de continuar — corrija o arquivo se houver erros</div>
+                  <div style={{...mono,fontSize:10,color:T.dim,marginTop:2}}>Revise antes de continuar — corrija o arquivo se houver erros</div>
                 </div>
                 <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
               </div>
               <div style={{display:'flex',gap:8}}>
                 <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,borderRadius:7,textAlign:'center'}}>
-                  <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#15803d':'#34D399',lineHeight:1}}>{validRows.length}</div>
-                  <div style={{...mono,fontSize:11,color:T.dim,marginTop:2}}>VÁLIDAS</div>
+                  <div style={{fontSize:23,fontWeight:700,color:theme==='light'?'#15803d':'#34D399',lineHeight:1}}>{validRows.length}</div>
+                  <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>VÁLIDAS</div>
                 </div>
                 {invalidRows.length>0&&(
                   <div style={{flex:1,padding:'8px 12px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:7,textAlign:'center'}}>
-                    <div style={{fontSize:22,fontWeight:700,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1}}>{invalidRows.length}</div>
-                    <div style={{...mono,fontSize:11,color:T.dim,marginTop:2}}>COM ERRO</div>
+                    <div style={{fontSize:23,fontWeight:700,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1}}>{invalidRows.length}</div>
+                    <div style={{...mono,fontSize:9,color:T.dim,marginTop:2}}>COM ERRO</div>
                   </div>
                 )}
               </div>
@@ -2219,23 +2219,23 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
             <div style={{display:'flex',gap:0,borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
               {[['valid',`✓ Válidas (${validRows.length})`],['invalid',`⚠ Com erro (${invalidRows.length})`]].map(([key,label])=>(
                 key!=='valid'&&invalidRows.length===0?null:(
-                  <button key={key} onClick={()=>setTab(key)} style={{flex:1,padding:'9px',fontSize:13,fontWeight:500,cursor:'pointer',background:'transparent',border:'none',borderBottom:`2px solid ${tab===key?dept.clr:'transparent'}`,color:tab===key?dClr:T.muted,transition:'all .12s'}}>{label}</button>
+                  <button key={key} onClick={()=>setTab(key)} style={{flex:1,padding:'9px',fontSize:12,fontWeight:500,cursor:'pointer',background:'transparent',border:'none',borderBottom:`2px solid ${tab===key?dept.clr:'transparent'}`,color:tab===key?dClr:T.muted,transition:'all .12s'}}>{label}</button>
                 )
               ))}
             </div>
             <div style={{flex:1,overflowY:'auto',padding:'8px 0'}}>
               {tab==='valid'?(
-                validRows.length===0?<div style={{textAlign:'center',padding:32,color:T.dim,fontSize:14}}>Nenhuma linha válida.</div>
+                validRows.length===0?<div style={{textAlign:'center',padding:32,color:T.dim,fontSize:13}}>Nenhuma linha válida.</div>
                 :validRows.map((r,i)=>(
                   <div key={i} style={{display:'flex',alignItems:'center',gap:10,padding:'9px 20px',borderBottom:`1px solid ${T.bdr}`,background:i%2===0?'transparent':(theme==='light'?T.faint:T.inner+'88')}}>
                     <div style={{width:2,height:30,borderRadius:1,background:dept.clr,flexShrink:0}}/>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
-                        <span style={{...mono,fontSize:12,color:dClr}}>{r.normalized.code}{r.normalized.sec!=null?` · Turma ${r.normalized.sec}`:''}</span>
-                        <span style={{fontSize:13,color:T.txt,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.normalized.name}</span>
+                        <span style={{...mono,fontSize:10,color:dClr}}>{r.normalized.code}{r.normalized.sec!=null?` · Turma ${r.normalized.sec}`:''}</span>
+                        <span style={{fontSize:12,color:T.txt,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.normalized.name}</span>
                       </div>
-                      <div style={{...mono,fontSize:12,color:T.dim}}>{fmtSchedule({blocks:r.normalized.blocks})} · {r.normalized.enroll} alunos</div>
-                      {r.normalized.teacher&&<div style={{fontSize:12,color:T.muted,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>👤 {r.normalized.teacher}</div>}
+                      <div style={{...mono,fontSize:10,color:T.dim}}>{fmtSchedule({blocks:r.normalized.blocks})} · {r.normalized.enroll} alunos</div>
+                      {r.normalized.teacher&&<div style={{fontSize:10,color:T.muted,marginTop:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>👤 {r.normalized.teacher}</div>}
                     </div>
                   </div>
                 ))
@@ -2244,9 +2244,9 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
                   <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 20px',borderBottom:`1px solid ${T.bdr}`}}>
                     <div style={{width:2,height:30,borderRadius:1,background:'#ef4444',flexShrink:0,marginTop:2}}/>
                     <div>
-                      <div style={{fontSize:13,color:T.txt,fontWeight:500,marginBottom:2}}>{r.raw.codigo||'(sem código)'}{r.raw.nome?` · ${r.raw.nome}`:''} {r.raw.turma?`· Turma ${r.raw.turma}`:''}</div>
+                      <div style={{fontSize:12,color:T.txt,fontWeight:500,marginBottom:2}}>{r.raw.codigo||'(sem código)'}{r.raw.nome?` · ${r.raw.nome}`:''} {r.raw.turma?`· Turma ${r.raw.turma}`:''}</div>
                       {Object.entries(r.errors).map(([field,msg])=>(
-                        <div key={field} style={{fontSize:12,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.4}}>{field}: {msg}</div>
+                        <div key={field} style={{fontSize:11,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.4}}>{field}: {msg}</div>
                       ))}
                     </div>
                   </div>
@@ -2254,9 +2254,9 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
               )}
             </div>
             <div style={{padding:'16px 20px',borderTop:`1px solid ${T.bdr}`,flexShrink:0,display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button onClick={()=>setStep('pick')} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}}>Voltar</button>
+              <button onClick={()=>setStep('pick')} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Voltar</button>
               <button onClick={()=>setStep('confirm')} disabled={invalidRows.length>0||validRows.length===0}
-                style={{padding:'8px 22px',borderRadius:7,fontSize:13,fontWeight:700,cursor:(invalidRows.length>0||validRows.length===0)?'not-allowed':'pointer',background:(invalidRows.length>0||validRows.length===0)?T.inner:dept.clr,border:'none',color:(invalidRows.length>0||validRows.length===0)?T.dim:(theme==='light'?'#fff':'#000')}}>
+                style={{padding:'8px 22px',borderRadius:7,fontSize:12,fontWeight:700,cursor:(invalidRows.length>0||validRows.length===0)?'not-allowed':'pointer',background:(invalidRows.length>0||validRows.length===0)?T.inner:dept.clr,border:'none',color:(invalidRows.length>0||validRows.length===0)?T.dim:(theme==='light'?'#fff':'#000')}}>
                 Continuar
               </button>
             </div>
@@ -2270,12 +2270,12 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
               <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Substituir Disciplinas de {roleName}?</div>
               <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
             </div>
-            <div style={{background:theme==='light'?'#fef2f2':'#1a0505',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444433'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:14,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.7}}>
+            <div style={{background:theme==='light'?'#fef2f2':'#1a0505',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444433'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.7}}>
               Isso vai <strong>excluir permanentemente {existingCourses.length} disciplina{existingCourses.length!==1?'s':''} existente{existingCourses.length!==1?'s':''}</strong> do {roleName} no período <strong>{period}</strong>{allocatedExisting>0?<>, incluindo <strong>{allocatedExisting} já alocada{allocatedExisting!==1?'s':''} em sala{allocatedExisting!==1?'s':''}</strong> (essas alocações serão perdidas)</>:''}. Outros períodos não são afetados. As <strong>{validRows.length} novas disciplinas</strong> do arquivo serão inseridas em seguida. Esta ação não pode ser desfeita.
             </div>
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button onClick={()=>setStep('preview')} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}}>Voltar</button>
-              <button onClick={handleConfirmImport} style={{padding:'8px 20px',borderRadius:7,fontSize:13,fontWeight:700,background:'#ef4444',border:'none',color:'#fff',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.1)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
+              <button onClick={()=>setStep('preview')} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Voltar</button>
+              <button onClick={handleConfirmImport} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,background:'#ef4444',border:'none',color:'#fff',cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.1)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
                 Excluir e Importar {validRows.length} Disciplina{validRows.length!==1?'s':''}
               </button>
             </div>
@@ -2303,52 +2303,52 @@ function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,day,onConfir
           <div style={{width:34,height:34,borderRadius:8,background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#f59e0b44':'#F59E0B44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:17}}>⇄</div>
           <div>
             <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Mesclar Turmas?</div>
-            <div style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim,marginTop:2}}>{room.label} · {room.type} · {gBlockLabel(room.blockId)}</div>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim,marginTop:2}}>{room.label} · {room.type} · {gBlockLabel(room.blockId)}</div>
           </div>
           <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
         </div>
         <div style={{background:T.inner,borderRadius:10,padding:'14px 16px',marginBottom:16,border:`1px solid ${T.bdr}`}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8}}>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>Capacidade da Sala</span>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:19,fontWeight:700,color:over?'#ef4444':totalEnroll/room.cap>0.85?'#d97706':theme==='light'?'#059669':'#34D399'}}>{totalEnroll}<span style={{fontSize:13,color:T.dim}}> / {room.cap}</span></span>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>Capacidade da Sala</span>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:19,fontWeight:700,color:over?'#ef4444':totalEnroll/room.cap>0.85?'#d97706':theme==='light'?'#059669':'#34D399'}}>{totalEnroll}<span style={{fontSize:12,color:T.dim}}> / {room.cap}</span></span>
           </div>
           <div style={{height:10,borderRadius:5,background:T.barTrack,overflow:'hidden',display:'flex',marginBottom:8}}>
             <div style={{width:`${pctEx}%`,background:T.barExist,transition:'width .4s',flexShrink:0}}/>
             <div style={{width:`${pctNew}%`,background:over?'#ef4444':'#F59E0B',transition:'width .4s',flexShrink:0}}/>
           </div>
           <div style={{display:'flex',gap:16}}>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.barExist}}>■ existente: {existing}</span>
-            <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:over?'#ef4444':'#d97706'}}>■ entrante: {incomingCourse.enroll}</span>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.barExist}}>■ existente: {existing}</span>
+            <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:over?'#ef4444':'#d97706'}}>■ entrante: {incomingCourse.enroll}</span>
           </div>
-          {over&&<div style={{marginTop:10,padding:'7px 10px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:6,fontSize:12,color:theme==='light'?'#b91c1c':'#ef4444'}}>⚠ A matrícula combinada excede a capacidade em <strong>{totalEnroll-room.cap} alunos</strong>.</div>}
+          {over&&<div style={{marginTop:10,padding:'7px 10px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:6,fontSize:11,color:theme==='light'?'#b91c1c':'#ef4444'}}>⚠ A matrícula combinada excede a capacidade em <strong>{totalEnroll-room.cap} alunos</strong>.</div>}
         </div>
         <div style={{marginBottom:over?14:20}}>
-          <div style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>Disciplinas compartilhando esta sala</div>
+          <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>Disciplinas compartilhando esta sala</div>
           <div style={{padding:'9px 12px',background:dbg(dept,theme),border:`1px solid ${dept.clr}44`,borderRadius:7,marginBottom:6}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <div><span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:dClr,fontWeight:600}}>{incomingCourse.code}</span><span style={{fontSize:12,color:T.txt2,marginLeft:8}}>{incomingCourse.name}</span></div>
+              <div><span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:dClr,fontWeight:600}}>{incomingCourse.code}</span><span style={{fontSize:11,color:T.txt2,marginLeft:8}}>{incomingCourse.name}</span></div>
               <div style={{display:'flex',alignItems:'center',gap:6}}>
-                <span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.muted}}>{fmtHour(incomingBlock.sh)}–{fmtHour(incomingBlock.eh)}</span>
-                <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:dClr,background:dbg(dept,theme),border:`1px solid ${dept.clr}55`,borderRadius:3,padding:'1px 5px'}}>NOVA</span>
+                <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.muted}}>{fmtHour(incomingBlock.sh)}–{fmtHour(incomingBlock.eh)}</span>
+                <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:dClr,background:dbg(dept,theme),border:`1px solid ${dept.clr}55`,borderRadius:3,padding:'1px 5px'}}>NOVA</span>
               </div>
             </div>
           </div>
           {conflicts.map(c=>{const cd=gRole(c.roleId),cdClr=dtc(cd,theme),cBlock=blockForDay(c,day);return(
             <div key={c.id} style={{padding:'9px 12px',background:T.card,border:`1px solid ${T.bdr}`,borderRadius:7,marginBottom:4}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <div><span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:cdClr}}>{c.code}</span><span style={{fontSize:12,color:T.muted,marginLeft:8}}>{c.name}</span></div>
-                <div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>{fmtHour(cBlock.sh)}–{fmtHour(cBlock.eh)}</span><span style={{fontFamily:"'DM Mono',monospace",fontSize:12,color:T.muted}}>{c.enroll} al.</span></div>
+                <div><span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:cdClr}}>{c.code}</span><span style={{fontSize:11,color:T.muted,marginLeft:8}}>{c.name}</span></div>
+                <div style={{display:'flex',alignItems:'center',gap:6}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{fmtHour(cBlock.sh)}–{fmtHour(cBlock.eh)}</span><span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:T.muted}}>{c.enroll} al.</span></div>
               </div>
             </div>
           );})}
         </div>
         {over&&<label style={{display:'flex',alignItems:'center',gap:8,marginBottom:14,cursor:'pointer',userSelect:'none',padding:'8px 10px',background:theme==='light'?'#fef2f2':'#1a0505',borderRadius:6,border:`1px solid ${theme==='light'?'#fca5a5':'#ef444433'}`}}>
           <input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} style={{accentColor:'#ef4444',width:14,height:14}}/>
-          <span style={{fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444'}}>Estou ciente de que isso excede a capacidade da sala e desejo continuar</span>
+          <span style={{fontSize:12,color:theme==='light'?'#b91c1c':'#ef4444'}}>Estou ciente de que isso excede a capacidade da sala e desejo continuar</span>
         </label>}
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background=T.inner} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>Cancelar</button>
-          <button onClick={onConfirm} disabled={over&&!confirmed} style={{padding:'8px 20px',borderRadius:7,fontSize:13,fontWeight:700,transition:'all .15s',background:over?(confirmed?'#ef4444':theme==='light'?'#f3f4f6':'#1a0505'):'#F59E0B',border:over?`1px solid ${confirmed?'#ef4444':T.bdr}`:'none',color:over?(confirmed?'#fff':T.dim):'#000',cursor:over&&!confirmed?'not-allowed':'pointer'}} onMouseEnter={e=>{if(!(over&&!confirmed))e.currentTarget.style.filter='brightness(1.08)';}} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.background=T.inner} onMouseLeave={e=>e.currentTarget.style.background='transparent'}>Cancelar</button>
+          <button onClick={onConfirm} disabled={over&&!confirmed} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,transition:'all .15s',background:over?(confirmed?'#ef4444':theme==='light'?'#f3f4f6':'#1a0505'):'#F59E0B',border:over?`1px solid ${confirmed?'#ef4444':T.bdr}`:'none',color:over?(confirmed?'#fff':T.dim):'#000',cursor:over&&!confirmed?'not-allowed':'pointer'}} onMouseEnter={e=>{if(!(over&&!confirmed))e.currentTarget.style.filter='brightness(1.08)';}} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
             {over?'⚠ Confirmar Mesclagem':'⇄ Confirmar Mesclagem'}
           </button>
         </div>
@@ -2376,33 +2376,33 @@ function DayPickerModal({room,course,dept,onConfirm,onCancel}){
           <div style={{width:3,height:20,borderRadius:1,background:dept.clr}}/>
           <div>
             <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Em quais dias alocar?</div>
-            <div style={{...mono,fontSize:12,color:dClr,marginTop:2}}>{course.code} → {room?.label}</div>
+            <div style={{...mono,fontSize:10,color:dClr,marginTop:2}}>{course.code} → {room?.label}</div>
           </div>
           <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
         </div>
-        <div style={{fontSize:13,color:T.txt2,lineHeight:1.6,marginBottom:16}}>
+        <div style={{fontSize:12,color:T.txt2,lineHeight:1.6,marginBottom:16}}>
           Esta disciplina ocorre em mais de um dia ({days.map(d=>d.slice(0,3)).join('/')}). Esta sala está livre em todos eles — quer alocá-la para a semana toda, ou só para alguns dias (deixando o resto pendente, pra alocar em outra sala depois)?
         </div>
-        <button onClick={()=>onConfirm(null)} style={{width:'100%',padding:'10px',marginBottom:14,background:dept.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:13,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
+        <button onClick={()=>onConfirm(null)} style={{width:'100%',padding:'10px',marginBottom:14,background:dept.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:12,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>
           Todos os dias ({days.map(d=>d.slice(0,3)).join('/')})
         </button>
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
           <div style={{flex:1,height:1,background:T.bdr}}/>
-          <span style={{...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>ou escolha os dias</span>
+          <span style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>ou escolha os dias</span>
           <div style={{flex:1,height:1,background:T.bdr}}/>
         </div>
         <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:18}}>
           {days.map(d=>(
             <button key={d} type="button" onClick={()=>toggleDay(d)}
-              style={{padding:'6px 12px',borderRadius:6,fontSize:13,fontWeight:500,cursor:'pointer',transition:'all .1s',background:selectedDays.includes(d)?dept.clr:'transparent',color:selectedDays.includes(d)?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${selectedDays.includes(d)?dept.clr:T.bdr2}`}}>
+              style={{padding:'6px 12px',borderRadius:6,fontSize:12,fontWeight:500,cursor:'pointer',transition:'all .1s',background:selectedDays.includes(d)?dept.clr:'transparent',color:selectedDays.includes(d)?(theme==='light'?'#fff':'#000'):T.muted,border:`1px solid ${selectedDays.includes(d)?dept.clr:T.bdr2}`}}>
               {d}
             </button>
           ))}
         </div>
         <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
           <button onClick={()=>onConfirm(selectedDays)} disabled={selectedDays.length===0}
-            style={{padding:'8px 20px',borderRadius:7,fontSize:13,fontWeight:700,cursor:selectedDays.length===0?'not-allowed':'pointer',background:selectedDays.length===0?T.inner:dept.clr,border:'none',color:selectedDays.length===0?T.dim:(theme==='light'?'#fff':'#000')}}>
+            style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,cursor:selectedDays.length===0?'not-allowed':'pointer',background:selectedDays.length===0?T.inner:dept.clr,border:'none',color:selectedDays.length===0?T.dim:(theme==='light'?'#fff':'#000')}}>
             {allDays?'Confirmar (todos os dias)':`Confirmar (${selectedDays.length} dia${selectedDays.length!==1?'s':''})`}
           </button>
         </div>
