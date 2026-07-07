@@ -65,18 +65,18 @@ export default function UserManagement({ onClose, roles, subUnits }) {
       {/* Cabeçalho */}
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'14px 20px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
         <div>
-          <div style={{fontSize:14,fontWeight:700,color:T.txt}}>Gerenciamento de Usuários</div>
-          <div style={{...mono,fontSize:9,color:T.dim}}>{visible.length} usuário{visible.length!==1?'s':''} exibido{visible.length!==1?'s':''}</div>
+          <div style={{fontSize:15,fontWeight:700,color:T.txt}}>Gerenciamento de Usuários</div>
+          <div style={{...mono,fontSize:12,color:T.dim}}>{visible.length} usuário{visible.length!==1?'s':''} exibido{visible.length!==1?'s':''}</div>
         </div>
         <div style={{flex:1}}/>
         <button onClick={onClose}
-          style={{padding:'6px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>
+          style={{padding:'6px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>
           ✕ Fechar
         </button>
       </div>
 
       {feedback&&(
-        <div style={{margin:'10px 20px 0',padding:'8px 12px',borderRadius:6,fontSize:12,
+        <div style={{margin:'10px 20px 0',padding:'8px 12px',borderRadius:6,fontSize:14,
                      background:fdbkBg,border:`1px solid ${fdbkBdr}`,color:fdbkClr}}>
           {feedback.msg}
         </div>
@@ -88,18 +88,18 @@ export default function UserManagement({ onClose, roles, subUnits }) {
           <div style={{padding:'10px 20px',borderBottom:`1px solid ${T.bdr}`}}>
             <input type="text" value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Buscar por nome, usuário ou função…"
-              style={{width:'100%',padding:'6px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'}}/>
+              style={{width:'100%',padding:'6px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:14,outline:'none'}}/>
           </div>
 
           <div style={{flex:1,overflowY:'auto'}}>
             {loading?(
-              <div style={{padding:32,textAlign:'center',color:T.dim,fontSize:12}}>Carregando…</div>
+              <div style={{padding:32,textAlign:'center',color:T.dim,fontSize:14}}>Carregando…</div>
             ):(
-            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:14}}>
               <thead>
                 <tr style={{position:'sticky',top:0,background:T.surface,borderBottom:`1px solid ${T.bdr}`,zIndex:2}}>
                   {['Nome','Usuário','Função','Último Acesso','Status',''].map(h=>(
-                    <th key={h} style={{padding:'8px 14px',textAlign:'left',...mono,fontSize:8,color:T.dim,fontWeight:400,textTransform:'uppercase',letterSpacing:1}}>{h}</th>
+                    <th key={h} style={{padding:'8px 14px',textAlign:'left',...mono,fontSize:11,color:T.dim,fontWeight:400,textTransform:'uppercase',letterSpacing:1}}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -114,18 +114,18 @@ export default function UserManagement({ onClose, roles, subUnits }) {
                       style={{borderBottom:`1px solid ${T.bdr}`,background:!user.isActive?T.faint:'transparent',opacity:user.isActive?1:0.55}}>
                       <td style={{padding:'10px 14px'}}>
                         <div style={{fontWeight:500,color:T.txt}}>{user.name}</div>
-                        <div style={{...mono,fontSize:9,color:T.dim}}>{user.email}</div>
+                        <div style={{...mono,fontSize:12,color:T.dim}}>{user.email}</div>
                       </td>
-                      <td style={{padding:'10px 14px',...mono,fontSize:11,color:T.muted}}>
+                      <td style={{padding:'10px 14px',...mono,fontSize:13,color:T.muted}}>
                         {user.username}
-                        {isSelf&&<span style={{marginLeft:6,fontSize:8,color:'#3b82f6',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:3,padding:'1px 4px'}}>você</span>}
+                        {isSelf&&<span style={{marginLeft:6,fontSize:11,color:'#3b82f6',background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:3,padding:'1px 4px'}}>você</span>}
                       </td>
                       <td style={{padding:'10px 14px'}}>
-                        <span style={{...mono,fontSize:9,color:role.textClr,background:`${role.clr}22`,border:`1px solid ${role.clr}44`,borderRadius:4,padding:'2px 7px'}}>{role.name}</span>
+                        <span style={{...mono,fontSize:12,color:role.textClr,background:`${role.clr}22`,border:`1px solid ${role.clr}44`,borderRadius:4,padding:'2px 7px'}}>{role.name}</span>
                       </td>
-                      <td style={{padding:'10px 14px',...mono,fontSize:10,color:T.dim}}>{formatDateTime(user.lastLogin)}</td>
+                      <td style={{padding:'10px 14px',...mono,fontSize:12,color:T.dim}}>{formatDateTime(user.lastLogin)}</td>
                       <td style={{padding:'10px 14px'}}>
-                        <span style={{...mono,fontSize:9,borderRadius:4,padding:'2px 7px',
+                        <span style={{...mono,fontSize:12,borderRadius:4,padding:'2px 7px',
                           background:user.isActive?(theme==='light'?'#f0fdf4':'#0a2a0a'):T.faint,
                           border:`1px solid ${user.isActive?(theme==='light'?'#86efac':'#34d39933'):T.bdr}`,
                           color:user.isActive?(theme==='light'?'#15803d':'#34d399'):T.dim}}>
@@ -136,13 +136,13 @@ export default function UserManagement({ onClose, roles, subUnits }) {
                         <div style={{display:'flex',gap:6}}>
                           {canEdit&&user.isActive&&(
                             <button onClick={()=>setEditUser(user)}
-                              style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:10,cursor:'pointer'}}
+                              style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:12,cursor:'pointer'}}
                               onMouseEnter={e=>e.currentTarget.style.borderColor=T.muted}
                               onMouseLeave={e=>e.currentTarget.style.borderColor=T.bdr2}>Editar</button>
                           )}
                           {canDeact&&user.isActive&&(
                             <button onClick={()=>setDeactConf(user)}
-                              style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:theme==='light'?'#b91c1c':'#ef4444',fontSize:10,cursor:'pointer'}}
+                              style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:theme==='light'?'#b91c1c':'#ef4444',fontSize:12,cursor:'pointer'}}
                               onMouseEnter={e=>e.currentTarget.style.borderColor='#ef4444'}
                               onMouseLeave={e=>e.currentTarget.style.borderColor='#ef444455'}>Desativar</button>
                           )}
@@ -181,15 +181,15 @@ export default function UserManagement({ onClose, roles, subUnits }) {
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300}}>
           <div onClick={e=>e.stopPropagation()}
             style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:12,padding:24,width:340,boxShadow:T.shadowMd}}>
-            <div style={{fontSize:14,fontWeight:700,color:T.txt,marginBottom:8}}>Desativar usuário?</div>
-            <div style={{fontSize:12,color:T.muted,marginBottom:20}}>
+            <div style={{fontSize:15,fontWeight:700,color:T.txt,marginBottom:8}}>Desativar usuário?</div>
+            <div style={{fontSize:14,color:T.muted,marginBottom:20}}>
               <strong>{deactConf.name}</strong> perderá todo o acesso imediatamente. Os dados são preservados.
             </div>
             <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
               <button onClick={()=>setDeactConf(null)}
-                style={{padding:'7px 16px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
+                style={{padding:'7px 16px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
               <button onClick={()=>handleDeactivate(deactConf)}
-                style={{padding:'7px 16px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                style={{padding:'7px 16px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>
                 Desativar
               </button>
             </div>
@@ -230,8 +230,8 @@ function UserForm({T, theme, mono, roles, existing, currentUser, onSave, onCance
     onSave(payload);
   };
 
-  const inp = {width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:12,outline:'none'};
-  const lbl = {...mono,fontSize:8,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4};
+  const inp = {width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:14,outline:'none'};
+  const lbl = {...mono,fontSize:11,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4};
 
   const field = (label, key, type='text', placeholder='') => (
     <div style={{marginBottom:12}}>
@@ -240,13 +240,13 @@ function UserForm({T, theme, mono, roles, existing, currentUser, onSave, onCance
         onChange={e=>set(key,e.target.value)}
         readOnly={key==='username'}
         style={{...inp,opacity:key==='username'?.6:1}}/>
-      {errors[key]&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors[key]}</div>}
+      {errors[key]&&<div style={{fontSize:12,color:'#ef4444',marginTop:3}}>{errors[key]}</div>}
     </div>
   );
 
   return (
     <form onSubmit={handleSubmit} style={{padding:20}}>
-      <div style={{fontSize:13,fontWeight:700,marginBottom:16,color:T.txt}}>Editar Usuário</div>
+      <div style={{fontSize:15,fontWeight:700,marginBottom:16,color:T.txt}}>Editar Usuário</div>
       {field('Nome Completo',   'name',     'text',     'Dr. João Silva')}
       {field('Usuário',         'username', 'text',     '')}
       {field('E-mail',          'email',    'email',    'joao.silva@ufpi.edu.br')}
@@ -258,19 +258,19 @@ function UserForm({T, theme, mono, roles, existing, currentUser, onSave, onCance
           style={{...inp,cursor:'pointer'}}>
           {roles.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
         </select>
-        {errors.roleId&&<div style={{fontSize:10,color:'#ef4444',marginTop:3}}>{errors.roleId}</div>}
+        {errors.roleId&&<div style={{fontSize:12,color:'#ef4444',marginTop:3}}>{errors.roleId}</div>}
       </div>
 
-      <label style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,cursor:'pointer',fontSize:12,color:T.txt}}>
+      <label style={{display:'flex',alignItems:'center',gap:8,marginBottom:16,cursor:'pointer',fontSize:14,color:T.txt}}>
         <input type="checkbox" checked={form.isActive} onChange={e=>set('isActive',e.target.checked)} style={{accentColor:'#3b82f6',width:14,height:14}}/>
         Conta ativa
       </label>
 
       <div style={{display:'flex',gap:8,marginTop:4}}>
         <button type="button" onClick={onCancel}
-          style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
+          style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:13,cursor:'pointer'}}>Cancelar</button>
         <button type="submit"
-          style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:11,fontWeight:600,cursor:'pointer'}}>
+          style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>
           Salvar Alterações
         </button>
       </div>
