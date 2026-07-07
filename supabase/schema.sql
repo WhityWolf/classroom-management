@@ -130,6 +130,17 @@ create table room_features (
   name text primary key
 );
 
+-- ─── Configurações globais (singleton) ────────────────────────────────────
+-- Uma única linha guarda overrides globais visíveis a todos os usuários.
+-- current_period_override null = comportamento automático (maior período
+-- por comparePeriods, ver src/periods.js); um valor força esse período como
+-- "atual" independente do que os cursos tenham.
+create table app_settings (
+  id                      text primary key default 'singleton',
+  current_period_override text
+);
+insert into app_settings (id) values ('singleton');
+
 -- ─── Usuários (substitui o mock localStorage de src/auth/mockDb.js) ───────────
 -- Sem coluna deptId singular: o escopo de um usuário vem inteiramente de
 -- role_id (a função define a sub-unidade e as salas dele). Múltiplos
@@ -167,6 +178,7 @@ alter table courses enable row level security;
 alter table coordination_statuses enable row level security;
 alter table notifications enable row level security;
 alter table room_features enable row level security;
+alter table app_settings enable row level security;
 alter table app_users enable row level security;
 alter table app_sessions enable row level security;
 
@@ -183,6 +195,7 @@ create policy "anon full access" on courses for all using (true) with check (tru
 create policy "anon full access" on coordination_statuses for all using (true) with check (true);
 create policy "anon full access" on notifications for all using (true) with check (true);
 create policy "anon full access" on room_features for all using (true) with check (true);
+create policy "anon full access" on app_settings for all using (true) with check (true);
 
 -- app_users/app_sessions get NO policy at all (default deny for anon) — the
 -- only access path is through the security-definer functions below, which
@@ -354,6 +367,6 @@ grant execute on function revoke_app_session(text) to anon;
 -- loaded on demand (list_app_users()), no live-sync need, and it avoids
 -- broadcasting user metadata over a wider channel than necessary.
 alter publication supabase_realtime add table
-  sub_units, roles, blocks, rooms, courses, coordination_statuses, notifications, room_features;
+  sub_units, roles, blocks, rooms, courses, coordination_statuses, notifications, room_features, app_settings;
 
 insert into room_features (name) values ('Projetor'), ('Mesas de Desenho');

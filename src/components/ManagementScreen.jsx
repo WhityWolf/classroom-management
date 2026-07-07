@@ -70,7 +70,7 @@ function ptError(e) {
   return msg;
 }
 
-export default function ManagementScreen({ onBack, courses=[], createdPeriods=[], onPeriodCreated }) {
+export default function ManagementScreen({ onBack, courses=[], createdPeriods=[], onPeriodCreated, currentPeriodOverride=null }) {
   const { currentUser, logout, can } = useAuth();
   const { T, theme, toggleTheme } = useT();
   const mono = { fontFamily:"'DM Mono',monospace" };
@@ -175,7 +175,7 @@ export default function ManagementScreen({ onBack, courses=[], createdPeriods=[]
             {tab==='roles'&&<RolesTab roles={roles} subUnits={subUnits} rooms={rooms} blocks={blocks} users={users} can={can} reloadDomain={reloadDomain} flash={flash}/>}
             {tab==='subunits'&&<SubUnitsTab subUnits={subUnits} roles={roles} can={can} reloadDomain={reloadDomain} flash={flash}/>}
             {tab==='rooms'&&<RoomsBlocksTab rooms={rooms} blocks={blocks} roles={roles} subUnits={subUnits} can={can} reloadDomain={reloadDomain} flash={flash} gRole={gRole}/>}
-            {tab==='periods'&&<PeriodsTab courses={courses} createdPeriods={createdPeriods} onPeriodCreated={onPeriodCreated} flash={flash}/>}
+            {tab==='periods'&&<PeriodsTab courses={courses} createdPeriods={createdPeriods} onPeriodCreated={onPeriodCreated} currentPeriodOverride={currentPeriodOverride} flash={flash}/>}
           </>
         )}
       </div>
@@ -697,8 +697,8 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
 // recência e chama onPeriodCreated, que quem chamou (Dashboard) usa pra
 // registrar o período (createdPeriods), selecioná-lo e levar de volta pra
 // Alocar Disciplinas — nada é persistido no banco por esta aba.
-function PeriodsTab({ courses, createdPeriods, onPeriodCreated, flash }) {
-  const { T } = useT();
+function PeriodsTab({ courses, createdPeriods, onPeriodCreated, currentPeriodOverride, flash }) {
+  const { T, theme } = useT();
   const [creating, setCreating] = useState(false);
   const [value, setValue] = useState('');
   const [error, setError] = useState(null);
@@ -707,7 +707,7 @@ function PeriodsTab({ courses, createdPeriods, onPeriodCreated, flash }) {
     const s = new Set([...courses.map(c=>c.period), ...createdPeriods]);
     return [...s].sort(comparePeriods);
   }, [courses, createdPeriods]);
-  const currentPeriod = allPeriods[allPeriods.length-1] ?? DEFAULT_PERIOD;
+  const currentPeriod = currentPeriodOverride ?? (allPeriods[allPeriods.length-1] ?? DEFAULT_PERIOD);
 
   const startCreate = () => { setCreating(true); setValue(''); setError(null); };
   const cancel = () => { setCreating(false); setValue(''); setError(null); };
@@ -717,6 +717,14 @@ function PeriodsTab({ courses, createdPeriods, onPeriodCreated, flash }) {
     if (comparePeriods(trimmed, currentPeriod) <= 0) { setError(`Precisa ser posterior ao período atual (${currentPeriod}).`); return; }
     setCreating(false); setValue(''); setError(null);
     onPeriodCreated(trimmed);
+  };
+  const setAsCurrent = async p => {
+    try { await db.setCurrentPeriodOverride(p); flash('ok', `Período ${p} definido como atual.`); }
+    catch (e) { flash('err', ptError(e)); }
+  };
+  const clearOverride = async () => {
+    try { await db.setCurrentPeriodOverride(null); flash('ok', 'Período atual voltou a ser automático.'); }
+    catch (e) { flash('err', ptError(e)); }
   };
 
   return (
@@ -728,9 +736,16 @@ function PeriodsTab({ courses, createdPeriods, onPeriodCreated, flash }) {
             <div key={p} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
               <div style={{flex:1,display:'flex',alignItems:'center',gap:8}}>
                 <span style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:600,color:T.txt}}>{p}</span>
-                {p===currentPeriod&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:'#059669',background:'#f0fdf4',border:'1px solid #86efac',borderRadius:4,padding:'2px 6px'}}>ATUAL</span>}
+                {p===currentPeriod&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,
+                  color:theme==='light'?'#15803d':'#34d399',
+                  background:theme==='light'?'#f0fdf4':'#0a2a0a',
+                  border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,
+                  borderRadius:4,padding:'2px 6px'}}>ATUAL</span>}
               </div>
               <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{courses.filter(c=>c.period===p).length} disciplina{courses.filter(c=>c.period===p).length!==1?'s':''}</span>
+              {p===currentPeriodOverride
+                ? <button onClick={clearOverride} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Voltar ao automático</button>
+                : <button onClick={()=>setAsCurrent(p)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Definir como atual</button>}
             </div>
           ))}
           {allPeriods.length===0&&<div style={{...{fontFamily:"'DM Mono',monospace"},fontSize:12,color:T.dim}}>Nenhum período cadastrado ainda.</div>}

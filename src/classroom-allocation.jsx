@@ -359,6 +359,11 @@ function Dashboard(){
   const[coordinationStatuses,setCoordinationStatuses]=useState({});
   const[notifications,setNotifs]     =useState([]);
   const[featureOptions,setFeatureOptions]=useState([]);
+  // Período marcado manualmente como "atual" para todo mundo (app_settings,
+  // banco compartilhado) — null = comportamento automático. Não confundir
+  // com `periodOverride` abaixo, que é só "qual período estou vendo agora"
+  // (local, por navegador).
+  const[currentPeriodOverride,setCurrentPeriodOverride]=useState(null);
   const[dataLoading,setDataLoading]  =useState(true);
   const[loadError,setLoadError]      =useState(null);
 
@@ -376,6 +381,7 @@ function Dashboard(){
         setRooms(data.rooms);setCourses(data.courses);
         setCoordinationStatuses(data.coordinationStatuses);
         setNotifs(data.notifications);setFeatureOptions(data.featureOptions);
+        setCurrentPeriodOverride(data.currentPeriodOverride);
         if(isInstitutional){
           setActiveRoleId(prev=>prev??data.roles.find(r=>r.subUnitId)?.id??data.roles[0]?.id??null);
         }
@@ -385,7 +391,7 @@ function Dashboard(){
     return()=>{active=false;};
   },[]);
 
-  useRealtimeSync({setSubUnits,setRoles,setBlocks,setRooms,setCourses,setCoordinationStatuses,setNotifs,setFeatureOptions});
+  useRealtimeSync({setSubUnits,setRoles,setBlocks,setRooms,setCourses,setCoordinationStatuses,setNotifs,setFeatureOptions,setCurrentPeriodOverride});
 
   const gRole=useMemo(()=>makeGRole(roles,subUnits),[roles,subUnits]);
   const gBlockLabel=useMemo(()=>makeGBlockLabel(blocks),[blocks]);
@@ -435,7 +441,10 @@ function Dashboard(){
     const s=new Set([...courses.map(c=>c.period),...createdPeriods]);
     return[...s].sort(comparePeriods);
   },[courses,createdPeriods]);
-  const currentPeriod=allPeriods[allPeriods.length-1]??DEFAULT_PERIOD;
+  // currentPeriodOverride (app_settings, compartilhado) tem prioridade sobre
+  // o cálculo automático (maior período) quando a Diretoria fixa um período
+  // manualmente na aba Períodos de Gerenciamento.
+  const currentPeriod=currentPeriodOverride??(allPeriods[allPeriods.length-1]??DEFAULT_PERIOD);
   const selectedPeriod=periodOverride??currentPeriod;
   const isPastPeriod=selectedPeriod!==currentPeriod;
   // Instituição pode destravar um período passado pra corrigir alocação
@@ -738,9 +747,10 @@ function Dashboard(){
   if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>Carregando dados…</div>;
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
   if(screen==='select')return<ScreenSelector onPick={setScreen} subUnits={subUnits}/>;
-  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} onBack={()=>setScreen('select')}/>;
+  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} currentPeriodOverride={currentPeriodOverride} onBack={()=>setScreen('select')}/>;
   if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')}
-    courses={courses} createdPeriods={createdPeriods} onPeriodCreated={handlePeriodCreatedFromManagement}/>;
+    courses={courses} createdPeriods={createdPeriods} onPeriodCreated={handlePeriodCreatedFromManagement}
+    currentPeriodOverride={currentPeriodOverride}/>;
 
   return(
     <RolesCtx.Provider value={{roles,subUnits,blocks,gRole,gBlockLabel}}>
@@ -1055,14 +1065,14 @@ function ScreenSelector({onPick,subUnits}){
 // Visão somente-leitura — mostra uma tabela por sala, com dias da semana como
 // colunas e faixas horárias (8h–22h) como linhas, para todos os departamentos
 // de uma vez.
-function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
+function RoomMapScreen({rooms,courses,roles,subUnits,blocks,currentPeriodOverride,onBack}){
   const{currentUser,logout}=useAuth();
   const{T,theme,toggleTheme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
   const gRole=useMemo(()=>makeGRole(roles,subUnits),[roles,subUnits]);
   const gBlockLabel=useMemo(()=>makeGBlockLabel(blocks),[blocks]);
   const allPeriods=useMemo(()=>[...new Set(courses.map(c=>c.period))].sort(comparePeriods),[courses]);
-  const currentPeriod=allPeriods[allPeriods.length-1]??DEFAULT_PERIOD;
+  const currentPeriod=currentPeriodOverride??(allPeriods[allPeriods.length-1]??DEFAULT_PERIOD);
   const[periodOverride,setPeriodOverride]=useState(null);
   const selectedPeriod=periodOverride??currentPeriod;
   const periodCourses=useMemo(()=>courses.filter(c=>c.period===selectedPeriod),[courses,selectedPeriod]);
