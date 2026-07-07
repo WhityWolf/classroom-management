@@ -101,6 +101,32 @@ function fmtRoomByDay(course,rooms){
   return allocatedDays.map(d=>`${d.slice(0,3)}: ${rooms.find(r=>r.id===rbd[d])?.label??rbd[d]}`).join(' · ');
 }
 function fmtHour(h){return`${String(h).padStart(2,'0')}:00`;}
+function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+// Renderiza o conteúdo de uma célula do Mapa de Salas (buildCellContent) como
+// HTML estático, para o gerador de PDF — espelha o branch por modo usado em
+// RoomMapGrid, mas produzindo string em vez de JSX.
+function renderCellHtml(content,cd){
+  if(!content)return'';
+  let html=`<span style="color:${cd.textClr};font-weight:700">${escapeHtml(content.primary)}</span>`;
+  if(content.mode==='detalhado')html+=`<br><span class="tchr">${escapeHtml(content.name)}</span>`;
+  if(content.teacher)html+=`<br><span class="tchr">${escapeHtml(content.teacher)}</span>`;
+  if(content.mode==='detalhado')html+=`<br><span class="tchr">${escapeHtml(content.timeRange)} · ${content.enroll} alunos</span>`;
+  if(content.merged>0)html+=`<span class="merged">+${content.merged}</span>`;
+  return html;
+}
+// Deriva os campos exibidos numa célula alocada do Mapa de Salas, conforme o
+// modo de visão ('padrao'|'detalhado'|'simples') — usado tanto por RoomMapGrid
+// (JSX) quanto por generatePdf/roomHtml (string HTML), para as duas
+// renderizações nunca divergirem no que mostram.
+function buildCellContent(cell,day,mode){
+  if(!cell.c)return null;
+  const c=cell.c,sb=blockForDay(c,day);
+  const secSuffix=c.sec!=null?` T${c.sec}`:'';
+  const tooltip=`${c.name}${c.sec!=null?` · Turma ${c.sec}`:''}${c.teacher?` · ${c.teacher}`:''} · ${fmtHour(sb.sh)}–${fmtHour(sb.eh)} · ${c.enroll} alunos`;
+  if(mode==='simples')return{mode,tooltip,primary:c.code};
+  if(mode==='detalhado')return{mode,tooltip,primary:`${c.code}${secSuffix}`,name:c.name,teacher:c.teacher||null,timeRange:`${fmtHour(sb.sh)}–${fmtHour(sb.eh)}`,enroll:c.enroll,merged:cell.merged};
+  return{mode,tooltip,primary:`${c.code}${secSuffix}`,teacher:c.teacher||null,merged:cell.merged};
+}
 
 // ─── Catálogo de disciplinas (criação manual + import ODS) ───────────────────
 // id derivado de dept+código+seção+período: dobra como detector de duplicata
@@ -1036,6 +1062,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
   const allocatedRoomIds=useMemo(()=>new Set(periodCourses.flatMap(c=>Object.values(c.roomByDay||{}))),[periodCourses]);
   const allocatedRooms=useMemo(()=>rooms.filter(r=>allocatedRoomIds.has(r.id)),[rooms,allocatedRoomIds]);
   const[roomFilter,setRoomFilter]=useState('all'); // 'all' | 'allocated' | 'empty'
+  const[cellMode,setCellMode]=useState('padrao'); // 'padrao' | 'detalhado' | 'simples'
   const displayRooms=useMemo(()=>{
     if(roomFilter==='allocated')return allocatedRooms;
     if(roomFilter==='empty')return rooms.filter(r=>!allocatedRoomIds.has(r.id));
@@ -1079,20 +1106,11 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
     const groupOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
     const sorted=[...displayRooms].sort((a,b)=>groupOrder(groupOf(a))-groupOrder(groupOf(b))||gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true}));
     const dateStr=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-    // Monta a mesma hierarquia Depto → Bloco → Salas que a UI usa
-    const pdfGroups=[];
-    sorted.forEach(room=>{
-      const g=groupOf(room);
-      if(!pdfGroups.length||pdfGroups[pdfGroups.length-1].name!==g)
-        pdfGroups.push({name:g,rd:gRole(room.roleId),blocks:[]});
-      const grp=pdfGroups[pdfGroups.length-1];
-      const blkLabel=gBlockLabel(room.blockId);
-      if(!grp.blocks.length||grp.blocks[grp.blocks.length-1].blockId!==room.blockId)
-        grp.blocks.push({blockId:room.blockId,label:blkLabel,rooms:[]});
-      grp.blocks[grp.blocks.length-1].rooms.push(room);
-    });
     const thDays=DAYS.map(d=>`<th>${d.slice(0,3)}</th>`).join('');
-    const roomHtml=room=>{
+    // Uma sala por página: sem agrupamento visual de depto/bloco acima de
+    // várias salas (não faz mais sentido com paginação 1-a-1) — o contexto
+    // depto·bloco vai embutido no próprio cabeçalho de cada sala.
+    const roomHtml=(room,deptName,blockLabel,isLast)=>{
       const rd=gRole(room.roleId);
       const colMaps={};DAYS.forEach(d=>{colMaps[d]=buildColMap(room.id,d);});
       const bodyRows=MAP_HOURS.map(h=>{
@@ -1101,42 +1119,40 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
           if(cell===null)return'';
           if(!cell.c)return`<td></td>`;
           const cd=gRole(cell.c.roleId);
-          const sb=blockForDay(cell.c,d);
-          const tip=`${cell.c.name}${cell.c.sec!=null?` · Turma ${cell.c.sec}`:''}${cell.c.teacher?` · ${cell.c.teacher}`:''} · ${fmtHour(sb.sh)}–${fmtHour(sb.eh)}`;
-          return`<td rowspan="${cell.span}" title="${tip.replace(/"/g,'&quot;')}" style="border-left:2px solid ${cd.clr};background:${cd.clr}22"><span style="color:${cd.textClr};font-weight:700">${cell.c.code}${cell.c.sec!=null?` T${cell.c.sec}`:''}</span>${cell.c.teacher?`<br><span class="tchr">${cell.c.teacher}</span>`:''}</td>`;
+          const content=buildCellContent(cell,d,cellMode);
+          return`<td rowspan="${cell.span}" title="${escapeHtml(content.tooltip)}" style="border-left:2px solid ${cd.clr};background:${cd.clr}22">${renderCellHtml(content,cd)}</td>`;
         }).join('');
         return`<tr><td class="hcell">${h}:00–${h+1}:00</td>${cells}</tr>`;
       }).join('');
       const responsible=getRoomResponsible(room);
-      return`<div class="room-card"><div class="room-hdr" style="border-left:3px solid ${rd.clr}"><span style="color:${rd.textClr};font-weight:700;font-size:8px">${room.label}</span><span class="cap">${room.cap} al.</span><span class="resp">${responsible}</span></div><table><thead><tr><th class="hth">Horário</th>${thDays}</tr></thead><tbody>${bodyRows}</tbody></table></div>`;
+      return`<div class="room-card" style="${isLast?'':'page-break-after:always;'}">`
+        +`<div class="room-hdr" style="border-left:3px solid ${rd.clr}">`
+        +`<div class="room-ctx">${escapeHtml(deptName)} · ${escapeHtml(blockLabel)}</div>`
+        +`<div class="room-title" style="color:${rd.textClr}" title="${escapeHtml(`${room.cap} alunos · ${responsible}`)}">${escapeHtml(room.label)}</div>`
+        +`</div>`
+        +`<table><thead><tr><th class="hth">Horário</th>${thDays}</tr></thead><tbody>${bodyRows}</tbody></table>`
+        +`<div class="room-meta">Período ${escapeHtml(selectedPeriod)} · Gerado em ${dateStr}</div>`
+        +`</div>`;
     };
-    const sectionsHtml=pdfGroups.map(grp=>{
-      const blocksHtml=grp.blocks.map(blk=>`<div class="blk-section"><div class="blk-hdr">${blk.label}</div><div class="rooms-wrap">${blk.rooms.map(roomHtml).join('')}</div></div>`).join('');
-      return`<div class="dept-section"><div class="dept-hdr" style="border-left:3px solid ${grp.rd.clr}">${grp.name}</div>${blocksHtml}</div>`;
-    }).join('');
+    const roomsHtml=sorted.map((room,i)=>roomHtml(room,groupOf(room),gBlockLabel(room.blockId),i===sorted.length-1)).join('');
     const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>Mapa de Salas — ${selectedPeriod}</title><style>
       *{box-sizing:border-box;margin:0;padding:0;}
-      body{font-family:Arial,sans-serif;font-size:7px;color:#1e293b;padding:6mm;}
-      h1{font-size:11px;font-weight:700;margin-bottom:2px;}
-      .meta{font-size:6px;color:#64748b;margin-bottom:8px;}
-      .dept-section{margin-bottom:12px;}
-      .dept-hdr{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:3px 8px;background:#f1f5f9;margin-bottom:5px;page-break-after:avoid;}
-      .blk-section{margin-bottom:8px;}
-      .blk-hdr{font-size:6px;font-weight:600;color:#64748b;padding:2px 8px 2px 14px;background:#f8fafc;border-bottom:1px solid #b8c4d0;margin-bottom:4px;page-break-after:avoid;}
-      .rooms-wrap{display:flex;flex-wrap:wrap;gap:8px;}
-      .room-card{flex:1 1 340px;min-width:0;border:1px solid #b8c4d0;border-radius:3px;overflow:hidden;page-break-inside:avoid;}
-      .room-hdr{display:flex;align-items:center;gap:5px;padding:3px 6px;background:#f8fafc;border-bottom:1px solid #b8c4d0;}
-      .cap{color:#94a3b8;font-size:6px;}
-      .resp{font-size:6px;color:#64748b;margin-left:auto;}
+      body{font-family:Arial,sans-serif;font-size:9px;color:#1e293b;padding:6mm;}
+      .room-card{border:1px solid #b8c4d0;border-radius:4px;overflow:hidden;page-break-inside:avoid;width:100%;}
+      .room-hdr{display:flex;flex-direction:column;align-items:center;text-align:center;padding:8px;background:#f8fafc;border-bottom:1px solid #b8c4d0;}
+      .room-ctx{font-size:7px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px;}
+      .room-title{font-size:14px;font-weight:700;}
       table{border-collapse:collapse;width:100%;table-layout:fixed;}
-      .hth{width:52px;}
-      th{background:#f8fafc;padding:2px 2px;text-align:center;border:1px solid #b8c4d0;font-size:6px;font-weight:600;white-space:nowrap;}
-      td{padding:1px 2px;border:1px solid #b8c4d0;height:14px;vertical-align:top;overflow:hidden;font-size:6px;}
+      .hth{width:16%;}
+      th{background:#f8fafc;padding:3px 3px;text-align:center;border:1px solid #b8c4d0;font-size:7px;font-weight:600;white-space:nowrap;}
+      td{padding:2px 3px;border:1px solid #b8c4d0;height:20px;vertical-align:top;overflow:hidden;font-size:7px;}
       td span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-      .hcell{color:#94a3b8;background:#f8fafc;white-space:nowrap;font-size:5px;}
-      .tchr{color:#64748b;font-size:5px;}
-      @media print{@page{size:A4 landscape;margin:6mm;}.dept-section{page-break-before:auto;}}
-    </style></head><body><h1>Mapa de Salas</h1><div class="meta">Período ${selectedPeriod} · ${displayRooms.length} sala${displayRooms.length!==1?'s':''} · Gerado em ${dateStr}</div>${sectionsHtml}</body></html>`;
+      .hcell{color:#94a3b8;background:#f8fafc;white-space:nowrap;font-size:6px;}
+      .tchr{color:#64748b;font-size:6px;}
+      .merged{color:#d97706;font-size:6px;}
+      .room-meta{font-size:6px;color:#94a3b8;text-align:right;padding:3px 8px;}
+      @media print{@page{size:A4 landscape;margin:18mm 10mm;}}
+    </style></head><body>${roomsHtml}</body></html>`;
     const w=window.open('','_blank');
     w.document.write(html);
     w.document.close();
@@ -1175,6 +1191,13 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
           <option value="allocated">Apenas alocadas</option>
           <option value="empty">Apenas vazias</option>
         </select>
+        <div style={{width:1,height:16,background:T.bdr2}}/>
+        <select value={cellMode} onChange={e=>setCellMode(e.target.value)}
+          title="Detalhamento das disciplinas exibido em cada célula" style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,fontWeight:600,outline:'none',cursor:'pointer'}}>
+          <option value="padrao">Padrão</option>
+          <option value="detalhado">Detalhado</option>
+          <option value="simples">Simples</option>
+        </select>
         <div style={{flex:1}}/>
         <span style={{...mono,fontSize:9,color:T.dim}}>{allocatedRooms.length} sala{allocatedRooms.length!==1?'s':''} alocada{allocatedRooms.length!==1?'s':''}</span>
         <button onClick={generatePdf} disabled={allocatedRooms.length===0} title="Gerar PDF com o mapa completo"
@@ -1201,7 +1224,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
         </div>
       )}
       <div style={{flex:1,overflow:'auto',background:T.bg,padding:16}}>
-        <RoomMapGrid rooms={displayRooms} alloc={alloc} mapHours={MAP_HOURS} buildColMap={buildColMap} gRole={gRole} gBlockLabel={gBlockLabel} subUnits={subUnits} getRoomResponsible={getRoomResponsible}/>
+        <RoomMapGrid rooms={displayRooms} alloc={alloc} mapHours={MAP_HOURS} buildColMap={buildColMap} gRole={gRole} gBlockLabel={gBlockLabel} subUnits={subUnits} getRoomResponsible={getRoomResponsible} cellMode={cellMode}/>
       </div>
     </div>
   );
@@ -1210,7 +1233,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,onBack}){
 // Grade somente-leitura do Mapa de Salas — uma tabela por sala, com dias da
 // semana como colunas e horários (8h–22h) como linhas. buildColMap é passado
 // pelo RoomMapScreen para não precisar passar alloc inteiro para cada card.
-function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnits,getRoomResponsible}){
+function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnits,getRoomResponsible,cellMode}){
   const{T,theme}=useT();
   const groupOf=room=>gRole(room.roleId).subUnitFull;
   const groupOrder=name=>{const i=subUnits.findIndex(s=>s.fullName===name);return i===-1?subUnits.length:i;};
@@ -1263,16 +1286,14 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
                       const colMaps={};DAYS.forEach(d=>{colMaps[d]=buildColMap(room.id,d);});
                       return(
                         <div key={room.id} style={{flex:'1 1 460px',minWidth:0,border:`1px solid ${tableBdrClr}`,borderRadius:8,overflow:'hidden',background:T.surface}}>
-                          <div style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',borderBottom:`1px solid ${tableBdrClr}`,borderLeft:`3px solid ${rdR.clr}`,background:`${rdR.clr}${theme==='light'?'10':'0a'}`}}>
-                            <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:700,color:rdRClr}}>{room.label}</span>
-                            <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim}}>{room.cap} alunos</span>
-                            <span style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.muted,marginLeft:'auto'}}>{getRoomResponsible(room)}</span>
+                          <div style={{padding:'6px 10px',borderBottom:`1px solid ${tableBdrClr}`,borderLeft:`3px solid ${rdR.clr}`,background:`${rdR.clr}${theme==='light'?'10':'0a'}`,textAlign:'center'}}>
+                            <span title={`${room.cap} alunos · ${getRoomResponsible(room)}`} style={{fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:700,color:rdRClr,cursor:'help'}}>{room.label}</span>
                           </div>
-                          <div style={{overflowX:'auto'}}>
-                      <table style={{borderCollapse:'collapse',width:'100%',tableLayout:'fixed',minWidth:340}}>
+                          <div>
+                      <table style={{borderCollapse:'collapse',width:'100%',tableLayout:'fixed'}}>
                         <colgroup>
-                          <col style={{width:90}}/>
-                          {DAYS.map(d=><col key={d} style={{width:80}}/>)}
+                          <col style={{width:'16%'}}/>
+                          {DAYS.map(d=><col key={d} style={{width:'14%'}}/>)}
                         </colgroup>
                         <thead>
                           <tr style={{background:T.surface}}>
@@ -1289,14 +1310,16 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
                                 if(cell===null)return null;
                                 if(!cell.c)return<td key={d} style={{borderBottom:thBdr,borderLeft:thBdr}}/>;
                                 const cd=gRole(cell.c.roleId),cdClr=dtc(cd,theme);
-                                const sb=blockForDay(cell.c,d);
+                                const content=buildCellContent(cell,d,cellMode);
                                 return(
                                   <td key={d} rowSpan={cell.span}
-                                    title={`${cell.c.name}${cell.c.sec!=null?` · Turma ${cell.c.sec}`:''}${cell.c.teacher?` · ${cell.c.teacher}`:''} · ${fmtHour(sb.sh)}–${fmtHour(sb.eh)} · ${cell.c.enroll} alunos`}
+                                    title={content.tooltip}
                                     style={{padding:'3px 4px',borderBottom:thBdr,borderLeft:`2px solid ${cd.clr}`,verticalAlign:'top',background:`${cd.clr}${theme==='light'?'1e':'16'}`,overflow:'hidden'}}>
-                                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:cdClr,fontWeight:700,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{cell.c.code}{cell.c.sec!=null&&<span style={{fontWeight:400,color:T.dim}}> T{cell.c.sec}</span>}</div>
-                                    {cell.c.teacher&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{cell.c.teacher}</div>}
-                                    {cell.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:'#d97706'}}>+{cell.merged}</span>}
+                                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:cdClr,fontWeight:700,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{content.primary}</div>
+                                    {content.mode==='detalhado'&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{content.name}</div>}
+                                    {content.teacher&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{content.teacher}</div>}
+                                    {content.mode==='detalhado'&&<div style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:T.dim,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',marginTop:1}}>{content.timeRange} · {content.enroll} alunos</div>}
+                                    {content.merged>0&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:7,color:'#d97706'}}>+{content.merged}</span>}
                                   </td>
                                 );
                               })}
