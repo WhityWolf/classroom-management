@@ -132,3 +132,28 @@ export async function updateRoom(id, changes) {
 export async function deleteRoom(id) {
   await unwrap(supabase.from('rooms').delete().eq('id', id));
 }
+
+// ─── Períodos letivos ─────────────────────────────────────────────────────────
+export async function createPeriod(id) {
+  await unwrap(supabase.from('periods').insert({ id }));
+}
+
+export async function countPeriodCourses(period) {
+  const { count, error } = await supabase.from('courses').select('id', { count:'exact', head:true }).eq('period', period);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+// Única forma de remover um período do sistema: apaga o período em si e
+// todas as disciplinas cadastradas nele (em qualquer função/sub-unidade) —
+// nunca mais implícito por "ficar sem disciplina", já que a tabela periods
+// agora sustenta o período por conta própria. Também limpa
+// app_settings.current_period_override se ele apontava pro período que
+// está sendo removido, pra não deixar o "período atual" fixado pendurado
+// numa referência inexistente (o segundo .eq encadeado só aplica esse
+// update quando o valor atual bate com o período excluído).
+export async function deletePeriodAndCourses(id) {
+  await unwrap(supabase.from('courses').delete().eq('period', id));
+  await unwrap(supabase.from('periods').delete().eq('id', id));
+  await unwrap(supabase.from('app_settings').update({ current_period_override: null }).eq('id', 'singleton').eq('current_period_override', id));
+}

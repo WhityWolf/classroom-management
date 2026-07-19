@@ -2,8 +2,8 @@
  * src/db/useRealtimeSync.js
  * Subscribes to Supabase Realtime changes on the shared tables and applies
  * them to local state. This is the single path that mutates
- * subUnits/roles/blocks/rooms/courses/coordinationStatuses/notifications
- * state — mutation functions in allocations.js/management.js intentionally
+ * subUnits/roles/blocks/rooms/courses/coordinationStatuses/notifications/
+ * periods state — mutation functions in allocations.js/management.js intentionally
  * don't update state themselves, so a coordinator's write and the
  * director's view of it both flow through the same code path (no
  * optimistic-update/realtime-echo double-apply).
@@ -23,7 +23,7 @@ function upsertById(list, row) {
 
 export function useRealtimeSync({
   setSubUnits, setRoles, setBlocks, setRooms, setCourses,
-  setCoordinationStatuses, setNotifs, setFeatureOptions, setCurrentPeriodOverride,
+  setCoordinationStatuses, setNotifs, setFeatureOptions, setCurrentPeriodOverride, setPeriods,
 }) {
   useEffect(() => {
     if (!supabaseConfigured) return;
@@ -58,8 +58,13 @@ export function useRealtimeSync({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'app_settings' }, ({ new: row }) => {
         setCurrentPeriodOverride(row.current_period_override);
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'periods' }, ({ eventType, new: row, old }) => {
+        setPeriods(prev => eventType === 'DELETE'
+          ? prev.filter(id => id !== old.id)
+          : prev.includes(row.id) ? prev : [...prev, row.id]);
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [setSubUnits, setRoles, setBlocks, setRooms, setCourses, setCoordinationStatuses, setNotifs, setFeatureOptions, setCurrentPeriodOverride]);
+  }, [setSubUnits, setRoles, setBlocks, setRooms, setCourses, setCoordinationStatuses, setNotifs, setFeatureOptions, setCurrentPeriodOverride, setPeriods]);
 }

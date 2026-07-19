@@ -67,6 +67,24 @@ create table rooms (
 create index rooms_role_idx on rooms(role_id);
 create index rooms_block_idx on rooms(block_id);
 
+-- ─── Períodos letivos (NOVO) ────────────────────────────────────────────────
+-- Antes um período letivo só existia implicitamente por ser referenciado em
+-- pelo menos uma linha de courses.period (ou, transitoriamente dentro de uma
+-- sessão, por Dashboard.createdPeriods em memória, no client) — um período
+-- recém-criado sem nenhuma disciplina cadastrada desaparecia assim que a
+-- página recarregava ou ninguém mais estava olhando pra ele. Esta tabela
+-- torna o período uma entidade persistida por si só, existindo
+-- independentemente de ter ou não disciplinas.
+-- courses.period continua sendo uma coluna text livre (não uma FK pra cá) —
+-- mesmo "soft reference" já usado em outros lugares deste schema (ex.
+-- room_by_day não referencia rooms via FK de verdade) — pra não travar em
+-- dados legados cujo período ainda não tenha uma linha correspondente aqui.
+create table periods (
+  id         text primary key,  -- "AAAA.N", mesmo formato/valor usado em courses.period
+  created_at timestamptz not null default now()
+);
+insert into periods (id) values ('2026.1');
+
 create table courses (
   id      text primary key,
   code    text not null,
@@ -179,6 +197,7 @@ alter table coordination_statuses enable row level security;
 alter table notifications enable row level security;
 alter table room_features enable row level security;
 alter table app_settings enable row level security;
+alter table periods enable row level security;
 alter table app_users enable row level security;
 alter table app_sessions enable row level security;
 
@@ -196,6 +215,7 @@ create policy "anon full access" on coordination_statuses for all using (true) w
 create policy "anon full access" on notifications for all using (true) with check (true);
 create policy "anon full access" on room_features for all using (true) with check (true);
 create policy "anon full access" on app_settings for all using (true) with check (true);
+create policy "anon full access" on periods for all using (true) with check (true);
 
 -- app_users/app_sessions get NO policy at all (default deny for anon) — the
 -- only access path is through the security-definer functions below, which
@@ -367,6 +387,6 @@ grant execute on function revoke_app_session(text) to anon;
 -- loaded on demand (list_app_users()), no live-sync need, and it avoids
 -- broadcasting user metadata over a wider channel than necessary.
 alter publication supabase_realtime add table
-  sub_units, roles, blocks, rooms, courses, coordination_statuses, notifications, room_features, app_settings;
+  sub_units, roles, blocks, rooms, courses, coordination_statuses, notifications, room_features, app_settings, periods;
 
 insert into room_features (name) values ('Projetor'), ('Mesas de Desenho');

@@ -102,17 +102,20 @@ export default function LoginPage() {
               <span style={{fontSize:13,fontWeight:600,color:'#c4b5fd'}}>Diretor</span>
             </div>
             <div style={{fontSize:11,color:'#94a3b8',lineHeight:1.5}}>
-              Acesso institucional completo — aloca excedentes interdepartamentais, gerencia o status dos departamentos, edita detalhes das salas e administra usuários.
+              Acesso institucional completo — gerencia todos os departamentos, salas e usuários do sistema.
             </div>
           </div>
 
           <div style={{padding:'10px 12px',background:'rgba(52,211,153,.08)',border:'1px solid rgba(52,211,153,.2)',borderRadius:8}}>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
               <div style={{width:6,height:6,borderRadius:'50%',background:'#34D399'}}/>
-              <span style={{fontSize:13,fontWeight:600,color:'#6ee7b7'}}>Chefe de Departamento</span>
+              <span style={{fontSize:13,fontWeight:600,color:'#6ee7b7'}}>Chefia / Coordenação</span>
+            </div>
+            <div style={{fontSize:10,color:'#6ee7b7',lineHeight:1.6,marginBottom:3}}>
+              Chefe de Departamento · Coordenador de Graduação · Coordenador de Pós-Graduação
             </div>
             <div style={{fontSize:11,color:'#94a3b8',lineHeight:1.5}}>
-              Aloca disciplinas nas salas do próprio departamento e envia ao chefe ao concluir.
+              Aloca disciplinas nas salas do próprio departamento ou curso e envia ao diretor ao concluir.
             </div>
           </div>
 
