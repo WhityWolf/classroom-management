@@ -382,6 +382,84 @@ grant execute on function authenticate_app_user(text,text) to anon;
 grant execute on function validate_app_session(text) to anon;
 grant execute on function revoke_app_session(text) to anon;
 
+-- ─── Exclusões atômicas de domínio (security definer, chamadas via
+-- supabase.rpc) ──────────────────────────────────────────────────────────────
+-- sub_units/blocks são protegidas só por FK "on delete restrict" (basta um
+-- DELETE simples, o Postgres já garante atomicidade e recusa se algo ainda
+-- depender delas) — não precisam de função dedicada. Já rooms/roles/periods
+-- têm passos em cascata (limpar referências em courses antes de apagar, ou
+-- apagar courses primeiro), e isso rodando em várias chamadas separadas do
+-- cliente (como antes) corre o risco de ficar pela metade se uma falhar no
+-- meio, ou de uma corrida entre duas pessoas mudarem algo entre a checagem e
+-- a exclusão de fato. Uma função plpgsql roda como uma transação implícita —
+-- se qualquer instrução dentro dela falhar (ex. delete de roles rejeitado
+-- pela FK restrict de rooms.role_id/app_users.role_id), tudo que essa mesma
+-- chamada já tinha feito é desfeito automaticamente. Nunca fica um estado
+-- parcial (ex. disciplinas apagadas mas a função presa por causa de uma sala
+-- esquecida).
+
+-- Sala: room_by_day é jsonb, sem FK real pra rooms (soft reference — ver
+-- comentário da tabela courses). Limpa, na mesma transação, os dias em que a
+-- sala excluída estava em uso — nunca deixa uma disciplina apontando pra um
+-- id de sala que não existe mais. Retorna quantas disciplinas foram
+-- afetadas, pra a UI poder avisar.
+create or replace function delete_room_and_unallocate(p_id text)
+returns integer language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_count integer;
+begin
+  with affected as (
+    update courses c
+    set room_by_day = (
+      select coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
+      from jsonb_each(c.room_by_day) e
+      where e.value <> to_jsonb(p_id)
+    )
+    where exists (select 1 from jsonb_each_text(c.room_by_day) e2 where e2.value = p_id)
+    returning c.id
+  )
+  select count(*) into v_count from affected;
+
+  delete from rooms where id = p_id;
+  return v_count;
+end;
+$$;
+
+-- Função (role): apaga as disciplinas dela e a função em si. Se ainda
+-- houver salas (rooms.role_id) ou usuários (app_users.role_id) vinculados,
+-- o segundo delete é rejeitado pela FK restrict — e como está tudo dentro
+-- desta mesma função, o delete de courses acima é desfeito junto, em vez de
+-- deixar as disciplinas apagadas com a função presa.
+create or replace function delete_role_and_courses(p_id text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  delete from courses where role_id = p_id;
+  delete from roles where id = p_id;
+end;
+$$;
+
+-- Período: apaga as disciplinas dele, o período em si, e limpa
+-- app_settings.current_period_override se ele apontava pro período
+-- removido (senão o "período atual" fixado ficaria pendurado numa
+-- referência inexistente).
+create or replace function delete_period_and_courses(p_id text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  delete from courses where period = p_id;
+  delete from periods where id = p_id;
+  update app_settings set current_period_override = null
+    where id = 'singleton' and current_period_override = p_id;
+end;
+$$;
+
+revoke all on function delete_room_and_unallocate(text) from public;
+revoke all on function delete_role_and_courses(text) from public;
+revoke all on function delete_period_and_courses(text) from public;
+
+grant execute on function delete_room_and_unallocate(text) to anon;
+grant execute on function delete_role_and_courses(text) to anon;
+grant execute on function delete_period_and_courses(text) to anon;
+
 -- ─── Realtime ──────────────────────────────────────────────────────────────────
 -- app_users/app_sessions intentionally NOT added here — the user list is
 -- loaded on demand (list_app_users()), no live-sync need, and it avoids

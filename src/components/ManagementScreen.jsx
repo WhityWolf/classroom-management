@@ -191,7 +191,7 @@ export default function ManagementScreen({ onBack, courses=[], onPeriodCreated, 
           <>
             {tab==='usersroles'&&<UsersRolesTab users={users} roles={roles} subUnits={subUnits} rooms={rooms} blocks={blocks} can={can} currentUser={currentUser} reloadUsers={reloadUsers} reloadDomain={reloadDomain} flash={flash} gRole={gRole}/>}
             {tab==='subunits'&&<SubUnitsTab subUnits={subUnits} roles={roles} can={can} reloadDomain={reloadDomain} flash={flash}/>}
-            {tab==='rooms'&&<RoomsBlocksTab rooms={rooms} blocks={blocks} roles={roles} subUnits={subUnits} can={can} reloadDomain={reloadDomain} flash={flash} gRole={gRole}/>}
+            {tab==='rooms'&&<RoomsBlocksTab rooms={rooms} blocks={blocks} roles={roles} subUnits={subUnits} courses={courses} can={can} reloadDomain={reloadDomain} flash={flash} gRole={gRole}/>}
             {tab==='periods'&&<PeriodsTab courses={courses} periods={periods} onPeriodCreated={onPeriodCreated} currentPeriodOverride={currentPeriodOverride} flash={flash} reloadDomain={reloadDomain}/>}
           </>
         )}
@@ -591,18 +591,30 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
 }
 
 // ─── Aba Salas e Blocos ───────────────────────────────────────────────────────
-function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, flash, gRole }) {
-  const { T } = useT();
+function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDomain, flash, gRole }) {
+  const { T, theme } = useT();
   const [sub, setSub] = useState('rooms'); // 'rooms' | 'blocks'
   const [editingRoom, setEditingRoom] = useState(null);
   const [roomForm, setRoomForm] = useState(null);
   const [editingBlock, setEditingBlock] = useState(null);
   const [blockForm, setBlockForm] = useState(null);
+  // Sala: sem FK real pra courses (room_by_day é jsonb — soft reference),
+  // então excluir não é bloqueado pelo banco; mostramos quantas disciplinas
+  // seriam desalocadas antes de confirmar. Bloco: TEM FK real
+  // (rooms.block_id ... on delete restrict), então o próprio Postgres
+  // rejeitaria a exclusão com sala vinculada — aqui só antecipamos isso de
+  // forma amigável (contando as salas antes de tentar) em vez de deixar o
+  // erro cru do banco aparecer.
+  const [confirmDeleteRoom, setConfirmDeleteRoom] = useState(null);   // room | null
+  const [confirmDeleteBlock, setConfirmDeleteBlock] = useState(null); // block | null
+  const [deleting, setDeleting] = useState(false);
 
   const blockLabel = id => { const b=blocks.find(x=>x.id===id); return b?`${b.local} — ${b.name}`:'—'; };
+  const roomCoursesOf = r => courses.filter(c => Object.values(c.roomByDay).includes(r.id));
+  const roomsOfBlock = b => rooms.filter(r => r.blockId === b.id);
 
-  const startCreateRoom = () => { setRoomForm({ id:crypto.randomUUID(), label:'', cap:30, type:'Sala de Aula', floor:1, blockId:blocks[0]?.id??'', roleId:'', features:[], description:'' }); setEditingRoom('new'); };
-  const startEditRoom = r => { setRoomForm({ ...r, roleId:r.roleId??'' }); setEditingRoom(r); };
+  const startCreateRoom = () => { setRoomForm({ id:crypto.randomUUID(), label:'', cap:30, type:'Sala de Aula', floor:1, blockId:blocks[0]?.id??'', roleId:'', features:[], description:'' }); setEditingRoom('new'); setConfirmDeleteRoom(null); };
+  const startEditRoom = r => { setRoomForm({ ...r, roleId:r.roleId??'' }); setEditingRoom(r); setConfirmDeleteRoom(null); };
   const cancelRoom = () => { setEditingRoom(null); setRoomForm(null); };
   const saveRoom = async () => {
     if (!roomForm.label.trim()) return flash('err', 'Informe o nome/número da sala.');
@@ -614,13 +626,22 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       flash('ok','Sala salva.'); cancelRoom(); reloadDomain();
     } catch (e) { flash('err', ptError(e)); }
   };
-  const removeRoom = async r => {
-    try { await mgmt.deleteRoom(r.id); flash('ok','Sala excluída.'); reloadDomain(); }
-    catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+  const startDeleteRoom = r => { setConfirmDeleteRoom(r); cancelRoom(); setConfirmDeleteBlock(null); };
+  const cancelDeleteRoom = () => setConfirmDeleteRoom(null);
+  const confirmDeleteRoomNow = async () => {
+    const r = confirmDeleteRoom;
+    setDeleting(true);
+    try {
+      const unallocated = await mgmt.deleteRoomAndUnallocate(r.id);
+      flash('ok', unallocated ? `Sala excluída — ${unallocated} disciplina(s) desalocada(s) nela.` : 'Sala excluída.');
+      setConfirmDeleteRoom(null);
+      reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+    finally { setDeleting(false); }
   };
 
-  const startCreateBlock = () => { setBlockForm({ id:crypto.randomUUID(), local:'', name:'' }); setEditingBlock('new'); };
-  const startEditBlock = b => { setBlockForm({ ...b }); setEditingBlock(b); };
+  const startCreateBlock = () => { setBlockForm({ id:crypto.randomUUID(), local:'', name:'' }); setEditingBlock('new'); setConfirmDeleteBlock(null); };
+  const startEditBlock = b => { setBlockForm({ ...b }); setEditingBlock(b); setConfirmDeleteBlock(null); };
   const cancelBlock = () => { setEditingBlock(null); setBlockForm(null); };
   const saveBlock = async () => {
     if (!blockForm.local.trim()) return flash('err', 'Informe o centro do bloco.');
@@ -631,9 +652,18 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       flash('ok','Bloco salvo.'); cancelBlock(); reloadDomain();
     } catch (e) { flash('err', ptError(e)); }
   };
-  const removeBlock = async b => {
-    try { await mgmt.deleteBlock(b.id); flash('ok','Bloco excluído.'); reloadDomain(); }
-    catch (e) { flash('err', `Não foi possível excluir: ${e.message} (verifique se ainda há salas vinculadas)`); }
+  const startDeleteBlock = b => { setConfirmDeleteBlock(b); cancelBlock(); setConfirmDeleteRoom(null); };
+  const cancelDeleteBlock = () => setConfirmDeleteBlock(null);
+  const confirmDeleteBlockNow = async () => {
+    const b = confirmDeleteBlock;
+    setDeleting(true);
+    try {
+      await mgmt.deleteBlock(b.id);
+      flash('ok', 'Bloco excluído.');
+      setConfirmDeleteBlock(null);
+      reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -641,7 +671,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       <>
         <div style={{display:'flex',gap:6,marginBottom:14}}>
           {[['rooms','Salas'],['blocks','Blocos']].map(([k,l])=>(
-            <button key={k} onClick={()=>{setSub(k);cancelRoom();cancelBlock();}} style={{padding:'6px 14px',borderRadius:6,fontSize:12,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>{l}</button>
+            <button key={k} onClick={()=>{setSub(k);cancelRoom();cancelBlock();cancelDeleteRoom();cancelDeleteBlock();}} style={{padding:'6px 14px',borderRadius:6,fontSize:12,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>{l}</button>
           ))}
         </div>
         {sub==='rooms'?(
@@ -667,7 +697,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
                       <td style={{padding:'7px 10px'}}>
                         <div style={{display:'flex',gap:6}}>
                           <button onClick={()=>startEditRoom(r)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
-                          <button onClick={()=>removeRoom(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                          <button onClick={()=>startDeleteRoom(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
                         </div>
                       </td>
                     </tr>
@@ -684,7 +714,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
                 <div key={b.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
                   <div style={{flex:1,fontSize:13,color:T.txt}}>{b.local} — {b.name}</div>
                   <button onClick={()=>startEditBlock(b)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
-                  <button onClick={()=>removeBlock(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                  <button onClick={()=>startDeleteBlock(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
                 </div>
               ))}
             </div>
@@ -692,7 +722,42 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
         )}
       </>
     )} panel={
-      editingRoom?(
+      confirmDeleteRoom?(()=>{
+        const affected = roomCoursesOf(confirmDeleteRoom);
+        return (
+          <div>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+            <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+              {affected.length===0
+                ? <>A sala <strong>{confirmDeleteRoom.label}</strong> não tem nenhuma disciplina alocada nela no momento.</>
+                : <>A sala <strong>{confirmDeleteRoom.label}</strong> está alocada em <strong>{affected.length} disciplina(s)</strong>. Ao excluir a sala, essas disciplinas <strong>não</strong> serão apagadas — só ficarão sem sala nos dias em que usavam esta, e vão precisar ser realocadas.</>}
+            </div>
+            <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>
+            <div style={{display:'flex',gap:8}}>
+              <button type="button" onClick={cancelDeleteRoom} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>Cancelar</button>
+              <button type="button" onClick={confirmDeleteRoomNow} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':'Excluir sala'}</button>
+            </div>
+          </div>
+        );
+      })():confirmDeleteBlock?(()=>{
+        const blockRooms = roomsOfBlock(confirmDeleteBlock);
+        const blocked = blockRooms.length>0;
+        return (
+          <div>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+            <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+              {blocked
+                ? <>O bloco <strong>{confirmDeleteBlock.local} — {confirmDeleteBlock.name}</strong> ainda tem <strong>{blockRooms.length} sala(s)</strong> vinculada(s) ({blockRooms.map(r=>r.label).join(', ')}). Exclua ou mova essas salas para outro bloco antes de excluir este.</>
+                : <>O bloco <strong>{confirmDeleteBlock.local} — {confirmDeleteBlock.name}</strong> não tem nenhuma sala vinculada e pode ser excluído com segurança.</>}
+            </div>
+            {!blocked&&<div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>}
+            <div style={{display:'flex',gap:8}}>
+              <button type="button" onClick={cancelDeleteBlock} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>{blocked?'Entendi':'Cancelar'}</button>
+              {!blocked&&<button type="button" onClick={confirmDeleteBlockNow} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':'Excluir bloco'}</button>}
+            </div>
+          </div>
+        );
+      })():editingRoom?(
         <form onSubmit={e=>{e.preventDefault();saveRoom();}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editingRoom==='new'?'Nova Sala':'Editar Sala'}</div>
           <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome/Número</label><input value={roomForm.label} onChange={e=>setRoomForm({...roomForm,label:e.target.value})} style={inpStyle(T)}/></div>
