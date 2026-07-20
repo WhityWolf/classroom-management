@@ -429,7 +429,20 @@ function Dashboard(){
   // exige uma ação fresca, não é um estado que sobrevive escondido.
   const[pastEditUnlocked,setPastEditUnlocked]=useState(false);
 
-  const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),3200);};
+  // Erros ('err') e avisos ('warn' — ex.: "sala ocupada em algum dia",
+  // "horário alterado, realoque") costumam ser mais importantes de realmente
+  // ler do que uma confirmação de sucesso — por isso ficam visíveis bem mais
+  // tempo (8s) do que um 'ok' (4s), que é só a confirmação rápida do que o
+  // usuário acabou de fazer. toastTimer guarda o timeout pendente pra poder
+  // cancelá-lo: sem isso, um toast antigo (ex. um 'ok' de 4s) podia apagar um
+  // toast novo e mais importante (ex. um 'err' de 8s) que apareceu logo em
+  // seguida, antes do tempo dele terminar.
+  const toastTimer=useRef(null);
+  const showToast=(msg,type='ok')=>{
+    clearTimeout(toastTimer.current);
+    setToast({msg,type});
+    toastTimer.current=setTimeout(()=>setToast(null),type==='ok'?4000:8000);
+  };
 
   // "Atual" = sempre o maior valor (comparação numérica ano.período) entre
   // os períodos conhecidos (persistidos na tabela periods OU já referenciados
@@ -786,16 +799,22 @@ function Dashboard(){
         <button className="icon-btn" onClick={()=>setScreen('select')} title="Voltar ao menu"
           style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         {isInstitutional?(
-          <select value={activeRoleId??''} onChange={e=>{setActiveRoleId(e.target.value);setSelId(null);}}
-            title="Função em exibição — filtra as disciplinas da barra lateral"
-            style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:dClr,fontSize:13,fontWeight:600,outline:'none',cursor:'pointer'}}>
-            <option value={ALL_ROLES}>Todas</option>
-            {subUnits.map(su=>(
-              <optgroup key={su.id} label={su.fullName}>
-                {roles.filter(r=>r.subUnitId===su.id).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
-              </optgroup>
-            ))}
-          </select>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <select value={activeRoleId??''} onChange={e=>{setActiveRoleId(e.target.value);setSelId(null);}}
+              title="Função em exibição — filtra as disciplinas da barra lateral"
+              style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:dClr,fontSize:13,fontWeight:600,outline:'none',cursor:'pointer'}}>
+              <option value={ALL_ROLES}>Todas</option>
+              {subUnits.map(su=>(
+                <optgroup key={su.id} label={su.fullName}>
+                  {roles.filter(r=>r.subUnitId===su.id).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            {/* Fica FORA da caixa do <select> — dentro dela mostraria só o
+                texto puro da <option> selecionada, sem estilo, e o pedido
+                era não mexer no conteúdo da caixa em si. */}
+            {d.subUnitFull!==d.full&&<span style={{...mono,fontSize:10,color:T.dim}}>· {d.subUnitFull}</span>}
+          </div>
         ):(
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <div style={{width:7,height:7,borderRadius:'50%',background:d.clr,boxShadow:`0 0 8px ${d.clr}99`}}/>

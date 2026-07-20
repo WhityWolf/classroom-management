@@ -7,7 +7,7 @@
  * `canManage` em ScreenSelector). Autocontida como ScreenSelector/RoomMapScreen
  * (própria useAuth()/useT()), recebe só `{onBack}`.
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useT, dtc, dbg } from '../theme.jsx';
 import { PERMS } from '../auth/permissions.js';
@@ -87,7 +87,20 @@ export default function ManagementScreen({ onBack, courses=[], onPeriodCreated, 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [feedback, setFeedback] = useState(null);
-  const flash = (type, msg) => { setFeedback({ type, msg }); setTimeout(() => setFeedback(null), 3500); };
+  // Erros (ex.: "sub-unidade ainda tem funções vinculadas") costumam ser mais
+  // longos e mais importantes de realmente ler do que uma confirmação de
+  // sucesso — por isso ficam visíveis bem mais tempo (8s) do que um "ok"
+  // (4s), que é só uma confirmação rápida do que o usuário acabou de fazer.
+  // flashTimer guarda o timeout pendente pra poder cancelá-lo: sem isso, um
+  // flash antigo (ex. um "ok" de 4s) podia apagar um flash novo e mais
+  // importante (ex. um "err" de 8s) que apareceu logo em seguida, antes do
+  // tempo dele terminar.
+  const flashTimer = useRef(null);
+  const flash = (type, msg) => {
+    clearTimeout(flashTimer.current);
+    setFeedback({ type, msg });
+    flashTimer.current = setTimeout(() => setFeedback(null), type === 'err' ? 8000 : 4000);
+  };
 
   const reloadDomain = () => db.fetchAll().then(d => {
     setSubUnits(d.subUnits); setRoles(d.roles); setBlocks(d.blocks); setRooms(d.rooms); setPeriods(d.periods);
