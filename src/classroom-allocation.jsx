@@ -359,6 +359,9 @@ function Dashboard(){
   const[coordinationStatuses,setCoordinationStatuses]=useState({});
   const[notifications,setNotifs]     =useState([]);
   const[featureOptions,setFeatureOptions]=useState([]);
+  // Períodos persistidos (tabela periods) — existem por conta própria, sem
+  // depender de ter alguma disciplina cadastrada. Ver allPeriods abaixo.
+  const[periods,setPeriods]          =useState([]);
   // Período marcado manualmente como "atual" para todo mundo (app_settings,
   // banco compartilhado) — null = comportamento automático. Não confundir
   // com `periodOverride` abaixo, que é só "qual período estou vendo agora"
@@ -382,6 +385,7 @@ function Dashboard(){
         setCoordinationStatuses(data.coordinationStatuses);
         setNotifs(data.notifications);setFeatureOptions(data.featureOptions);
         setCurrentPeriodOverride(data.currentPeriodOverride);
+        setPeriods(data.periods);
         if(isInstitutional){
           setActiveRoleId(prev=>prev??data.roles.find(r=>r.subUnitId)?.id??data.roles[0]?.id??null);
         }
@@ -391,7 +395,7 @@ function Dashboard(){
     return()=>{active=false;};
   },[]);
 
-  useRealtimeSync({setSubUnits,setRoles,setBlocks,setRooms,setCourses,setCoordinationStatuses,setNotifs,setFeatureOptions,setCurrentPeriodOverride});
+  useRealtimeSync({setSubUnits,setRoles,setBlocks,setRooms,setCourses,setCoordinationStatuses,setNotifs,setFeatureOptions,setCurrentPeriodOverride,setPeriods});
 
   const gRole=useMemo(()=>makeGRole(roles,subUnits),[roles,subUnits]);
   const gBlockLabel=useMemo(()=>makeGBlockLabel(blocks),[blocks]);
@@ -419,34 +423,45 @@ function Dashboard(){
   // demais (antes dos cursos carregarem). Selecionar manualmente um período
   // existente no dropdown grava aqui; "Voltar ao período atual" limpa pra null.
   const[periodOverride,setPeriodOverride]  =useState(null);
-  // Períodos criados nesta sessão que ainda não têm nenhuma disciplina —
-  // sem isso, "allPeriods" (abaixo) só sabe de períodos com disciplina, e um
-  // período recém-criado desaparece da lista no instante em que o usuário sai
-  // de vê-lo (periodOverride aponta pra outro valor, então o Set perde a
-  // referência). Não precisa "limpar" depois que ganha uma disciplina de
-  // verdade — o Set abaixo dedup, é inofensivo manter os dois.
-  const[createdPeriods,setCreatedPeriods]  =useState([]);
   // Desbloqueio institucional de período passado — deliberado e reversível,
   // nunca persiste sozinho: reseta pra false sempre que selectedPeriod muda
   // (ver useEffect abaixo), então toda entrada em modo "editar histórico"
   // exige uma ação fresca, não é um estado que sobrevive escondido.
   const[pastEditUnlocked,setPastEditUnlocked]=useState(false);
 
-  const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),3200);};
+  // Erros ('err') e avisos ('warn' — ex.: "sala ocupada em algum dia",
+  // "horário alterado, realoque") costumam ser mais importantes de realmente
+  // ler do que uma confirmação de sucesso — por isso ficam visíveis bem mais
+  // tempo (8s) do que um 'ok' (4s), que é só a confirmação rápida do que o
+  // usuário acabou de fazer. toastTimer guarda o timeout pendente pra poder
+  // cancelá-lo: sem isso, um toast antigo (ex. um 'ok' de 4s) podia apagar um
+  // toast novo e mais importante (ex. um 'err' de 8s) que apareceu logo em
+  // seguida, antes do tempo dele terminar.
+  const toastTimer=useRef(null);
+  const showToast=(msg,type='ok')=>{
+    clearTimeout(toastTimer.current);
+    setToast({msg,type});
+    toastTimer.current=setTimeout(()=>setToast(null),type==='ok'?4000:8000);
+  };
 
   // "Atual" = sempre o maior valor (comparação numérica ano.período) entre
-  // os períodos conhecidos (com disciplina OU criados nesta sessão) — só ele
-  // é editável.
+  // os períodos conhecidos (persistidos na tabela periods OU já referenciados
+  // por alguma disciplina — a união cobre dados legados cujo período ainda
+  // não tenha uma linha própria em periods) — só ele é editável.
   const allPeriods=useMemo(()=>{
-    const s=new Set([...courses.map(c=>c.period),...createdPeriods]);
+    const s=new Set([...periods,...courses.map(c=>c.period)]);
     return[...s].sort(comparePeriods);
-  },[courses,createdPeriods]);
+  },[periods,courses]);
   // currentPeriodOverride (app_settings, compartilhado) tem prioridade sobre
   // o cálculo automático (maior período) quando a Diretoria fixa um período
   // manualmente na aba Períodos de Gerenciamento.
   const currentPeriod=currentPeriodOverride??(allPeriods[allPeriods.length-1]??DEFAULT_PERIOD);
   const selectedPeriod=periodOverride??currentPeriod;
   const isPastPeriod=selectedPeriod!==currentPeriod;
+  // Se o período selecionado localmente for excluído (na aba Períodos de
+  // Gerenciamento, por outro usuário ou nesta mesma sessão), ele some de
+  // allPeriods — sem isso a seleção ficaria presa numa referência morta.
+  useEffect(()=>{if(periodOverride&&!allPeriods.includes(periodOverride))setPeriodOverride(null);},[allPeriods]);
   // Instituição pode destravar um período passado pra corrigir alocação
   // histórica — não-institucional nunca pode, então periodLocked===isPastPeriod
   // pra eles, preservando o travamento absoluto que já existia.
@@ -683,17 +698,17 @@ function Dashboard(){
     }
   };
 
-  // Período é só uma string carimbada em cada disciplina — não existe uma
-  // tabela de períodos. "Criar" um período é só passar a selecioná-lo
-  // (periodOverride); ele só persiste de fato quando algo é criado/importado
-  // nele. Só o Diretor decide quando um novo período letivo começa.
-  // A criação em si (validação de formato/recência) agora acontece na aba
-  // "Períodos" de Gerenciamento — isto só assume um valor já validado e
-  // completa a transição: registra o período, seleciona-o e volta pra
-  // Alocar Disciplinas já com ele em foco (mesmo comportamento de antes,
-  // agora cruzando a fronteira entre as duas telas).
+  // Período agora é uma entidade persistida por conta própria (tabela
+  // periods, ver supabase/schema.sql) — não depende mais de ter alguma
+  // disciplina cadastrada nele pra "existir" de fato, nem desaparece se a
+  // última disciplina for removida. A criação em si (validação de
+  // formato/recência + INSERT em periods) acontece na aba "Períodos" de
+  // Gerenciamento (db.createPeriod, via mgmt.createPeriod); isto só
+  // completa a transição de volta pra esta tela: seleciona o período
+  // recém-criado e foca em Alocar Disciplinas (mesmo comportamento de
+  // navegação de antes). Só o Diretor decide quando um novo período letivo
+  // começa.
   const handlePeriodCreatedFromManagement=trimmed=>{
-    setCreatedPeriods(prev=>prev.includes(trimmed)?prev:[...prev,trimmed]);
     setPeriodOverride(trimmed);
     setSelId(null);
     setScreen('allocate');
@@ -747,9 +762,9 @@ function Dashboard(){
   if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>Carregando dados…</div>;
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
   if(screen==='select')return<ScreenSelector onPick={setScreen} subUnits={subUnits}/>;
-  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} currentPeriodOverride={currentPeriodOverride} onBack={()=>setScreen('select')}/>;
+  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} periods={periods} currentPeriodOverride={currentPeriodOverride} onBack={()=>setScreen('select')}/>;
   if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')}
-    courses={courses} createdPeriods={createdPeriods} onPeriodCreated={handlePeriodCreatedFromManagement}
+    courses={courses} onPeriodCreated={handlePeriodCreatedFromManagement}
     currentPeriodOverride={currentPeriodOverride}/>;
 
   return(
@@ -784,20 +799,27 @@ function Dashboard(){
         <button className="icon-btn" onClick={()=>setScreen('select')} title="Voltar ao menu"
           style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         {isInstitutional?(
-          <select value={activeRoleId??''} onChange={e=>{setActiveRoleId(e.target.value);setSelId(null);}}
-            title="Função em exibição — filtra as disciplinas da barra lateral"
-            style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:dClr,fontSize:13,fontWeight:600,outline:'none',cursor:'pointer'}}>
-            <option value={ALL_ROLES}>Todas</option>
-            {subUnits.map(su=>(
-              <optgroup key={su.id} label={su.fullName}>
-                {roles.filter(r=>r.subUnitId===su.id).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
-              </optgroup>
-            ))}
-          </select>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <select value={activeRoleId??''} onChange={e=>{setActiveRoleId(e.target.value);setSelId(null);}}
+              title="Função em exibição — filtra as disciplinas da barra lateral"
+              style={{padding:'4px 8px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:6,color:dClr,fontSize:13,fontWeight:600,outline:'none',cursor:'pointer'}}>
+              <option value={ALL_ROLES}>Todas</option>
+              {subUnits.map(su=>(
+                <optgroup key={su.id} label={su.fullName}>
+                  {roles.filter(r=>r.subUnitId===su.id).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            {/* Fica FORA da caixa do <select> — dentro dela mostraria só o
+                texto puro da <option> selecionada, sem estilo, e o pedido
+                era não mexer no conteúdo da caixa em si. */}
+            {d.subUnitFull!==d.full&&<span style={{...mono,fontSize:10,color:T.dim}}>· {d.subUnitFull}</span>}
+          </div>
         ):(
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <div style={{width:7,height:7,borderRadius:'50%',background:d.clr,boxShadow:`0 0 8px ${d.clr}99`}}/>
             <span style={{fontSize:13,fontWeight:600,color:dClr}}>{d.full}</span>
+            {d.subUnitFull!==d.full&&<span style={{...mono,fontSize:10,color:T.dim}}>· {d.subUnitFull}</span>}
           </div>
         )}
         <div style={{width:1,height:20,background:T.bdr2}}/>
@@ -1065,13 +1087,19 @@ function ScreenSelector({onPick,subUnits}){
 // Visão somente-leitura — mostra uma tabela por sala, com dias da semana como
 // colunas e faixas horárias (8h–22h) como linhas, para todos os departamentos
 // de uma vez.
-function RoomMapScreen({rooms,courses,roles,subUnits,blocks,currentPeriodOverride,onBack}){
+function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPeriodOverride,onBack}){
   const{currentUser,logout}=useAuth();
   const{T,theme,toggleTheme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
   const gRole=useMemo(()=>makeGRole(roles,subUnits),[roles,subUnits]);
   const gBlockLabel=useMemo(()=>makeGBlockLabel(blocks),[blocks]);
-  const allPeriods=useMemo(()=>[...new Set(courses.map(c=>c.period))].sort(comparePeriods),[courses]);
+  // União com `periods` (persistido) e não só os períodos já referenciados
+  // por alguma disciplina — um período recém-criado sem nenhuma disciplina
+  // ainda continua selecionável aqui, mostrando todas as salas vazias.
+  const allPeriods=useMemo(()=>{
+    const s=new Set([...periods,...courses.map(c=>c.period)]);
+    return[...s].sort(comparePeriods);
+  },[periods,courses]);
   const currentPeriod=currentPeriodOverride??(allPeriods[allPeriods.length-1]??DEFAULT_PERIOD);
   const[periodOverride,setPeriodOverride]=useState(null);
   const selectedPeriod=periodOverride??currentPeriod;
@@ -1956,7 +1984,7 @@ function NotifPanel({notifications,onClose}){
 // ─── Modal de edição de disciplina ────────────────────────────────────────────
 function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onSave,onCreate,onCancel}){
   const{T,theme}=useT();
-  const{gRole,roles}=useRolesData();
+  const{gRole,roles,subUnits}=useRolesData();
   const mono={fontFamily:"'DM Mono',monospace"};
   const[code,setCode]=useState(course?.code??'');
   const[sec,setSec]=useState(course?.sec!=null?String(course.sec):'');
@@ -2021,7 +2049,11 @@ function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onS
           <div style={{marginBottom:12}}>
             <label style={{...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4}}>Função</label>
             <select value={roleId} onChange={e=>setRoleId(e.target.value)} style={{...inp,cursor:'pointer'}}>
-              {roles.filter(r=>r.subUnitId).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+              {subUnits.map(su=>(
+                <optgroup key={su.id} label={su.fullName}>
+                  {roles.filter(r=>r.subUnitId===su.id).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+                </optgroup>
+              ))}
             </select>
           </div>
         )}

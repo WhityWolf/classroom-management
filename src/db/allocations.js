@@ -30,7 +30,7 @@ async function unwrap(query) {
 }
 
 export async function fetchAll() {
-  const [subUnitRows, roleRows, blockRows, rooms, courses, statusRows, notifRows, featureRows, settingsRows] = await Promise.all([
+  const [subUnitRows, roleRows, blockRows, rooms, courses, statusRows, notifRows, featureRows, settingsRows, periodRows] = await Promise.all([
     unwrap(supabase.from('sub_units').select('*').order('name')),
     unwrap(supabase.from('roles').select('*').order('name')),
     unwrap(supabase.from('blocks').select('*').order('local').order('name')),
@@ -40,6 +40,7 @@ export async function fetchAll() {
     unwrap(supabase.from('notifications').select('*').order('id')),
     unwrap(supabase.from('room_features').select('*').order('name')),
     unwrap(supabase.from('app_settings').select('*').eq('id', 'singleton')),
+    unwrap(supabase.from('periods').select('*')),
   ]);
   return {
     subUnits: subUnitRows.map(s => ({
@@ -57,6 +58,11 @@ export async function fetchAll() {
     notifications: notifRows.map(mapNotification),
     featureOptions: featureRows.map(r => r.name),
     currentPeriodOverride: settingsRows[0]?.current_period_override ?? null,
+    // Períodos persistidos em si (tabela periods) — existem independente de
+    // ter alguma disciplina cadastrada. Quem consome isto normalmente une
+    // com os períodos distintos já presentes em `courses` (dados legados
+    // podem ter um period que ainda não tenha uma linha correspondente aqui).
+    periods: periodRows.map(p => p.id),
   };
 }
 

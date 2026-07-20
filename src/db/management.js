@@ -88,9 +88,13 @@ export async function deleteRole(id) {
   await unwrap(supabase.from('roles').delete().eq('id', id));
 }
 
+// Atômica (função Postgres security definer, ver supabase/schema.sql) — se
+// a função ainda tiver salas/usuários vinculados, a FK restrict rejeita o
+// delete de roles e o Postgres desfaz o delete de courses junto, em vez de
+// deixar as disciplinas apagadas com a função presa.
 export async function deleteRoleAndCourses(id) {
-  await unwrap(supabase.from('courses').delete().eq('role_id', id));
-  await unwrap(supabase.from('roles').delete().eq('id', id));
+  const { error } = await supabase.rpc('delete_role_and_courses', { p_id: id });
+  if (error) throw error;
 }
 
 export async function createBlock(block) {
@@ -131,4 +135,41 @@ export async function updateRoom(id, changes) {
 
 export async function deleteRoom(id) {
   await unwrap(supabase.from('rooms').delete().eq('id', id));
+}
+
+// Atômica (função Postgres security definer, ver supabase/schema.sql) —
+// limpa as referências a esta sala em courses.room_by_day (jsonb, sem FK
+// real pra rooms) e apaga a sala numa única transação no banco, em vez de
+// duas chamadas separadas do cliente. `affectedCourses` não é mais
+// necessário pra mutação em si (a função já resolve isso sozinha no
+// servidor) — só a contagem prévia pra mostrar na confirmação continua
+// sendo calculada no cliente a partir de `courses` já carregado. Retorna
+// quantas disciplinas foram desalocadas.
+export async function deleteRoomAndUnallocate(id) {
+  const { data, error } = await supabase.rpc('delete_room_and_unallocate', { p_id: id });
+  if (error) throw error;
+  return data ?? 0;
+}
+
+// ─── Períodos letivos ─────────────────────────────────────────────────────────
+export async function createPeriod(id) {
+  await unwrap(supabase.from('periods').insert({ id }));
+}
+
+export async function countPeriodCourses(period) {
+  const { count, error } = await supabase.from('courses').select('id', { count:'exact', head:true }).eq('period', period);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+// Atômica (função Postgres security definer, ver supabase/schema.sql) —
+// única forma de remover um período do sistema: apaga o período em si e
+// todas as disciplinas cadastradas nele (em qualquer função/sub-unidade)
+// numa única transação no banco, e limpa
+// app_settings.current_period_override se ele apontava pro período que
+// está sendo removido, pra não deixar o "período atual" fixado pendurado
+// numa referência inexistente.
+export async function deletePeriodAndCourses(id) {
+  const { error } = await supabase.rpc('delete_period_and_courses', { p_id: id });
+  if (error) throw error;
 }

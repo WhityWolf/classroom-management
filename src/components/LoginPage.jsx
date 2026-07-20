@@ -5,21 +5,6 @@ import ufpiLogo from '../assets/ufpi-logo.png';
 
 const GITHUB_REPO_URL = 'https://github.com/WhityWolf/classroom-management';
 
-// Reflete o seed inicial fornecido junto com o schema (ver Fase 2 da
-// reformulação de usuários) — puramente ilustrativo para facilitar testes
-// manuais; não é mais lido de nenhum "banco" mock, os usuários reais agora
-// vêm do Postgres e podem não bater com esta lista se o seed for alterado.
-const DEMO_CREDENTIALS = [
-  { username: 'admin',         password: 'chief123', roleName: 'Diretor' },
-  { username: 'math.grad',     password: 'math123',  roleName: 'Coordenador de Graduação · Matemática' },
-  { username: 'math.pos',      password: 'math123',  roleName: 'Coordenador de Pós-Graduação · Matemática' },
-  { username: 'math.profmat',  password: 'math123',  roleName: 'Coordenador PROFMAT · Matemática' },
-  { username: 'phys.head',     password: 'phys123',  roleName: 'Chefe de Departamento · Física' },
-  { username: 'cs.head',       password: 'cs1234',   roleName: 'Chefe de Departamento · Computação' },
-  { username: 'chem.head',     password: 'chem123',  roleName: 'Chefe de Departamento · Química' },
-  { username: 'bio.head',      password: 'bio123',   roleName: 'Chefe de Departamento · Biologia' },
-];
-
 export default function LoginPage() {
   const { login, authError } = useAuth();
   const { T, theme, toggleTheme } = useT();
@@ -29,7 +14,6 @@ export default function LoginPage() {
   const [showPass,   setShowPass]   = useState(false);
   const [busy,       setBusy]       = useState(false);
   const [localError, setLocalError] = useState('');
-  const [showDemo,   setShowDemo]   = useState(false);
 
   const error = localError || authError;
 
@@ -42,8 +26,6 @@ export default function LoginPage() {
     await login(username.trim(), password);
     setBusy(false);
   };
-
-  const fillDemo = (cred) => { setUsername(cred.username); setPassword(cred.password); setLocalError(''); };
 
   const mono = { fontFamily:"'DM Mono',monospace" };
   const inp  = {
@@ -102,17 +84,20 @@ export default function LoginPage() {
               <span style={{fontSize:13,fontWeight:600,color:'#c4b5fd'}}>Diretor</span>
             </div>
             <div style={{fontSize:11,color:'#94a3b8',lineHeight:1.5}}>
-              Acesso institucional completo — aloca excedentes interdepartamentais, gerencia o status dos departamentos, edita detalhes das salas e administra usuários.
+              Acesso institucional completo — gerencia todos os departamentos, salas e usuários do sistema.
             </div>
           </div>
 
           <div style={{padding:'10px 12px',background:'rgba(52,211,153,.08)',border:'1px solid rgba(52,211,153,.2)',borderRadius:8}}>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
               <div style={{width:6,height:6,borderRadius:'50%',background:'#34D399'}}/>
-              <span style={{fontSize:13,fontWeight:600,color:'#6ee7b7'}}>Chefe de Departamento</span>
+              <span style={{fontSize:13,fontWeight:600,color:'#6ee7b7'}}>Chefia / Coordenação</span>
+            </div>
+            <div style={{fontSize:10,color:'#6ee7b7',lineHeight:1.6,marginBottom:3}}>
+              Chefe de Departamento · Coordenador de Graduação · Coordenador de Pós-Graduação
             </div>
             <div style={{fontSize:11,color:'#94a3b8',lineHeight:1.5}}>
-              Aloca disciplinas nas salas do próprio departamento e envia ao chefe ao concluir.
+              Aloca disciplinas nas salas do próprio departamento ou curso e envia ao diretor ao concluir.
             </div>
           </div>
 
@@ -190,32 +175,6 @@ export default function LoginPage() {
               {busy?'Entrando…':'Entrar'}
             </button>
           </form>
-
-          {/* Credenciais de demonstração */}
-          <div style={{borderTop:`1px solid ${T.bdr}`,paddingTop:16}}>
-            <button type="button" onClick={()=>setShowDemo(v=>!v)}
-              style={{display:'flex',alignItems:'center',gap:6,width:'100%',background:'none',border:'none',
-                      cursor:'pointer',padding:0,...mono,fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1}}>
-              <span style={{display:'inline-block',transition:'transform .15s',transform:showDemo?'rotate(90deg)':'none'}}>›</span>
-              Credenciais de demonstração
-            </button>
-            {showDemo&&(
-              <div style={{display:'flex',flexDirection:'column',gap:3,marginTop:10}}>
-                {DEMO_CREDENTIALS.map(cred=>(
-                  <button key={cred.username} onClick={()=>fillDemo(cred)}
-                    style={{display:'flex',alignItems:'center',gap:10,padding:'6px 10px',
-                            background:'transparent',border:`1px solid ${T.bdr}`,
-                            borderRadius:6,cursor:'pointer',textAlign:'left',transition:'all .1s'}}
-                    onMouseEnter={e=>{e.currentTarget.style.background=T.hover;e.currentTarget.style.borderColor=T.bdr2;}}
-                    onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.borderColor=T.bdr;}}>
-                    <span style={{...mono,fontSize:11,color:T.txt,fontWeight:500,minWidth:100}}>{cred.username}</span>
-                    <span style={{...mono,fontSize:11,color:T.muted,minWidth:72}}>{cred.password}</span>
-                    <span style={{fontSize:11,color:T.dim,flex:1}}>{cred.roleName}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>

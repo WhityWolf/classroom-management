@@ -28,19 +28,29 @@ salas e blocos novos.
   alocadas ou apenas vazias) e, só pra quem tem permissão de gerenciamento
   (Diretor/secretários), uma terceira opção "Gerenciamento".
 - **Gerenciamento institucional** — tela dedicada (não é exclusiva por
-  identidade de usuário, e sim por permissão) com abas para: criar/editar
-  usuários e atribuir sua função; criar/editar/excluir funções (definindo
-  quais permissões e quais salas cada uma tem); criar/editar/excluir
-  sub-unidades novas (ex. uma sub-unidade de Arqueologia); e criar/editar/
-  excluir salas e blocos, incluindo dar ou tirar a sala de uma função.
+  identidade de usuário, e sim por permissão) com abas, nesta ordem:
+  **Sub-Unidades** (criar/editar/excluir); **Usuários e Funções** (uma aba
+  só, com um sub-toggle interno — criar/editar usuários e atribuir sua
+  função, e criar/editar/excluir funções definindo quais permissões e quais
+  salas cada uma tem); **Salas e Blocos** (criar/editar/excluir, incluindo
+  dar ou tirar a sala de uma função); e **Períodos** (criar um novo período
+  letivo — que já existe por conta própria, mesmo sem nenhuma disciplina
+  cadastrada nele — ou excluir um período existente, mediante confirmação
+  que mostra quantas disciplinas serão apagadas junto; essa é a única forma
+  de remover um período do sistema).
 - **Múltiplos períodos letivos** — um seletor de período (ex. `2026.1`)
-  aparece nas telas de alocação e de mapa. Só o período mais recente pode
-  ser editado; períodos passados ficam travados (inclusive pra função
-  institucional) e, na tela de Alocação, a vista em Salas é desabilitada
-  nesse caso — só dá pra consultar pela Grade, já que não há nada a alocar
-  num período encerrado. Quem tem permissão institucional cria um novo
-  período letivo a qualquer momento, o que automaticamente torna o anterior
-  somente leitura.
+  aparece nas telas de alocação e de mapa. O período é uma entidade
+  persistida por conta própria (tabela `periods`) — existe mesmo sem
+  nenhuma disciplina cadastrada nele, inclusive aparecendo (vazio) no Mapa
+  de Salas. Só o período mais recente pode ser editado; períodos passados
+  ficam travados (inclusive pra função institucional) e, na tela de
+  Alocação, a vista em Salas é desabilitada nesse caso — só dá pra consultar
+  pela Grade, já que não há nada a alocar num período encerrado. Quem tem
+  permissão institucional cria um novo período letivo a qualquer momento
+  (o que automaticamente torna o anterior somente leitura) e pode excluir
+  qualquer período pela aba Períodos de Gerenciamento — mediante
+  confirmação, já que isso apaga junto todas as disciplinas cadastradas
+  nele; essa é a única forma de remover um período do sistema.
 - **Alocação de salas** — visão em Grade (quadro de horários semanal) ou
   em Salas (cartões de disponibilidade por sala, agrupados por bloco/prédio
   e por função), com detecção de conflito de horário em tempo real.
@@ -91,8 +101,9 @@ salas e blocos novos.
 
 - **React 18 + Vite** — SPA sem roteador, build estático para GitHub Pages.
 - **Supabase (Postgres)** — persistência compartilhada de sub-unidades,
-  funções, blocos, salas, disciplinas, status de coordenação, notificações
-  e usuários, com Realtime habilitado nas tabelas de domínio.
+  funções, blocos, salas, disciplinas, períodos letivos, status de
+  coordenação, notificações e usuários, com Realtime habilitado nas tabelas
+  de domínio.
 - **SheetJS (`xlsx`)** — leitura de `.ods`/`.xlsx` no importador de
   disciplinas, carregado sob demanda (code-split) para não pesar o
   carregamento inicial de quem só usa `.csv`.
@@ -132,17 +143,18 @@ src/
 │   ├── LoginPage.jsx              Tela de login
 │   ├── UserManagement.jsx         Lista/edita/desativa usuários (sem criar
 │   │                              — criação é só pela tela de Gerenciamento)
-│   ├── ManagementScreen.jsx       Usuários, Funções, Sub-unidades, Salas e
-│   │                              Blocos — terceira opção pós-login
+│   ├── ManagementScreen.jsx       Sub-Unidades, Usuários e Funções, Salas
+│   │                              e Blocos, Períodos — terceira opção
+│   │                              pós-login
 │   └── PermissionGate.jsx         Wrapper declarativo de permissão (não usado
 │                                   atualmente — todo o gating real é inline)
 │
 └── db/                          Camada de dados Supabase
     ├── supabaseClient.js         Cliente compartilhado + guarda de config
     ├── allocations.js            Sub-unidades/funções/blocos/salas/disciplinas/
-    │                              status de coordenação — uma função por
-    │                              mutação + fetchAll()
-    ├── management.js             CRUD de sub_units/roles/blocks/rooms
+    │                              períodos/status de coordenação — uma
+    │                              função por mutação + fetchAll()
+    ├── management.js             CRUD de sub_units/roles/blocks/rooms/periods
     ├── authApi.js                Usuários/sessão — chama as funções SQL
     │                              security definer via supabase.rpc()
     └── useRealtimeSync.js        Único caminho que atualiza o estado local
@@ -226,6 +238,7 @@ tem permissão institucional.
 | `blocks` | Blocos/prédios físicos (ex. `CCN1`/`SG-04`) |
 | `rooms` | Salas reais do CCN1/CCN2 — `role_id` nulo significa sala compartilhada (só quem tem `MANAGE_ROOMS` gerencia); `block_id` aponta pro bloco físico |
 | `courses` | Disciplinas — `role_id` é a coordenação dona; `blocks` (jsonb) guarda uma lista de `{dias, início, fim}` de horário (não confundir com a tabela `blocks` acima); `room_by_day` (jsonb) mapeia cada dia pra sala alocada nele; `period` (ex. `"2026.1"`) marca o período letivo — só o mais recente é editável |
+| `periods` | Períodos letivos (ex. `"2026.1"`) — existem por conta própria, independente de ter alguma disciplina cadastrada; `courses.period` não é uma FK pra cá (soft reference), pra não travar em dados legados |
 | `coordination_statuses` | Status de cada coordenação (`active` / `finished` / `force_finished`) |
 | `notifications` | Notificações recebidas quando uma coordenação conclui sua alocação |
 | `room_features` | Catálogo de recursos selecionáveis ao editar uma sala |
@@ -276,25 +289,6 @@ não configurado" após entrar — ver `src/db/supabaseClient.js`.
 8. Daí em diante, novos usuários/funções/sub-unidades/salas/blocos são
    criados de dentro do próprio app, pela tela de Gerenciamento — não
    precisa mais voltar ao SQL Editor pra isso.
-
----
-
-## Login de demonstração
-
-| Usuário | Senha | Função |
-|---|---|---|
-| `admin` | `chief123` | Diretor |
-| `math.grad` | `math123` | Coordenador de Graduação — Matemática |
-| `math.pos` | `math123` | Coordenador de Pós-Graduação — Matemática |
-| `math.profmat` | `math123` | Coordenador PROFMAT — Matemática |
-| `phys.head` | `phys123` | Chefe de Departamento — Física |
-| `cs.head` | `cs1234` | Chefe de Departamento — Computação |
-| `chem.head` | `chem123` | Chefe de Departamento — Química |
-| `bio.head` | `bio123` | Chefe de Departamento — Biologia |
-
-(Lista de exibição em `DEMO_CREDENTIALS`, `src/components/LoginPage.jsx` —
-reflete o seed de exemplo acima, não é lida de nenhum "banco" mock; se o
-seed do seu projeto for diferente, ajuste essa lista ou ignore o painel.)
 
 ---
 

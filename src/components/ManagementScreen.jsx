@@ -7,7 +7,7 @@
  * `canManage` em ScreenSelector). Autocontida como ScreenSelector/RoomMapScreen
  * (própria useAuth()/useT()), recebe só `{onBack}`.
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useT, dtc, dbg } from '../theme.jsx';
 import { PERMS } from '../auth/permissions.js';
@@ -70,7 +70,7 @@ function ptError(e) {
   return msg;
 }
 
-export default function ManagementScreen({ onBack, courses=[], createdPeriods=[], onPeriodCreated, currentPeriodOverride=null }) {
+export default function ManagementScreen({ onBack, courses=[], onPeriodCreated, currentPeriodOverride=null }) {
   const { currentUser, logout, can } = useAuth();
   const { T, theme, toggleTheme } = useT();
   const mono = { fontFamily:"'DM Mono',monospace" };
@@ -81,13 +81,29 @@ export default function ManagementScreen({ onBack, courses=[], createdPeriods=[]
   const [blocks, setBlocks] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [users, setUsers] = useState([]);
+  // Períodos persistidos (tabela periods) — existem por conta própria, sem
+  // depender de ter alguma disciplina cadastrada (ver PeriodsTab abaixo).
+  const [periods, setPeriods] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
   const [feedback, setFeedback] = useState(null);
-  const flash = (type, msg) => { setFeedback({ type, msg }); setTimeout(() => setFeedback(null), 3500); };
+  // Erros (ex.: "sub-unidade ainda tem funções vinculadas") costumam ser mais
+  // longos e mais importantes de realmente ler do que uma confirmação de
+  // sucesso — por isso ficam visíveis bem mais tempo (8s) do que um "ok"
+  // (4s), que é só uma confirmação rápida do que o usuário acabou de fazer.
+  // flashTimer guarda o timeout pendente pra poder cancelá-lo: sem isso, um
+  // flash antigo (ex. um "ok" de 4s) podia apagar um flash novo e mais
+  // importante (ex. um "err" de 8s) que apareceu logo em seguida, antes do
+  // tempo dele terminar.
+  const flashTimer = useRef(null);
+  const flash = (type, msg) => {
+    clearTimeout(flashTimer.current);
+    setFeedback({ type, msg });
+    flashTimer.current = setTimeout(() => setFeedback(null), type === 'err' ? 8000 : 4000);
+  };
 
   const reloadDomain = () => db.fetchAll().then(d => {
-    setSubUnits(d.subUnits); setRoles(d.roles); setBlocks(d.blocks); setRooms(d.rooms);
+    setSubUnits(d.subUnits); setRoles(d.roles); setBlocks(d.blocks); setRooms(d.rooms); setPeriods(d.periods);
   });
   const reloadUsers = () => authApi.getUsers().then(setUsers);
 
@@ -96,7 +112,7 @@ export default function ManagementScreen({ onBack, courses=[], createdPeriods=[]
     Promise.all([db.fetchAll(), authApi.getUsers()])
       .then(([d, u]) => {
         if (!active) return;
-        setSubUnits(d.subUnits); setRoles(d.roles); setBlocks(d.blocks); setRooms(d.rooms); setUsers(u);
+        setSubUnits(d.subUnits); setRoles(d.roles); setBlocks(d.blocks); setRooms(d.rooms); setUsers(u); setPeriods(d.periods);
       })
       .catch(e => { if (active) setLoadError(e.message); })
       .finally(() => { if (active) setLoading(false); });
@@ -104,17 +120,19 @@ export default function ManagementScreen({ onBack, courses=[], createdPeriods=[]
   }, []);
 
   const tabs = [
-    { key:'users',    label:'Usuários',       perm:PERMS.CREATE_ANY_USER },
-    { key:'roles',    label:'Funções',        perm:PERMS.MANAGE_ROLES },
-    { key:'subunits', label:'Sub-unidades',   perm:PERMS.MANAGE_SUB_UNITS },
-    { key:'rooms',    label:'Salas e Blocos', perm:PERMS.MANAGE_ROOMS },
-  ].filter(t => can(t.perm));
+    { key:'subunits',   label:'Sub-Unidades',       perm:PERMS.MANAGE_SUB_UNITS },
+    { key:'usersroles', label:'Usuários e Funções', anyPerm:[PERMS.CREATE_ANY_USER, PERMS.MANAGE_ROLES] },
+    { key:'rooms',      label:'Salas e Blocos',     perm:PERMS.MANAGE_ROOMS },
+  ].filter(t => t.anyPerm ? t.anyPerm.some(p => can(p)) : can(t.perm));
   // "Períodos" não é gated por PERMS.* — segue o mesmo critério estrutural
   // (isInstitutional) que já valia pro antigo botão "+" de criar período em
   // Alocar Disciplinas, evitando exigir uma migração/concessão de permissão
   // nova pra uma função "Diretor" já existente usar isto de cara.
   if (isInstitutional) tabs.push({ key:'periods', label:'Períodos' });
-  const [tab, setTab] = useState(tabs[0]?.key ?? 'users');
+  // "Usuários e Funções" continua abrindo direto na visão de Usuários por
+  // padrão (mesma funcionalidade de antes), mesmo que essa aba não seja mais
+  // a primeira da barra — daí o default explícito em vez de tabs[0].
+  const [tab, setTab] = useState(() => tabs.some(t => t.key === 'usersroles') ? 'usersroles' : (tabs[0]?.key ?? 'subunits'));
 
   const gRole = id => {
     const role = roles.find(r => r.id === id);
@@ -171,11 +189,10 @@ export default function ManagementScreen({ onBack, courses=[], createdPeriods=[]
           <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',...mono,fontSize:12,color:'#ef4444'}}>Erro ao carregar: {loadError}</div>
         ):(
           <>
-            {tab==='users'&&<UsersTab users={users} roles={roles} subUnits={subUnits} can={can} currentUser={currentUser} reloadUsers={reloadUsers} flash={flash} gRole={gRole}/>}
-            {tab==='roles'&&<RolesTab roles={roles} subUnits={subUnits} rooms={rooms} blocks={blocks} users={users} can={can} reloadDomain={reloadDomain} flash={flash}/>}
+            {tab==='usersroles'&&<UsersRolesTab users={users} roles={roles} subUnits={subUnits} rooms={rooms} blocks={blocks} can={can} currentUser={currentUser} reloadUsers={reloadUsers} reloadDomain={reloadDomain} flash={flash} gRole={gRole}/>}
             {tab==='subunits'&&<SubUnitsTab subUnits={subUnits} roles={roles} can={can} reloadDomain={reloadDomain} flash={flash}/>}
-            {tab==='rooms'&&<RoomsBlocksTab rooms={rooms} blocks={blocks} roles={roles} subUnits={subUnits} can={can} reloadDomain={reloadDomain} flash={flash} gRole={gRole}/>}
-            {tab==='periods'&&<PeriodsTab courses={courses} createdPeriods={createdPeriods} onPeriodCreated={onPeriodCreated} currentPeriodOverride={currentPeriodOverride} flash={flash}/>}
+            {tab==='rooms'&&<RoomsBlocksTab rooms={rooms} blocks={blocks} roles={roles} subUnits={subUnits} courses={courses} can={can} reloadDomain={reloadDomain} flash={flash} gRole={gRole}/>}
+            {tab==='periods'&&<PeriodsTab courses={courses} periods={periods} onPeriodCreated={onPeriodCreated} currentPeriodOverride={currentPeriodOverride} flash={flash} reloadDomain={reloadDomain}/>}
           </>
         )}
       </div>
@@ -195,6 +212,36 @@ function PanelLayout({ T, list, panel }) {
 
 const inpStyle = T => ({width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:13,outline:'none'});
 const lblStyle = T => ({fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:4});
+
+// ─── Aba Usuários e Funções ───────────────────────────────────────────────────
+// Mescla as antigas abas "Usuários" e "Funções" numa aba só, com um sub-toggle
+// interno igual ao de RoomsBlocksTab (Salas/Blocos) — cada sub-view continua
+// sendo o mesmo componente autocontido de antes (UsersTab/RolesTab), só que
+// selecionado por este estado local em vez de por abas separadas no topo.
+// Abre em 'users' por padrão, preservando o comportamento de "Usuários é a
+// visão inicial ao entrar no Gerenciamento".
+function UsersRolesTab({ users, roles, subUnits, rooms, blocks, can, currentUser, reloadUsers, reloadDomain, flash, gRole }) {
+  const { T } = useT();
+  const [sub, setSub] = useState('users'); // 'users' | 'roles'
+
+  return (
+    <div style={{height:'100%',display:'flex',flexDirection:'column'}}>
+      <div style={{display:'flex',gap:6,padding:'14px 18px 0'}}>
+        {[['users','Usuários'],['roles','Funções']].map(([k,l])=>(
+          <button key={k} onClick={()=>setSub(k)}
+            style={{padding:'6px 14px',borderRadius:6,fontSize:12,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>
+            {l}
+          </button>
+        ))}
+      </div>
+      <div style={{flex:1,overflow:'hidden'}}>
+        {sub==='users'
+          ? <UsersTab users={users} roles={roles} subUnits={subUnits} can={can} currentUser={currentUser} reloadUsers={reloadUsers} flash={flash} gRole={gRole}/>
+          : <RolesTab roles={roles} subUnits={subUnits} rooms={rooms} blocks={blocks} users={users} can={can} reloadDomain={reloadDomain} flash={flash}/>}
+      </div>
+    </div>
+  );
+}
 
 // ─── Aba Usuários ─────────────────────────────────────────────────────────────
 function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash, gRole }) {
@@ -544,18 +591,30 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
 }
 
 // ─── Aba Salas e Blocos ───────────────────────────────────────────────────────
-function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, flash, gRole }) {
-  const { T } = useT();
+function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDomain, flash, gRole }) {
+  const { T, theme } = useT();
   const [sub, setSub] = useState('rooms'); // 'rooms' | 'blocks'
   const [editingRoom, setEditingRoom] = useState(null);
   const [roomForm, setRoomForm] = useState(null);
   const [editingBlock, setEditingBlock] = useState(null);
   const [blockForm, setBlockForm] = useState(null);
+  // Sala: sem FK real pra courses (room_by_day é jsonb — soft reference),
+  // então excluir não é bloqueado pelo banco; mostramos quantas disciplinas
+  // seriam desalocadas antes de confirmar. Bloco: TEM FK real
+  // (rooms.block_id ... on delete restrict), então o próprio Postgres
+  // rejeitaria a exclusão com sala vinculada — aqui só antecipamos isso de
+  // forma amigável (contando as salas antes de tentar) em vez de deixar o
+  // erro cru do banco aparecer.
+  const [confirmDeleteRoom, setConfirmDeleteRoom] = useState(null);   // room | null
+  const [confirmDeleteBlock, setConfirmDeleteBlock] = useState(null); // block | null
+  const [deleting, setDeleting] = useState(false);
 
   const blockLabel = id => { const b=blocks.find(x=>x.id===id); return b?`${b.local} — ${b.name}`:'—'; };
+  const roomCoursesOf = r => courses.filter(c => Object.values(c.roomByDay).includes(r.id));
+  const roomsOfBlock = b => rooms.filter(r => r.blockId === b.id);
 
-  const startCreateRoom = () => { setRoomForm({ id:crypto.randomUUID(), label:'', cap:30, type:'Sala de Aula', floor:1, blockId:blocks[0]?.id??'', roleId:'', features:[], description:'' }); setEditingRoom('new'); };
-  const startEditRoom = r => { setRoomForm({ ...r, roleId:r.roleId??'' }); setEditingRoom(r); };
+  const startCreateRoom = () => { setRoomForm({ id:crypto.randomUUID(), label:'', cap:30, type:'Sala de Aula', floor:1, blockId:blocks[0]?.id??'', roleId:'', features:[], description:'' }); setEditingRoom('new'); setConfirmDeleteRoom(null); };
+  const startEditRoom = r => { setRoomForm({ ...r, roleId:r.roleId??'' }); setEditingRoom(r); setConfirmDeleteRoom(null); };
   const cancelRoom = () => { setEditingRoom(null); setRoomForm(null); };
   const saveRoom = async () => {
     if (!roomForm.label.trim()) return flash('err', 'Informe o nome/número da sala.');
@@ -567,13 +626,22 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       flash('ok','Sala salva.'); cancelRoom(); reloadDomain();
     } catch (e) { flash('err', ptError(e)); }
   };
-  const removeRoom = async r => {
-    try { await mgmt.deleteRoom(r.id); flash('ok','Sala excluída.'); reloadDomain(); }
-    catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+  const startDeleteRoom = r => { setConfirmDeleteRoom(r); cancelRoom(); setConfirmDeleteBlock(null); };
+  const cancelDeleteRoom = () => setConfirmDeleteRoom(null);
+  const confirmDeleteRoomNow = async () => {
+    const r = confirmDeleteRoom;
+    setDeleting(true);
+    try {
+      const unallocated = await mgmt.deleteRoomAndUnallocate(r.id);
+      flash('ok', unallocated ? `Sala excluída — ${unallocated} disciplina(s) desalocada(s) nela.` : 'Sala excluída.');
+      setConfirmDeleteRoom(null);
+      reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+    finally { setDeleting(false); }
   };
 
-  const startCreateBlock = () => { setBlockForm({ id:crypto.randomUUID(), local:'', name:'' }); setEditingBlock('new'); };
-  const startEditBlock = b => { setBlockForm({ ...b }); setEditingBlock(b); };
+  const startCreateBlock = () => { setBlockForm({ id:crypto.randomUUID(), local:'', name:'' }); setEditingBlock('new'); setConfirmDeleteBlock(null); };
+  const startEditBlock = b => { setBlockForm({ ...b }); setEditingBlock(b); setConfirmDeleteBlock(null); };
   const cancelBlock = () => { setEditingBlock(null); setBlockForm(null); };
   const saveBlock = async () => {
     if (!blockForm.local.trim()) return flash('err', 'Informe o centro do bloco.');
@@ -584,9 +652,18 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       flash('ok','Bloco salvo.'); cancelBlock(); reloadDomain();
     } catch (e) { flash('err', ptError(e)); }
   };
-  const removeBlock = async b => {
-    try { await mgmt.deleteBlock(b.id); flash('ok','Bloco excluído.'); reloadDomain(); }
-    catch (e) { flash('err', `Não foi possível excluir: ${e.message} (verifique se ainda há salas vinculadas)`); }
+  const startDeleteBlock = b => { setConfirmDeleteBlock(b); cancelBlock(); setConfirmDeleteRoom(null); };
+  const cancelDeleteBlock = () => setConfirmDeleteBlock(null);
+  const confirmDeleteBlockNow = async () => {
+    const b = confirmDeleteBlock;
+    setDeleting(true);
+    try {
+      await mgmt.deleteBlock(b.id);
+      flash('ok', 'Bloco excluído.');
+      setConfirmDeleteBlock(null);
+      reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -594,7 +671,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
       <>
         <div style={{display:'flex',gap:6,marginBottom:14}}>
           {[['rooms','Salas'],['blocks','Blocos']].map(([k,l])=>(
-            <button key={k} onClick={()=>{setSub(k);cancelRoom();cancelBlock();}} style={{padding:'6px 14px',borderRadius:6,fontSize:12,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>{l}</button>
+            <button key={k} onClick={()=>{setSub(k);cancelRoom();cancelBlock();cancelDeleteRoom();cancelDeleteBlock();}} style={{padding:'6px 14px',borderRadius:6,fontSize:12,fontWeight:600,background:sub===k?T.inner:'transparent',border:`1px solid ${sub===k?T.bdr2:'transparent'}`,color:sub===k?T.txt:T.muted,cursor:'pointer'}}>{l}</button>
           ))}
         </div>
         {sub==='rooms'?(
@@ -620,7 +697,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
                       <td style={{padding:'7px 10px'}}>
                         <div style={{display:'flex',gap:6}}>
                           <button onClick={()=>startEditRoom(r)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
-                          <button onClick={()=>removeRoom(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                          <button onClick={()=>startDeleteRoom(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
                         </div>
                       </td>
                     </tr>
@@ -637,7 +714,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
                 <div key={b.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
                   <div style={{flex:1,fontSize:13,color:T.txt}}>{b.local} — {b.name}</div>
                   <button onClick={()=>startEditBlock(b)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
-                  <button onClick={()=>removeBlock(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                  <button onClick={()=>startDeleteBlock(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
                 </div>
               ))}
             </div>
@@ -645,7 +722,42 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
         )}
       </>
     )} panel={
-      editingRoom?(
+      confirmDeleteRoom?(()=>{
+        const affected = roomCoursesOf(confirmDeleteRoom);
+        return (
+          <div>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+            <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+              {affected.length===0
+                ? <>A sala <strong>{confirmDeleteRoom.label}</strong> não tem nenhuma disciplina alocada nela no momento.</>
+                : <>A sala <strong>{confirmDeleteRoom.label}</strong> está alocada em <strong>{affected.length} disciplina(s)</strong>. Ao excluir a sala, essas disciplinas <strong>não</strong> serão apagadas — só ficarão sem sala nos dias em que usavam esta, e vão precisar ser realocadas.</>}
+            </div>
+            <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>
+            <div style={{display:'flex',gap:8}}>
+              <button type="button" onClick={cancelDeleteRoom} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>Cancelar</button>
+              <button type="button" onClick={confirmDeleteRoomNow} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':'Excluir sala'}</button>
+            </div>
+          </div>
+        );
+      })():confirmDeleteBlock?(()=>{
+        const blockRooms = roomsOfBlock(confirmDeleteBlock);
+        const blocked = blockRooms.length>0;
+        return (
+          <div>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+            <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+              {blocked
+                ? <>O bloco <strong>{confirmDeleteBlock.local} — {confirmDeleteBlock.name}</strong> ainda tem <strong>{blockRooms.length} sala(s)</strong> vinculada(s) ({blockRooms.map(r=>r.label).join(', ')}). Exclua ou mova essas salas para outro bloco antes de excluir este.</>
+                : <>O bloco <strong>{confirmDeleteBlock.local} — {confirmDeleteBlock.name}</strong> não tem nenhuma sala vinculada e pode ser excluído com segurança.</>}
+            </div>
+            {!blocked&&<div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>}
+            <div style={{display:'flex',gap:8}}>
+              <button type="button" onClick={cancelDeleteBlock} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>{blocked?'Entendi':'Cancelar'}</button>
+              {!blocked&&<button type="button" onClick={confirmDeleteBlockNow} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':'Excluir bloco'}</button>}
+            </div>
+          </div>
+        );
+      })():editingRoom?(
         <form onSubmit={e=>{e.preventDefault();saveRoom();}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editingRoom==='new'?'Nova Sala':'Editar Sala'}</div>
           <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome/Número</label><input value={roomForm.label} onChange={e=>setRoomForm({...roomForm,label:e.target.value})} style={inpStyle(T)}/></div>
@@ -692,31 +804,44 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, can, reloadDomain, fla
 }
 
 // ─── Aba Períodos ─────────────────────────────────────────────────────────────
-// Período não tem tabela própria — é só a string carimbada em cada disciplina
-// (courses.period), veja periods.js. "Criar" um aqui só valida formato/
-// recência e chama onPeriodCreated, que quem chamou (Dashboard) usa pra
-// registrar o período (createdPeriods), selecioná-lo e levar de volta pra
-// Alocar Disciplinas — nada é persistido no banco por esta aba.
-function PeriodsTab({ courses, createdPeriods, onPeriodCreated, currentPeriodOverride, flash }) {
+// Período tem tabela própria (periods, ver supabase/schema.sql) — existe por
+// conta própria, sem depender de ter alguma disciplina cadastrada. "Criar"
+// aqui valida formato/recência e persiste de verdade via mgmt.createPeriod,
+// depois chama onPeriodCreated, que quem chamou (Dashboard) usa só pra
+// selecioná-lo e levar de volta pra Alocar Disciplinas (navegação, não mais
+// a única forma de "salvar" o período). Excluir um período (única forma de
+// removê-lo do sistema) apaga a linha em periods E todas as disciplinas
+// cadastradas nele, mediante confirmação explícita — nunca acontece de
+// forma implícita só por ele ficar sem disciplinas.
+function PeriodsTab({ courses, periods, onPeriodCreated, currentPeriodOverride, flash, reloadDomain }) {
   const { T, theme } = useT();
   const [creating, setCreating] = useState(false);
   const [value, setValue] = useState('');
   const [error, setError] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null); // período (string) | null
+  const [deleting, setDeleting] = useState(false);
 
+  // União com os períodos já referenciados por alguma disciplina (dados
+  // legados cujo período ainda não tenha uma linha própria em `periods`).
   const allPeriods = useMemo(() => {
-    const s = new Set([...courses.map(c=>c.period), ...createdPeriods]);
+    const s = new Set([...periods, ...courses.map(c=>c.period)]);
     return [...s].sort(comparePeriods);
-  }, [courses, createdPeriods]);
+  }, [periods, courses]);
   const currentPeriod = currentPeriodOverride ?? (allPeriods[allPeriods.length-1] ?? DEFAULT_PERIOD);
+  const courseCountOf = p => courses.filter(c=>c.period===p).length;
 
-  const startCreate = () => { setCreating(true); setValue(''); setError(null); };
+  const startCreate = () => { setCreating(true); setValue(''); setError(null); setConfirmDelete(null); };
   const cancel = () => { setCreating(false); setValue(''); setError(null); };
-  const submit = () => {
+  const submit = async () => {
     const trimmed = value.trim();
     if (!PERIOD_RE.test(trimmed)) { setError('Use o formato AAAA.N, ex.: 2026.2.'); return; }
     if (comparePeriods(trimmed, currentPeriod) <= 0) { setError(`Precisa ser posterior ao período atual (${currentPeriod}).`); return; }
-    setCreating(false); setValue(''); setError(null);
-    onPeriodCreated(trimmed);
+    try {
+      await mgmt.createPeriod(trimmed);
+      setCreating(false); setValue(''); setError(null);
+      reloadDomain();
+      onPeriodCreated(trimmed);
+    } catch (e) { setError(ptError(e)); }
   };
   const setAsCurrent = async p => {
     try { await db.setCurrentPeriodOverride(p); flash('ok', `Período ${p} definido como atual.`); }
@@ -726,49 +851,80 @@ function PeriodsTab({ courses, createdPeriods, onPeriodCreated, currentPeriodOve
     try { await db.setCurrentPeriodOverride(null); flash('ok', 'Período atual voltou a ser automático.'); }
     catch (e) { flash('err', ptError(e)); }
   };
+  const startDelete = p => { setConfirmDelete(p); setCreating(false); };
+  const cancelDelete = () => setConfirmDelete(null);
+  const confirmDeleteNow = async () => {
+    const p = confirmDelete;
+    setDeleting(true);
+    try {
+      await mgmt.deletePeriodAndCourses(p);
+      flash('ok', `Período ${p} e suas disciplinas foram excluídos.`);
+      setConfirmDelete(null);
+      reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+    finally { setDeleting(false); }
+  };
 
   return (
     <PanelLayout T={T} list={(
       <>
         <button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Novo Período</button>
         <div style={{display:'flex',flexDirection:'column',gap:8}}>
-          {[...allPeriods].reverse().map(p=>(
-            <div key={p} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
-              <div style={{flex:1,display:'flex',alignItems:'center',gap:8}}>
-                <span style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:600,color:T.txt}}>{p}</span>
-                {p===currentPeriod&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,
-                  color:theme==='light'?'#15803d':'#34d399',
-                  background:theme==='light'?'#f0fdf4':'#0a2a0a',
-                  border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,
-                  borderRadius:4,padding:'2px 6px'}}>ATUAL</span>}
+          {[...allPeriods].reverse().map(p=>{
+            const cnt = courseCountOf(p);
+            return (
+              <div key={p} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
+                <div style={{flex:1,display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:600,color:T.txt}}>{p}</span>
+                  {p===currentPeriod&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,
+                    color:theme==='light'?'#15803d':'#34d399',
+                    background:theme==='light'?'#f0fdf4':'#0a2a0a',
+                    border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,
+                    borderRadius:4,padding:'2px 6px'}}>ATUAL</span>}
+                </div>
+                <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{cnt} disciplina{cnt!==1?'s':''}</span>
+                {p===currentPeriodOverride
+                  ? <button onClick={clearOverride} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Voltar ao automático</button>
+                  : <button onClick={()=>setAsCurrent(p)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Definir como atual</button>}
+                <button onClick={()=>startDelete(p)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
               </div>
-              <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{courses.filter(c=>c.period===p).length} disciplina{courses.filter(c=>c.period===p).length!==1?'s':''}</span>
-              {p===currentPeriodOverride
-                ? <button onClick={clearOverride} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Voltar ao automático</button>
-                : <button onClick={()=>setAsCurrent(p)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Definir como atual</button>}
-            </div>
-          ))}
+            );
+          })}
           {allPeriods.length===0&&<div style={{...{fontFamily:"'DM Mono',monospace"},fontSize:12,color:T.dim}}>Nenhum período cadastrado ainda.</div>}
         </div>
       </>
-    )} panel={creating&&(
-      <form onSubmit={e=>{e.preventDefault();submit();}}>
-        <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>Novo Período Letivo</div>
-        <div style={{fontSize:12,color:T.txt2,lineHeight:1.6,marginBottom:14}}>
-          O período atual ({currentPeriod}) vira somente leitura assim que um período posterior existir. Disciplinas novas (criadas ou importadas) entram no período selecionado.
+    )} panel={
+      confirmDelete?(
+        <div>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+          <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+            O período <strong>{confirmDelete}</strong> possui <strong>{courseCountOf(confirmDelete)} disciplina(s)</strong> cadastrada(s) (em todas as funções). Ao excluir o período, todas serão removidas permanentemente junto com ele.
+          </div>
+          <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta é a única forma de excluir um período, e a ação não pode ser desfeita.</div>
+          <div style={{display:'flex',gap:8}}>
+            <button type="button" onClick={cancelDelete} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>Cancelar</button>
+            <button type="button" onClick={confirmDeleteNow} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':'Excluir período e disciplinas'}</button>
+          </div>
         </div>
-        <div style={{marginBottom:12}}>
-          <label style={lblStyle(T)}>Período (AAAA.N)</label>
-          <input autoFocus value={value} onChange={e=>{setValue(e.target.value);setError(null);}}
-            placeholder={`ex.: ${currentPeriod.split('.')[0]}.${Number(currentPeriod.split('.')[1]||1)+1}`}
-            style={inpStyle(T)}/>
-        </div>
-        {error&&<div style={{fontSize:11,color:'#ef4444',marginBottom:10}}>{error}</div>}
-        <div style={{display:'flex',gap:8}}>
-          <button type="button" onClick={cancel} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
-          <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Criar e Selecionar</button>
-        </div>
-      </form>
-    )}/>
+      ):creating&&(
+        <form onSubmit={e=>{e.preventDefault();submit();}}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>Novo Período Letivo</div>
+          <div style={{fontSize:12,color:T.txt2,lineHeight:1.6,marginBottom:14}}>
+            O período atual ({currentPeriod}) vira somente leitura assim que um período posterior existir. O novo período já fica disponível para seleção (inclusive no Mapa de Salas) mesmo antes de ter qualquer disciplina cadastrada.
+          </div>
+          <div style={{marginBottom:12}}>
+            <label style={lblStyle(T)}>Período (AAAA.N)</label>
+            <input autoFocus value={value} onChange={e=>{setValue(e.target.value);setError(null);}}
+              placeholder={`ex.: ${currentPeriod.split('.')[0]}.${Number(currentPeriod.split('.')[1]||1)+1}`}
+              style={inpStyle(T)}/>
+          </div>
+          {error&&<div style={{fontSize:11,color:'#ef4444',marginBottom:10}}>{error}</div>}
+          <div style={{display:'flex',gap:8}}>
+            <button type="button" onClick={cancel} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+            <button type="submit" style={{flex:2,padding:'8px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Criar e Selecionar</button>
+          </div>
+        </form>
+      )
+    }/>
   );
 }
