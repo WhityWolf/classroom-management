@@ -206,16 +206,29 @@ alter table app_sessions enable row level security;
 -- "authenticated" beyond the app_sessions token. For now, anon key has full
 -- read/write access on the domain tables, matching this prototype's current
 -- "no real auth enforcement" stage.
-create policy "anon full access" on sub_units for all using (true) with check (true);
-create policy "anon full access" on roles for all using (true) with check (true);
-create policy "anon full access" on blocks for all using (true) with check (true);
-create policy "anon full access" on rooms for all using (true) with check (true);
-create policy "anon full access" on courses for all using (true) with check (true);
-create policy "anon full access" on coordination_statuses for all using (true) with check (true);
-create policy "anon full access" on notifications for all using (true) with check (true);
-create policy "anon full access" on room_features for all using (true) with check (true);
-create policy "anon full access" on app_settings for all using (true) with check (true);
-create policy "anon full access" on periods for all using (true) with check (true);
+-- Só leitura direta (SELECT) é liberada pra `anon` nestas tabelas — escrita
+-- (INSERT/UPDATE/DELETE) foi revogada logo abaixo, então só as funções
+-- security definer (que rodam como o dono da tabela, ignorando GRANT/RLS)
+-- conseguem gravar. Antes disso, `using (true) for all` (leitura E escrita)
+-- somado ao GRANT padrão de INSERT/UPDATE/DELETE que o Supabase concede a
+-- `anon` por tabela deixava qualquer cliente com a chave anônima (pública,
+-- embutida no bundle do frontend) escrever qualquer coisa em qualquer
+-- tabela de domínio sem checagem nenhuma de permissão.
+create policy "anon read access" on sub_units for select using (true);
+create policy "anon read access" on roles for select using (true);
+create policy "anon read access" on blocks for select using (true);
+create policy "anon read access" on rooms for select using (true);
+create policy "anon read access" on courses for select using (true);
+create policy "anon read access" on coordination_statuses for select using (true);
+create policy "anon read access" on notifications for select using (true);
+create policy "anon read access" on room_features for select using (true);
+create policy "anon read access" on app_settings for select using (true);
+create policy "anon read access" on periods for select using (true);
+
+revoke insert, update, delete on
+  sub_units, roles, blocks, rooms, courses, coordination_statuses,
+  notifications, room_features, app_settings, periods
+from anon;
 
 -- app_users/app_sessions get NO policy at all (default deny for anon) — the
 -- only access path is through the security-definer functions below, which
@@ -224,18 +237,67 @@ create policy "anon full access" on periods for all using (true) with check (tru
 -- devtools could read cas_db_users (weak hash) directly out of localStorage;
 -- here the table is never readable directly, only through controlled RPCs.
 
--- ─── Funções de autenticação (security definer, chamadas via supabase.rpc) ────
+-- Bootstrap: cria o primeiro usuário/Diretor de um projeto novo. Roda só
+-- uma vez, manualmente, direto no SQL Editor do Supabase (conectado como
+-- postgres/supabase_admin, não como anon) — por isso, ao contrário de toda
+-- função abaixo, ela NÃO recebe token de sessão nem é liberada pra `anon`:
+-- ainda não existe usuário nenhum nesse ponto, então não haveria sessão
+-- válida pra checar (create_app_user normal exige CREATE_ANY_USER, que
+-- exige estar logado, que exige um usuário já existir — o primeiro usuário
+-- não tem como nascer por esse caminho). Recusa rodar se já existir
+-- qualquer usuário, então não dá pra usar isto pra criar uma segunda conta
+-- goela abaixo depois que o projeto já está no ar.
+create or replace function bootstrap_admin_user(p_username text, p_name text, p_email text, p_password text, p_role_id text)
+returns table (id text, username text) language plpgsql security definer set search_path = public, extensions as $$
+declare v_id text;
+begin
+  if exists (select 1 from app_users) then
+    raise exception 'Já existem usuários — use create_app_user (via RPC autenticado, dentro do app) pra criar novos, não esta função.';
+  end if;
+  insert into app_users (username, name, email, password_hash, role_id)
+  values (lower(p_username), p_name, lower(p_email), crypt(p_password, gen_salt('bf', 12)), p_role_id)
+  returning app_users.id into v_id;
+  return query select u.id, u.username from app_users u where u.id = v_id;
+end; $$;
+
+revoke all on function bootstrap_admin_user(text,text,text,text,text) from public;
+-- Sem "grant execute ... to anon" de propósito — só quem tem acesso direto
+-- ao Postgres (SQL Editor) consegue chamar isto, nunca o app pelo browser.
+
+-- ─── Funções de autenticação (security definer, chamadas via supabase.rpc)
+-- ────────────────────────────────────────────────────────────────────────────
+-- Autenticação em Postgres puro (sem Supabase Auth) — ver README.md. Todas
+-- as mutações de domínio abaixo (sub-unidades, funções, blocos, salas,
+-- disciplinas, períodos, coordenação, usuários) recebem um token de sessão
+-- (`p_token`, o mesmo token que authenticate_app_user devolve no login) e
+-- validam ele + a permissão certa ANTES de escrever, através dos helpers
+-- logo abaixo. As tabelas de domínio têm INSERT/UPDATE/DELETE revogados de
+-- `anon` no fim deste arquivo — só estas funções conseguem escrever nelas.
+-- Antes, qualquer cliente com a chave anônima (pública, embutida no
+-- bundle do frontend) podia escrever direto nas tabelas sem checagem
+-- nenhuma; e as próprias funções de usuário abaixo, mesmo já sendo
+-- security definer, não verificavam quem estava chamando.
+
+-- ═══ Lote 4: funções de usuário — já eram security definer, mas nenhuma
+-- delas checava QUEM estava chamando. Qualquer cliente com a chave anônima
+-- podia criar um usuário Diretor pra si mesmo, editar/desativar/excluir
+-- qualquer conta. Este lote fecha isso — mesmo padrão de token+permissão
+-- dos outros lotes, mais proteção extra pro usuário 'admin' (isSystemUser
+-- no cliente) e contra se auto-desativar/auto-excluir. ═══════════════════
+
 
 create or replace function create_app_user(
-  p_username text, p_name text, p_email text, p_password text,
-  p_role_id text, p_created_by text
+  p_token text, p_username text, p_name text, p_email text, p_password text, p_role_id text
 ) returns table (
   id text, username text, name text, email text, role_id text,
   is_active boolean, created_at timestamptz, created_by text,
   last_login timestamptz, updated_at timestamptz
 ) language plpgsql security definer set search_path = public, extensions as $$
-declare v_id text;
+declare v_caller_id text; v_id text;
 begin
+  v_caller_id := auth_user_id(p_token);
+  perform require_permission(p_token, 'CREATE_ANY_USER');
+
   if length(p_password) < 6 then
     raise exception 'A senha deve ter pelo menos 6 caracteres.';
   end if;
@@ -246,8 +308,11 @@ begin
     raise exception 'E-mail já está em uso.';
   end if;
 
+  -- created_by vem da própria sessão, nunca de um valor mandado pelo
+  -- cliente (antes dava pra qualquer um se declarar "criado por" outra
+  -- pessoa, inclusive alguém que nem existe).
   insert into app_users (username, name, email, password_hash, role_id, created_by)
-  values (lower(p_username), p_name, lower(p_email), crypt(p_password, gen_salt('bf', 12)), p_role_id, p_created_by)
+  values (lower(p_username), p_name, lower(p_email), crypt(p_password, gen_salt('bf', 12)), p_role_id, v_caller_id)
   returning app_users.id into v_id;
 
   return query
@@ -256,7 +321,7 @@ begin
 end; $$;
 
 create or replace function update_app_user(
-  p_id text, p_name text default null, p_email text default null,
+  p_token text, p_id text, p_name text default null, p_email text default null,
   p_password text default null, p_role_id text default null, p_is_active boolean default null
 ) returns table (
   id text, username text, name text, email text, role_id text,
@@ -264,6 +329,8 @@ create or replace function update_app_user(
   last_login timestamptz, updated_at timestamptz
 ) language plpgsql security definer set search_path = public, extensions as $$
 begin
+  perform require_permission(p_token, 'EDIT_ANY_USER');
+
   if p_password is not null and length(p_password) < 6 then
     raise exception 'A senha deve ter pelo menos 6 caracteres.';
   end if;
@@ -289,28 +356,85 @@ begin
     from app_users u where u.id = p_id;
 end; $$;
 
-create or replace function deactivate_app_user(p_id text)
+-- Desativar: exige DEACTIVATE_USER, bloqueia auto-desativação e o usuário
+-- 'admin' (mesmas duas regras que já existiam só no cliente — isSystemUser
+-- + "u.id !== currentUser.id" em ManagementScreen.jsx).
+create or replace function deactivate_app_user(p_token text, p_id text)
 returns table (
   id text, username text, name text, email text, role_id text,
   is_active boolean, created_at timestamptz, created_by text,
   last_login timestamptz, updated_at timestamptz
 ) language plpgsql security definer set search_path = public, extensions as $$
+declare v_caller_id text; v_username text;
 begin
-  return query select * from update_app_user(p_id, p_is_active := false);
+  perform require_permission(p_token, 'DEACTIVATE_USER');
+  v_caller_id := auth_user_id(p_token);
+  if v_caller_id = p_id then
+    raise exception 'Você não pode desativar sua própria conta.' using errcode = '42501';
+  end if;
+  select u.username into v_username from app_users u where u.id = p_id;
+  if v_username = 'admin' then
+    raise exception 'Esta conta é protegida e não pode ser desativada.' using errcode = '42501';
+  end if;
+
+  -- UPDATE direto (não delega pra update_app_user) porque essa outra
+  -- função exige EDIT_ANY_USER — uma permissão diferente de
+  -- DEACTIVATE_USER, que já foi checada acima. Empilhar as duas faria
+  -- alguém com só DEACTIVATE_USER (sem EDIT_ANY_USER) ser barrado aqui por
+  -- uma permissão que nem deveria precisar.
+  update app_users set is_active = false, updated_at = now() where app_users.id = p_id;
+  delete from app_sessions where app_sessions.user_id = p_id;
+
+  return query
+    select u.id, u.username, u.name, u.email, u.role_id, u.is_active, u.created_at, u.created_by, u.last_login, u.updated_at
+    from app_users u where u.id = p_id;
 end; $$;
 
-create or replace function list_app_users()
+create or replace function list_app_users(p_token text)
 returns table (
   id text, username text, name text, email text, role_id text,
   is_active boolean, created_at timestamptz, created_by text,
   last_login timestamptz, updated_at timestamptz
 ) language plpgsql security definer set search_path = public, extensions as $$
 begin
+  -- Ver a lista de usuários é, na prática, a própria tela de Gerenciamento
+  -- (aba Usuários e Funções) — exige qualquer uma das permissões que já
+  -- davam acesso a essa aba (mesmo "anyPerm" usado pra mostrar a aba no
+  -- cliente), não uma sessão qualquer.
+  if not exists (
+    select 1 from roles r where r.id = auth_role_id(p_token)
+      and ('CREATE_ANY_USER' = any(r.permissions) or 'EDIT_ANY_USER' = any(r.permissions)
+        or 'DEACTIVATE_USER' = any(r.permissions) or 'DELETE_USER' = any(r.permissions)
+        or 'MANAGE_ROLES' = any(r.permissions))
+  ) then
+    perform require_session(p_token); -- token inválido -> mensagem de sessão, não de permissão
+    raise exception 'Sem permissão para esta ação.' using errcode = '42501';
+  end if;
   return query
     select u.id, u.username, u.name, u.email, u.role_id, u.is_active, u.created_at, u.created_by, u.last_login, u.updated_at
     from app_users u order by u.name;
 end; $$;
 
+create or replace function delete_app_user(p_token text, p_id text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_caller_id text; v_username text;
+begin
+  perform require_permission(p_token, 'DELETE_USER');
+  v_caller_id := auth_user_id(p_token);
+  if v_caller_id = p_id then
+    raise exception 'Você não pode excluir sua própria conta.' using errcode = '42501';
+  end if;
+  select u.username into v_username from app_users u where u.id = p_id;
+  if v_username = 'admin' then
+    raise exception 'Esta conta é protegida e não pode ser excluída.' using errcode = '42501';
+  end if;
+  delete from app_users where id = p_id;
+end; $$;
+
+-- Login e validação/revogação de sessão não recebem p_token nem checam
+-- permissão — são o próprio mecanismo que EMITE o token que todas as
+-- outras funções deste arquivo passam a exigir. Continuam exatamente como
+-- antes desta revisão.
 create or replace function authenticate_app_user(p_username text, p_password text)
 returns table (
   token text, id text, username text, name text, email text, role_id text,
@@ -358,56 +482,297 @@ begin
   delete from app_sessions s where s.token = p_token;
 end; $$;
 
-create or replace function delete_app_user(p_id text)
+-- Autoatendimento: qualquer usuário logado troca a PRÓPRIA senha (não exige
+-- EDIT_ANY_USER — essa permissão é pra editar OUTRAS contas; sem esta
+-- função, só quem já tinha EDIT_ANY_USER conseguia trocar senha, e chefes/
+-- coordenadores normalmente não têm). Exige a senha atual pra confirmar
+-- identidade — defesa extra: um token roubado sozinho não basta pra trocar
+-- a senha e trancar o dono de fora.
+create or replace function change_own_password(p_token text, p_current_password text, p_new_password text)
 returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_user_id text; v_hash text;
 begin
-  delete from app_users where id = p_id;
+  perform require_session(p_token); -- só valida; levanta exceção se inválido/expirado
+  v_user_id := auth_user_id(p_token);
+
+  if length(p_new_password) < 6 then
+    raise exception 'A nova senha deve ter pelo menos 6 caracteres.';
+  end if;
+
+  select password_hash into v_hash from app_users where id = v_user_id;
+  if crypt(p_current_password, v_hash) <> v_hash then
+    raise exception 'Senha atual incorreta.' using errcode = '28000';
+  end if;
+
+  update app_users set password_hash = crypt(p_new_password, gen_salt('bf', 12)), updated_at = now()
+  where id = v_user_id;
 end; $$;
 
 revoke all on function create_app_user(text,text,text,text,text,text) from public;
-revoke all on function update_app_user(text,text,text,text,text,boolean) from public;
-revoke all on function deactivate_app_user(text) from public;
-revoke all on function delete_app_user(text) from public;
-revoke all on function list_app_users() from public;
+revoke all on function update_app_user(text,text,text,text,text,text,boolean) from public;
+revoke all on function deactivate_app_user(text,text) from public;
+revoke all on function delete_app_user(text,text) from public;
+revoke all on function list_app_users(text) from public;
 revoke all on function authenticate_app_user(text,text) from public;
 revoke all on function validate_app_session(text) from public;
 revoke all on function revoke_app_session(text) from public;
+revoke all on function change_own_password(text,text,text) from public;
 
 grant execute on function create_app_user(text,text,text,text,text,text) to anon;
-grant execute on function update_app_user(text,text,text,text,text,boolean) to anon;
-grant execute on function deactivate_app_user(text) to anon;
-grant execute on function delete_app_user(text) to anon;
-grant execute on function list_app_users() to anon;
+grant execute on function update_app_user(text,text,text,text,text,text,boolean) to anon;
+grant execute on function deactivate_app_user(text,text) to anon;
+grant execute on function delete_app_user(text,text) to anon;
+grant execute on function list_app_users(text) to anon;
 grant execute on function authenticate_app_user(text,text) to anon;
 grant execute on function validate_app_session(text) to anon;
 grant execute on function revoke_app_session(text) to anon;
+grant execute on function change_own_password(text,text,text) to anon;
 
--- ─── Exclusões atômicas de domínio (security definer, chamadas via
--- supabase.rpc) ──────────────────────────────────────────────────────────────
--- sub_units/blocks são protegidas só por FK "on delete restrict" (basta um
--- DELETE simples, o Postgres já garante atomicidade e recusa se algo ainda
--- depender delas) — não precisam de função dedicada. Já rooms/roles/periods
--- têm passos em cascata (limpar referências em courses antes de apagar, ou
--- apagar courses primeiro), e isso rodando em várias chamadas separadas do
--- cliente (como antes) corre o risco de ficar pela metade se uma falhar no
--- meio, ou de uma corrida entre duas pessoas mudarem algo entre a checagem e
--- a exclusão de fato. Uma função plpgsql roda como uma transação implícita —
--- se qualquer instrução dentro dela falhar (ex. delete de roles rejeitado
--- pela FK restrict de rooms.role_id/app_users.role_id), tudo que essa mesma
--- chamada já tinha feito é desfeito automaticamente. Nunca fica um estado
--- parcial (ex. disciplinas apagadas mas a função presa por causa de uma sala
--- esquecida).
+-- ═══ Lote 1: helpers de autorização ═══════════════════════════════════════
 
--- Sala: room_by_day é jsonb, sem FK real pra rooms (soft reference — ver
--- comentário da tabela courses). Limpa, na mesma transação, os dias em que a
--- sala excluída estava em uso — nunca deixa uma disciplina apontando pra um
--- id de sala que não existe mais. Retorna quantas disciplinas foram
--- afetadas, pra a UI poder avisar.
-create or replace function delete_room_and_unallocate(p_id text)
-returns integer language plpgsql security definer set search_path = public, extensions as $$
-declare
-  v_count integer;
+create or replace function auth_user_id(p_token text) returns text
+language sql stable security definer set search_path = public, extensions as $$
+  select u.id from app_sessions s join app_users u on u.id = s.user_id
+  where s.token = p_token and s.expires_at > now() and u.is_active;
+$$;
+
+create or replace function auth_role_id(p_token text) returns text
+language sql stable security definer set search_path = public, extensions as $$
+  select u.role_id from app_sessions s join app_users u on u.id = s.user_id
+  where s.token = p_token and s.expires_at > now() and u.is_active;
+$$;
+
+create or replace function require_session(p_token text) returns text
+language plpgsql security definer set search_path = public, extensions as $$
+declare v_role_id text;
 begin
+  v_role_id := auth_role_id(p_token);
+  if v_role_id is null then
+    raise exception 'Sessão inválida ou expirada. Faça login novamente.' using errcode = '28000';
+  end if;
+  return v_role_id;
+end; $$;
+
+create or replace function require_permission(p_token text, p_permission text) returns text
+language plpgsql security definer set search_path = public, extensions as $$
+declare v_role_id text;
+begin
+  v_role_id := require_session(p_token);
+  if not exists (select 1 from roles where id = v_role_id and p_permission = any(permissions)) then
+    raise exception 'Sem permissão para esta ação.' using errcode = '42501';
+  end if;
+  return v_role_id;
+end; $$;
+
+create or replace function is_institutional_role(p_role_id text) returns boolean
+language sql stable as $$
+  select exists (select 1 from roles where id = p_role_id and sub_unit_id is null);
+$$;
+
+create or replace function require_institutional(p_token text) returns text
+language plpgsql security definer set search_path = public, extensions as $$
+declare v_role_id text;
+begin
+  v_role_id := require_session(p_token);
+  if not is_institutional_role(v_role_id) then
+    raise exception 'Ação restrita a funções institucionais.' using errcode = '42501';
+  end if;
+  return v_role_id;
+end; $$;
+
+-- Maior período (comparação numérica ano.período, não alfabética) entre os
+-- persistidos em `periods`, ou o override fixado em app_settings se houver.
+create or replace function current_period_id() returns text
+language sql stable as $$
+  select coalesce(
+    (select current_period_override from app_settings where id = 'singleton'),
+    (select id from periods
+       order by split_part(id,'.',1)::int desc, split_part(id,'.',2)::int desc
+       limit 1)
+  );
+$$;
+
+-- Réplica de canAllocate/canDealloc/canEditCourse (classroom-allocation.jsx):
+-- não-institucional só pode mexer em disciplinas do período mais recente
+-- (institucional pode em qualquer período), e só enquanto sua própria
+-- coordenação estiver com status 'active' (institucional nunca é travado
+-- por isso — não tem linha própria em coordination_statuses).
+create or replace function require_can_allocate(p_token text, p_course_period text) returns text
+language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_role_id text;
+  v_is_inst boolean;
+  v_status  text;
+begin
+  v_role_id := require_session(p_token);
+  v_is_inst := is_institutional_role(v_role_id);
+
+  if not v_is_inst then
+    select coalesce((select status from coordination_statuses where role_id = v_role_id), 'active') into v_status;
+    if v_status <> 'active' then
+      raise exception 'Sua coordenação já foi concluída — peça pra Diretoria reabrir antes de continuar.' using errcode = '42501';
+    end if;
+    if p_course_period <> current_period_id() then
+      raise exception 'Período encerrado — somente leitura.' using errcode = '42501';
+    end if;
+  end if;
+
+  return v_role_id;
+end; $$;
+
+revoke all on function auth_user_id(text) from public;
+revoke all on function auth_role_id(text) from public;
+revoke all on function require_session(text) from public;
+revoke all on function require_permission(text,text) from public;
+revoke all on function is_institutional_role(text) from public;
+revoke all on function require_institutional(text) from public;
+revoke all on function current_period_id() from public;
+revoke all on function require_can_allocate(text,text) from public;
+-- Só chamadas via supabase.rpc a partir dos outros functions (não precisam
+-- ser exportadas pro cliente diretamente), mas grant pra authenticated
+-- também não faz mal — nenhuma delas expõe dado sensível sozinha.
+grant execute on function auth_user_id(text) to anon;
+grant execute on function auth_role_id(text) to anon;
+grant execute on function require_session(text) to anon;
+grant execute on function require_permission(text,text) to anon;
+grant execute on function is_institutional_role(text) to anon;
+grant execute on function require_institutional(text) to anon;
+grant execute on function current_period_id() to anon;
+grant execute on function require_can_allocate(text,text) to anon;
+
+-- ═══ Lote 2: CRUD de domínio (sub-unidades, funções, blocos, salas, features,
+-- períodos) — cada mutação agora exige token de sessão + a permissão que a UI
+-- já checava antes de mostrar o botão (client-side apenas até aqui) ══════════
+
+
+-- ─── Sub-unidades (MANAGE_SUB_UNITS) ────────────────────────────────────────
+create or replace function create_sub_unit(
+  p_token text, p_id text, p_name text, p_full_name text,
+  p_clr text, p_text_clr text, p_bg text, p_light_bg text
+) returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_SUB_UNITS');
+  insert into sub_units (id, name, full_name, clr, text_clr, bg, light_bg)
+  values (p_id, p_name, p_full_name, p_clr, p_text_clr, p_bg, p_light_bg);
+end; $$;
+
+create or replace function update_sub_unit(
+  p_token text, p_id text, p_name text default null, p_full_name text default null,
+  p_clr text default null, p_text_clr text default null, p_bg text default null, p_light_bg text default null
+) returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_SUB_UNITS');
+  update sub_units set
+    name = coalesce(p_name, name), full_name = coalesce(p_full_name, full_name),
+    clr = coalesce(p_clr, clr), text_clr = coalesce(p_text_clr, text_clr),
+    bg = coalesce(p_bg, bg), light_bg = coalesce(p_light_bg, light_bg)
+  where id = p_id;
+end; $$;
+
+create or replace function delete_sub_unit(p_token text, p_id text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_SUB_UNITS');
+  delete from sub_units where id = p_id;
+end; $$;
+
+-- ─── Funções (MANAGE_ROLES) ─────────────────────────────────────────────────
+create or replace function create_role(
+  p_token text, p_id text, p_sub_unit_id text, p_name text, p_permissions text[]
+) returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_ROLES');
+  insert into roles (id, sub_unit_id, name, permissions) values (p_id, p_sub_unit_id, p_name, p_permissions);
+end; $$;
+
+create or replace function update_role(
+  p_token text, p_id text, p_sub_unit_id text default null, p_name text default null,
+  p_permissions text[] default null, p_clear_sub_unit_id boolean default false
+) returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_ROLES');
+  update roles set
+    sub_unit_id = case when p_clear_sub_unit_id then null else coalesce(p_sub_unit_id, sub_unit_id) end,
+    name = coalesce(p_name, name),
+    permissions = coalesce(p_permissions, permissions)
+  where id = p_id;
+end; $$;
+
+-- Apaga as disciplinas da função e a função em si, numa única transação —
+-- se ainda houver salas/usuários vinculados, a FK restrict rejeita o delete
+-- de roles e o Postgres desfaz o delete de courses acima também.
+create or replace function delete_role_and_courses(p_token text, p_id text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_ROLES');
+  delete from courses where role_id = p_id;
+  delete from roles where id = p_id;
+end; $$;
+
+-- ─── Blocos (MANAGE_BLOCKS) ─────────────────────────────────────────────────
+create or replace function create_block(p_token text, p_id text, p_local text, p_name text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_BLOCKS');
+  insert into blocks (id, local, name) values (p_id, p_local, p_name);
+end; $$;
+
+create or replace function update_block(p_token text, p_id text, p_local text default null, p_name text default null)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_BLOCKS');
+  update blocks set local = coalesce(p_local, local), name = coalesce(p_name, name) where id = p_id;
+end; $$;
+
+create or replace function delete_block(p_token text, p_id text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_BLOCKS');
+  delete from blocks where id = p_id;
+end; $$;
+
+-- ─── Salas (MANAGE_ROOMS — update_room também aceita MANAGE_ROLES, porque a
+-- aba Funções usa esta mesma mutação pra alternar "esta sala pertence a
+-- este papel", uma ação de dono de sala que hoje já é alcançável só com
+-- MANAGE_ROLES sem precisar abrir a aba Salas e Blocos) ─────────────────────
+create or replace function create_room(
+  p_token text, p_id text, p_role_id text, p_block_id text, p_label text,
+  p_cap int, p_type text, p_floor int, p_features text[], p_description text
+) returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_ROOMS');
+  insert into rooms (id, role_id, block_id, label, cap, type, floor, features, description)
+  values (p_id, p_role_id, p_block_id, p_label, p_cap, p_type, p_floor, coalesce(p_features,'{}'), coalesce(p_description,''));
+end; $$;
+
+create or replace function update_room(
+  p_token text, p_id text, p_role_id text default null, p_clear_role_id boolean default false,
+  p_block_id text default null, p_label text default null, p_cap int default null,
+  p_type text default null, p_floor int default null, p_features text[] default null, p_description text default null
+) returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_role_id text;
+begin
+  v_role_id := require_session(p_token);
+  if not exists (select 1 from roles where id = v_role_id and ('MANAGE_ROOMS' = any(permissions) or 'MANAGE_ROLES' = any(permissions))) then
+    raise exception 'Sem permissão para esta ação.' using errcode = '42501';
+  end if;
+  update rooms set
+    role_id = case when p_clear_role_id then null else coalesce(p_role_id, role_id) end,
+    block_id = coalesce(p_block_id, block_id), label = coalesce(p_label, label),
+    cap = coalesce(p_cap, cap), type = coalesce(p_type, type), floor = coalesce(p_floor, floor),
+    features = coalesce(p_features, features), description = coalesce(p_description, description)
+  where id = p_id;
+end; $$;
+
+-- room_by_day é jsonb, sem FK real pra rooms (soft reference). Limpa, na
+-- mesma transação, os dias em que a sala excluída estava em uso — nunca
+-- deixa uma disciplina apontando pra um id de sala que não existe mais.
+-- Retorna quantas disciplinas foram afetadas.
+create or replace function delete_room_and_unallocate(p_token text, p_id text) returns integer
+language plpgsql security definer set search_path = public, extensions as $$
+declare v_count integer;
+begin
+  perform require_permission(p_token, 'MANAGE_ROOMS');
   with affected as (
     update courses c
     set room_by_day = (
@@ -419,46 +784,265 @@ begin
     returning c.id
   )
   select count(*) into v_count from affected;
-
   delete from rooms where id = p_id;
   return v_count;
-end;
-$$;
+end; $$;
 
--- Função (role): apaga as disciplinas dela e a função em si. Se ainda
--- houver salas (rooms.role_id) ou usuários (app_users.role_id) vinculados,
--- o segundo delete é rejeitado pela FK restrict — e como está tudo dentro
--- desta mesma função, o delete de courses acima é desfeito junto, em vez de
--- deixar as disciplinas apagadas com a função presa.
-create or replace function delete_role_and_courses(p_id text)
+create or replace function save_room_features(p_token text, p_room_id text, p_features text[], p_description text)
 returns void language plpgsql security definer set search_path = public, extensions as $$
 begin
-  delete from courses where role_id = p_id;
-  delete from roles where id = p_id;
-end;
-$$;
+  perform require_permission(p_token, 'MANAGE_ROOMS');
+  update rooms set features = coalesce(p_features,'{}'), description = coalesce(p_description,'') where id = p_room_id;
+end; $$;
 
--- Período: apaga as disciplinas dele, o período em si, e limpa
--- app_settings.current_period_override se ele apontava pro período
--- removido (senão o "período atual" fixado ficaria pendurado numa
--- referência inexistente).
-create or replace function delete_period_and_courses(p_id text)
+create or replace function add_feature_option(p_token text, p_name text)
 returns void language plpgsql security definer set search_path = public, extensions as $$
 begin
+  perform require_permission(p_token, 'MANAGE_ROOMS');
+  insert into room_features (name) values (p_name);
+end; $$;
+
+create or replace function remove_feature_option(p_token text, p_name text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_ROOMS');
+  delete from room_features where name = p_name;
+end; $$;
+
+-- ─── Períodos (institucional — não tem PERMS.* dedicado, mesma regra que já
+-- gate a visibilidade da aba Períodos: `isInstitutional`) ───────────────────
+create or replace function create_period(p_token text, p_id text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_institutional(p_token);
+  insert into periods (id) values (p_id);
+end; $$;
+
+create or replace function delete_period_and_courses(p_token text, p_id text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_institutional(p_token);
   delete from courses where period = p_id;
   delete from periods where id = p_id;
   update app_settings set current_period_override = null
     where id = 'singleton' and current_period_override = p_id;
-end;
-$$;
+end; $$;
 
-revoke all on function delete_room_and_unallocate(text) from public;
-revoke all on function delete_role_and_courses(text) from public;
-revoke all on function delete_period_and_courses(text) from public;
+create or replace function set_current_period_override(p_token text, p_period text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_institutional(p_token);
+  update app_settings set current_period_override = p_period where id = 'singleton';
+end; $$;
 
-grant execute on function delete_room_and_unallocate(text) to anon;
-grant execute on function delete_role_and_courses(text) to anon;
-grant execute on function delete_period_and_courses(text) to anon;
+revoke all on function create_sub_unit(text,text,text,text,text,text,text,text) from public;
+revoke all on function update_sub_unit(text,text,text,text,text,text,text,text) from public;
+revoke all on function delete_sub_unit(text,text) from public;
+revoke all on function create_role(text,text,text,text,text[]) from public;
+revoke all on function update_role(text,text,text,text,text[],boolean) from public;
+revoke all on function delete_role_and_courses(text,text) from public;
+revoke all on function create_block(text,text,text,text) from public;
+revoke all on function update_block(text,text,text,text) from public;
+revoke all on function delete_block(text,text) from public;
+revoke all on function create_room(text,text,text,text,text,int,text,int,text[],text) from public;
+revoke all on function update_room(text,text,text,boolean,text,text,int,text,int,text[],text) from public;
+revoke all on function delete_room_and_unallocate(text,text) from public;
+revoke all on function save_room_features(text,text,text[],text) from public;
+revoke all on function add_feature_option(text,text) from public;
+revoke all on function remove_feature_option(text,text) from public;
+revoke all on function create_period(text,text) from public;
+revoke all on function delete_period_and_courses(text,text) from public;
+revoke all on function set_current_period_override(text,text) from public;
+
+grant execute on function create_sub_unit(text,text,text,text,text,text,text,text) to anon;
+grant execute on function update_sub_unit(text,text,text,text,text,text,text,text) to anon;
+grant execute on function delete_sub_unit(text,text) to anon;
+grant execute on function create_role(text,text,text,text,text[]) to anon;
+grant execute on function update_role(text,text,text,text,text[],boolean) to anon;
+grant execute on function delete_role_and_courses(text,text) to anon;
+grant execute on function create_block(text,text,text,text) to anon;
+grant execute on function update_block(text,text,text,text) to anon;
+grant execute on function delete_block(text,text) to anon;
+grant execute on function create_room(text,text,text,text,text,int,text,int,text[],text) to anon;
+grant execute on function update_room(text,text,text,boolean,text,text,int,text,int,text[],text) to anon;
+grant execute on function delete_room_and_unallocate(text,text) to anon;
+grant execute on function save_room_features(text,text,text[],text) to anon;
+grant execute on function add_feature_option(text,text) to anon;
+grant execute on function remove_feature_option(text,text) to anon;
+grant execute on function create_period(text,text) to anon;
+grant execute on function delete_period_and_courses(text,text) to anon;
+grant execute on function set_current_period_override(text,text) to anon;
+
+-- ═══ Lote 3: disciplinas, alocação, coordenação, notificações ═════════════
+
+-- Réplica de canManageCatalog (=canAllocate): institucional cria pra
+-- qualquer função; não-institucional só pra sua própria função (mesmo sem
+-- FK impedir isso hoje, era só a UI que nunca oferecia a opção — um cliente
+-- malicioso podia mandar um role_id alheio direto pra tabela antes disto).
+create or replace function create_course(
+  p_token text, p_id text, p_code text, p_name text, p_sec int,
+  p_role_id text, p_period text, p_teacher text, p_blocks jsonb, p_enroll int
+) returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_role_id text; v_is_inst boolean;
+begin
+  v_role_id := require_can_allocate(p_token, p_period);
+  v_is_inst := is_institutional_role(v_role_id);
+  if not v_is_inst and v_role_id <> p_role_id then
+    raise exception 'Só é possível criar disciplinas para a própria função.' using errcode = '42501';
+  end if;
+  insert into courses (id, code, name, sec, role_id, period, teacher, blocks, enroll, room_by_day)
+  values (p_id, p_code, p_name, p_sec, p_role_id, p_period, coalesce(p_teacher,''), coalesce(p_blocks,'[]'), p_enroll, '{}');
+end; $$;
+
+-- editCourse/deleteCourse nunca trocam o role_id — a checagem de dono usa o
+-- role_id JÁ GRAVADO na disciplina (lido antes de qualquer alteração).
+create or replace function edit_course(
+  p_token text, p_id text, p_code text default null, p_sec int default null, p_name text default null,
+  p_teacher text default null, p_blocks jsonb default null, p_enroll int default null, p_room_by_day jsonb default null
+) returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_role_id text; v_course courses;
+begin
+  select * into v_course from courses where id = p_id;
+  if v_course.id is null then raise exception 'Disciplina não encontrada.'; end if;
+  v_role_id := require_can_allocate(p_token, v_course.period);
+  if not is_institutional_role(v_role_id) and v_role_id <> v_course.role_id then
+    raise exception 'Só é possível editar disciplinas da própria função.' using errcode = '42501';
+  end if;
+  update courses set
+    code = coalesce(p_code, code), sec = coalesce(p_sec, sec), name = coalesce(p_name, name),
+    teacher = coalesce(p_teacher, teacher), blocks = coalesce(p_blocks, blocks),
+    enroll = coalesce(p_enroll, enroll), room_by_day = coalesce(p_room_by_day, room_by_day)
+  where id = p_id;
+end; $$;
+
+create or replace function delete_course(p_token text, p_id text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_role_id text; v_course courses;
+begin
+  select * into v_course from courses where id = p_id;
+  if v_course.id is null then return; end if; -- já não existe, idempotente
+  v_role_id := require_can_allocate(p_token, v_course.period);
+  if not is_institutional_role(v_role_id) and v_role_id <> v_course.role_id then
+    raise exception 'Só é possível excluir disciplinas da própria função.' using errcode = '42501';
+  end if;
+  delete from courses where id = p_id;
+end; $$;
+
+-- Importação em massa (CSV/ODS) — substitui TODAS as disciplinas de
+-- role_id+period pelo novo conjunto, numa única transação (a versão anterior
+-- em duas chamadas do cliente podia deixar a função+período vazio se o
+-- insert falhasse depois do delete ter sido aplicado).
+create or replace function replace_role_courses(p_token text, p_role_id text, p_period text, p_courses jsonb)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_role_id text;
+begin
+  v_role_id := require_can_allocate(p_token, p_period);
+  if not is_institutional_role(v_role_id) and v_role_id <> p_role_id then
+    raise exception 'Só é possível importar disciplinas para a própria função.' using errcode = '42501';
+  end if;
+
+  delete from courses where role_id = p_role_id and period = p_period;
+
+  insert into courses (id, code, name, sec, role_id, period, teacher, blocks, enroll, room_by_day)
+  select
+    c->>'id', c->>'code', c->>'name', (c->>'sec')::int, p_role_id, p_period,
+    coalesce(c->>'teacher',''), coalesce(c->'blocks','[]'::jsonb), (c->>'enroll')::int, '{}'::jsonb
+  from jsonb_array_elements(p_courses) c;
+end; $$;
+
+-- Alocação/desalocação: qualquer função ativa (institucional ou não) pode
+-- alocar QUALQUER disciplina em QUALQUER sala — "Alocação Cruzada" é um
+-- recurso intencional do sistema, não uma falha de isolamento (RoomSection
+-- em classroom-allocation.jsx renderiza "Outras Funções" com os mesmos
+-- canAllocate/canDealloc de "Salas Próprias"). Por isso, ao contrário de
+-- create/edit/delete_course, aqui NÃO existe checagem de role_id === dono
+-- da disciplina — só sessão válida + coordenação/período não travados.
+create or replace function set_course_room_by_day(p_token text, p_course_id text, p_room_by_day jsonb)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_course courses;
+begin
+  select * into v_course from courses where id = p_course_id;
+  if v_course.id is null then raise exception 'Disciplina não encontrada.'; end if;
+  perform require_can_allocate(p_token, v_course.period);
+  update courses set room_by_day = coalesce(p_room_by_day, '{}'::jsonb) where id = p_course_id;
+end; $$;
+
+-- Alocação automática (múltiplas disciplinas de uma vez) — mesma regra de
+-- set_course_room_by_day, aplicada em lote dentro da mesma transação.
+-- p_assignments: [{"course_id": "...", "room_by_day": {"seg":"r1",...}}, ...]
+create or replace function apply_allocations(p_token text, p_assignments jsonb)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare
+  v_item jsonb;
+  v_course courses;
+begin
+  for v_item in select * from jsonb_array_elements(p_assignments) loop
+    select * into v_course from courses where id = v_item->>'course_id';
+    if v_course.id is null then continue; end if;
+    perform require_can_allocate(p_token, v_course.period);
+    update courses set room_by_day = coalesce(v_item->'room_by_day', '{}'::jsonb) where id = v_course.id;
+  end loop;
+end; $$;
+
+-- Sempre opera sobre a PRÓPRIA função de quem chama (derivada da sessão) —
+-- nunca recebe role_id/role_name/user_name do cliente, então não dá pra
+-- "concluir" em nome de outra coordenação nem forjar o nome que aparece na
+-- notificação da Diretoria.
+create or replace function finish_coordination(p_token text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_role_id text; v_role_name text; v_user_name text;
+begin
+  v_role_id := require_session(p_token);
+  if is_institutional_role(v_role_id) then
+    raise exception 'Funções institucionais não enviam conclusão de alocação.' using errcode = '42501';
+  end if;
+
+  select name into v_role_name from roles where id = v_role_id;
+  select u.name into v_user_name from app_users u
+    join app_sessions s on s.user_id = u.id where s.token = p_token;
+
+  update coordination_statuses set status = 'finished' where role_id = v_role_id;
+  insert into notifications (role_id, role_name, type, user_name)
+  values (v_role_id, v_role_name, 'FINISHED', v_user_name);
+end; $$;
+
+-- Reabrir/bloquear a coordenação de QUALQUER função — só institucional com
+-- MANAGE_COORDINATION_STATUS (é exatamente pra isso que essa permissão
+-- existe: agir sobre o status de outras coordenações, não a própria).
+create or replace function set_coordination_status(p_token text, p_role_id text, p_status text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_COORDINATION_STATUS');
+  update coordination_statuses set status = p_status where role_id = p_role_id;
+end; $$;
+
+-- Baixa importância / sem dado sensível — só exige estar logado.
+create or replace function mark_all_notifications_read(p_token text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_session(p_token);
+  update notifications set read = true where read = false;
+end; $$;
+
+revoke all on function create_course(text,text,text,text,int,text,text,text,jsonb,int) from public;
+revoke all on function edit_course(text,text,text,int,text,text,jsonb,int,jsonb) from public;
+revoke all on function delete_course(text,text) from public;
+revoke all on function replace_role_courses(text,text,text,jsonb) from public;
+revoke all on function set_course_room_by_day(text,text,jsonb) from public;
+revoke all on function apply_allocations(text,jsonb) from public;
+revoke all on function finish_coordination(text) from public;
+revoke all on function set_coordination_status(text,text,text) from public;
+revoke all on function mark_all_notifications_read(text) from public;
+
+grant execute on function create_course(text,text,text,text,int,text,text,text,jsonb,int) to anon;
+grant execute on function edit_course(text,text,text,int,text,text,jsonb,int,jsonb) to anon;
+grant execute on function delete_course(text,text) to anon;
+grant execute on function replace_role_courses(text,text,text,jsonb) to anon;
+grant execute on function set_course_room_by_day(text,text,jsonb) to anon;
+grant execute on function apply_allocations(text,jsonb) to anon;
+grant execute on function finish_coordination(text) to anon;
+grant execute on function set_coordination_status(text,text,text) to anon;
+grant execute on function mark_all_notifications_read(text) to anon;
 
 -- ─── Realtime ──────────────────────────────────────────────────────────────────
 -- app_users/app_sessions intentionally NOT added here — the user list is

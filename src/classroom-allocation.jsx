@@ -230,59 +230,50 @@ function parseHorarioToBlocks(raw){
 // é do usuário; o sistema nunca inventa um número a partir da ordem das
 // linhas. Duas linhas do mesmo código sem Turma preenchida são tratadas como
 // a mesma turma (erro de duplicata), forçando quem importou a diferenciá-las.
-function parseFlatCourseRows(rows){
+// Lê um relatório de oferta de turmas do SIGAA (.csv/.ods/.xlsx) — não é uma
+// planilha de uma disciplina por linha, é um bloco "cabeçalho de disciplina"
+// seguido de uma ou mais linhas de turma:
+//   "DMA0192 - ALGEBRA LINEAR (GRADUAÇÃO)"
+//   "2026.2","Turma 01","<docente>","REGULAR","A DEFINIR DOCENTE","35M34","A definir","0/60 alunos"
+// Colunas da linha de turma, na ordem: Ano Período, Turma, Docente(s), Tipo,
+// Situação, Horário, Local, Mat./Cap. — só Turma, Docente(s), Horário e
+// Mat./Cap. viram dado de verdade; Ano Período (o período já é escolhido na
+// tela, antes de abrir o import — não é lido do arquivo), Tipo, Situação e
+// Local são ignorados (a situação não filtra nada: turmas ainda com "A
+// DEFINIR DOCENTE" — o normal bem no início do período, antes de professor
+// ser designado — precisam entrar no sistema do mesmo jeito, pra já dar pra
+// planejar a sala com antecedência).
+function groupSigaaRows(rows){
   const out=[];
+  let current=null;
   rows.slice(1).forEach(row=>{
-    const code=(row[0]??'').toString().trim();
-    const name=(row[1]??'').toString().trim();
-    if(!code&&!name)return; // linha em branco
-    const errors={};
-    if(!code)errors.codigo='Obrigatório';
-    if(!name)errors.nome='Obrigatório';
-    const turmaRaw=(row[2]??'').toString().trim();
-    let sec=null;
-    if(turmaRaw){
-      const explicitSec=Number(turmaRaw);
-      if(Number.isInteger(explicitSec)&&explicitSec>=1)sec=explicitSec;
-      else errors.secao=`Turma deve ser um número inteiro ≥ 1 (recebido "${turmaRaw}")`;
+    const col1=(row[1]??'').toString().trim();
+    if(!col1){
+      const text=(row[0]??'').toString().trim();
+      if(!text)return; // linha em branco entre blocos
+      const m=text.match(/^(.+?)\s-\s(.+?)\s\(([^)]*)\)\s*$/);
+      current=m?{code:m[1].trim(),name:m[2].trim()}:{code:text,name:text,headerError:`Cabeçalho de disciplina não reconhecido: "${text}"`};
+      return;
     }
-    const teacher=parseTeacherNames(row[3]);
-    const{blocks,errors:horarioErrors}=parseHorarioToBlocks(row[4]);
+    const errors={};
+    if(!current)errors.codigo='Linha de turma sem cabeçalho de disciplina associado';
+    else if(current.headerError)errors.codigo=current.headerError;
+    const secMatch=col1.match(/Turma\s+(\d+)/i);
+    if(!secMatch)errors.secao=`Não foi possível identificar a seção em "${col1}"`;
+    const teacher=parseTeacherNames(row[2]);
+    const{blocks,errors:horarioErrors}=parseHorarioToBlocks(row[5]);
     if(horarioErrors.length)errors.horario=horarioErrors.join('; ');
     else if(blocks.length===0)errors.horario='Horário vazio ou não reconhecido';
-    const matMatch=(row[5]??'').toString().match(/(\d+)/);
+    const matMatch=(row[7]??'').toString().match(/(\d+)/);
     const enroll=matMatch?Number(matMatch[1]):NaN;
-    if(!Number.isInteger(enroll)||enroll<0)errors.matriculados=`Matrícula não reconhecida em "${row[5]}"`;
+    if(!Number.isInteger(enroll)||enroll<0)errors.matriculados=`Matrícula não reconhecida em "${row[7]}"`;
     out.push({
-      raw:{codigo:row[0],nome:row[1],turma:row[2],docente:row[3],horario:row[4],matriculados:row[5]},
-      normalized:{code,name,sec,teacher,blocks,enroll},
+      raw:{codigo:current?.code,nome:current?.name,turma:col1,docente:row[2],horario:row[5],matriculados:row[7]},
+      normalized:{code:current?.code,name:current?.name,sec:secMatch?Number(secMatch[1]):null,teacher,blocks,enroll},
       errors,
     });
   });
   return out;
-}
-
-// Gera e baixa um .ods de exemplo no formato esperado pelo import, com
-// disciplinas cobrindo os casos que mais geram dúvida ao preencher: professor
-// único, múltiplos docentes na mesma turma, horários em dias diferentes da
-// semana (bloco de "Horário" com mais de um código separado por espaço), e um
-// código com duas turmas — único caso em que "Turma" precisa ser preenchida,
-// pra diferenciá-las (nos demais exemplos ela fica em branco de propósito).
-async function downloadCourseTemplate(){
-  const XLSX=await import('xlsx');
-  const rows=[
-    ['Código','Nome','Turma','Docente(s)','Horário','Alunos Mat.'],
-    ['EX101','Disciplina Exemplo — Professor Único','','JOÃO DA SILVA','35M12',40],
-    ['EX205','Disciplina Exemplo — Múltiplos Docentes','','MARIA OLIVEIRA, PEDRO SANTOS','24T34',35],
-    ['EX310','Disciplina Exemplo — Horários em Dias Diferentes','','ANA PEREIRA','2T456 6T56',28],
-    ['EX415','Disciplina Exemplo — Duas Turmas',1,'CARLOS MENDES','35M34',45],
-    ['EX415','Disciplina Exemplo — Duas Turmas',2,'FERNANDA LIMA','24T12',30],
-  ];
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:10},{wch:40},{wch:7},{wch:32},{wch:14},{wch:13}];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,'Disciplinas');
-  XLSX.writeFile(wb,'modelo-disciplinas.ods',{bookType:'ods'});
 }
 
 // ─── Algoritmo de alocação automática ────────────────────────────────────────
@@ -736,7 +727,7 @@ function Dashboard(){
     if(isPastPeriod)return;
     setSelId(null);setFinishConfirm(false);
     try{
-      await db.finishCoordination(currentUser.roleId,gRole(currentUser.roleId)?.full,currentUser.name);
+      await db.finishCoordination();
       showToast('Alocação enviada. O diretor foi notificado.','ok');
     }catch(e){
       showToast(`Falha ao enviar alocação: ${ptError(e)}`,'err');
@@ -1033,6 +1024,7 @@ function ScreenSelector({onPick,subUnits}){
   const{currentUser,logout,can}=useAuth();
   const{T,theme,toggleTheme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
+  const[showChangePassword,setShowChangePassword]=useState(false);
   // "Gerenciamento" não é exclusivo do Diretor por identidade de role — é
   // qualquer função institucional com pelo menos uma destas permissões
   // (Diretor e seus secretários têm todas, por exemplo).
@@ -1059,8 +1051,10 @@ function ScreenSelector({onPick,subUnits}){
           {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={()=>setShowChangePassword(true)} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Trocar Senha</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
+      {showChangePassword&&<ChangePasswordModal onClose={()=>setShowChangePassword(false)}/>}
       <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,animation:'fadeIn .2s ease'}}>
         <div style={{textAlign:'center'}}>
           <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>O que você quer fazer?</div>
@@ -1871,6 +1865,72 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
 }
 
 // ─── Modal de confirmação de conclusão ────────────────────────────────────────
+// ─── Trocar a própria senha (autoatendimento — qualquer usuário logado,
+// não depende de EDIT_ANY_USER) ─────────────────────────────────────────────
+function ChangePasswordModal({onClose}){
+  const{T,theme}=useT();
+  const[current,setCurrent]=useState('');
+  const[next,setNext]=useState('');
+  const[confirm,setConfirm]=useState('');
+  const[error,setError]=useState(null);
+  const[saving,setSaving]=useState(false);
+  const[done,setDone]=useState(false);
+  const lbl={...{fontFamily:"'DM Mono',monospace"},fontSize:10,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:5};
+  const inp={width:'100%',padding:'9px 11px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt,fontSize:13,outline:'none'};
+
+  const submit=async e=>{
+    e.preventDefault();
+    setError(null);
+    if(next.length<6){setError('A nova senha deve ter pelo menos 6 caracteres.');return;}
+    if(next!==confirm){setError('A confirmação não bate com a nova senha.');return;}
+    setSaving(true);
+    try{
+      await authApi.changeOwnPassword(current,next);
+      setDone(true);
+    }catch(e){setError(ptError(e));}
+    finally{setSaving(false);}
+  };
+
+  return(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:380,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+        <div style={{display:'flex',alignItems:'center',marginBottom:20}}>
+          <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Trocar Senha</div>
+          <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
+        </div>
+        {done?(
+          <>
+            <div style={{background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:13,color:theme==='light'?'#15803d':'#34d399'}}>
+              ✓ Senha alterada com sucesso.
+            </div>
+            <button onClick={onClose} style={{width:'100%',padding:'9px',background:'#3b82f6',border:'none',borderRadius:7,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>Fechar</button>
+          </>
+        ):(
+          <form onSubmit={submit}>
+            <div style={{marginBottom:12}}>
+              <label style={lbl}>Senha Atual</label>
+              <input autoFocus type="password" value={current} onChange={e=>{setCurrent(e.target.value);setError(null);}} style={inp}/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={lbl}>Nova Senha</label>
+              <input type="password" value={next} onChange={e=>{setNext(e.target.value);setError(null);}} style={inp}/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={lbl}>Confirmar Nova Senha</label>
+              <input type="password" value={confirm} onChange={e=>{setConfirm(e.target.value);setError(null);}} style={inp}/>
+            </div>
+            {error&&<div style={{fontSize:11,color:'#ef4444',marginBottom:12}}>{error}</div>}
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+              <button type="button" onClick={onClose} disabled={saving} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:saving?'wait':'pointer'}}>Cancelar</button>
+              <button type="submit" disabled={saving} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,background:'#3b82f6',border:'none',color:'#fff',cursor:saving?'wait':'pointer',opacity:saving?.7:1}}>{saving?'Salvando…':'Salvar Nova Senha'}</button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FinishConfirmModal({roleName,remaining,onConfirm,onCancel}){
   const{T,theme}=useT();
   return(
@@ -2142,7 +2202,7 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
       const isSpreadsheet=/\.(ods|xlsx|xls)$/i.test(file.name);
       const tableRows=isSpreadsheet?await parseSheetRows(file):parseCsvRows(await file.text());
       if(tableRows.length<2){setParseError('Arquivo vazio ou sem linhas de dados.');return;}
-      const parsed=parseFlatCourseRows(tableRows);
+      const parsed=groupSigaaRows(tableRows);
       const rowKey=r=>`${String(r.normalized.code??'').trim().toUpperCase()}__${r.normalized.sec}`;
       const groups={};
       parsed.forEach(r=>{if(Object.keys(r.errors).length===0)(groups[rowKey(r)]=groups[rowKey(r)]||[]).push(r);});
@@ -2182,14 +2242,10 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
                 <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
               </div>
               <div style={{background:T.inner,borderRadius:8,padding:'12px 14px',marginBottom:16,border:`1px solid ${T.bdr}`,fontSize:12,color:T.txt2,lineHeight:1.7}}>
-                Arquivo <strong>.ods, .xlsx ou .csv</strong> com <strong>uma linha por disciplina/turma</strong>, nas colunas: Código, Nome, Turma, Docente(s), Horário, Alunos Mat.
-                <br/>"Turma" pode ficar em branco — só é necessário preencher se o mesmo código tiver mais de uma turma no arquivo, para diferenciá-las (o sistema nunca numera automaticamente).
-                <br/>Horário usa o código do SIGAA (ex.: <span style={mono}>35M34</span>), podendo ter mais de um bloco separado por espaço quando a turma tem dias/horários diferentes (ex.: <span style={mono}>2T456 6T56</span>).
+                Arquivo <strong>.ods, .xlsx ou .csv</strong> no formato do relatório de oferta de turmas do SIGAA: uma linha de cabeçalho por disciplina (<span style={{...mono,background:T.faint,padding:'1px 4px',borderRadius:3}}>"CÓDIGO - NOME (NÍVEL)"</span>) seguida de uma linha por turma, com as colunas Ano Período, Turma, Docente(s), Tipo, Situação, Horário, Local e Mat./Cap.
+                <br/>Ano Período, Tipo, Situação e Local do arquivo são ignorados — o período é o já selecionado nesta tela, e turmas sem professor definido ainda entram normalmente.
+                <br/>Horário usa o código do SIGAA (ex.: <span style={mono}>35M34</span>, podendo ter mais de um bloco separado por espaço para dias com horários diferentes).
               </div>
-              <button type="button" onClick={downloadCourseTemplate} style={{display:'flex',alignItems:'center',gap:6,width:'100%',padding:'9px 12px',marginBottom:16,background:'transparent',border:`1px dashed ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:12,fontWeight:600,cursor:'pointer'}}
-                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
-                ⇩ Baixar modelo (.ods) com exemplos preenchidos
-              </button>
               <input type="file" accept=".csv,.ods,.xlsx,.xls" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}} style={{...mono,fontSize:12,color:T.txt}}/>
               {parseError&&<div style={{fontSize:12,color:'#ef4444',marginTop:10}}>{parseError}</div>}
             </div>
