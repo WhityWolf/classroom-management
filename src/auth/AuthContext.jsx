@@ -15,6 +15,7 @@ import { loginUser, validateSession, revokeSession, getUserById } from '../db/au
 import { fetchRoleById } from '../db/management.js';
 import { hasPermission } from './permissions.js';
 import { isInstitutionalRole } from './roles.js';
+import { SESSION_TOKEN_KEY } from '../db/sessionToken.js';
 
 // ── Storage key for the persisted session token ───────────────────────────────
 //
@@ -22,8 +23,9 @@ import { isInstitutionalRole } from './roles.js';
 // localStorage array), but still stored client-side in localStorage rather
 // than an httpOnly cookie — there's no custom backend server to set one.
 // Revisit this once the system moves behind a real server (see CLAUDE.md's
-// "Deployment target").
-const SESSION_TOKEN_KEY = 'cas_session_token';
+// "Deployment target"). The key itself lives in db/sessionToken.js — the db
+// layer reads it directly from every mutating RPC call, so both places share
+// one definition instead of two copies that could drift.
 
 // ── Context ───────────────────────────────────────────────────────────────────
 

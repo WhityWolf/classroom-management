@@ -271,7 +271,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
     if (editing === 'new' && !form.password) return flash('err', 'Informe uma senha.');
     try {
       if (editing === 'new') {
-        await authApi.createUser(form, currentUser.id);
+        await authApi.createUser(form);
         flash('ok', `Usuário "${form.username}" criado.`);
       } else {
         const patch = { name:form.name, email:form.email, roleId:form.roleId, isActive:form.isActive };
@@ -398,7 +398,7 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
     try {
       const courseCount = await mgmt.countRoleCourses(r.id);
       if (courseCount > 0) { setConfirmDelete({ role:r, courseCount }); return; }
-      await mgmt.deleteRole(r.id); flash('ok','Função excluída.'); reloadDomain();
+      await mgmt.deleteRoleAndCourses(r.id); flash('ok','Função excluída.'); reloadDomain();
     } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
   };
   const confirmRemove = async () => {

@@ -3,8 +3,17 @@
  * + localStorage state in classroom-allocation.jsx. Mirrors the small
  * exported-functions convention also used by src/db/authApi.js and
  * src/db/management.js.
+ *
+ * Reads (fetchAll) still go straight to the tables (RLS allows `select` for
+ * anon — see supabase/schema.sql). Every mutation instead calls a
+ * security-definer RPC that validates the session token (getSessionToken(),
+ * read from localStorage — see sessionToken.js) and the right
+ * permission/ownership/lock rule server-side before writing; direct
+ * INSERT/UPDATE/DELETE from anon on these tables is revoked in schema.sql,
+ * so the RPC is the only way in.
  */
 import { supabase } from './supabaseClient.js';
+import { getSessionToken } from './sessionToken.js';
 
 export const mapRoom = r => ({
   id: r.id, roleId: r.role_id, blockId: r.block_id, label: r.label, cap: r.cap, type: r.type,
@@ -25,6 +34,12 @@ export const mapNotification = n => ({
 
 async function unwrap(query) {
   const { data, error } = await query;
+  if (error) throw error;
+  return data;
+}
+
+async function call(fn, params) {
+  const { data, error } = await supabase.rpc(fn, { p_token: getSessionToken(), ...params });
   if (error) throw error;
   return data;
 }
@@ -71,96 +86,108 @@ export async function fetchAll() {
 // já que isso depende do curso inteiro (blocks, dias já alocados etc.), não
 // só do banco. Cobre tanto "alocar todos os dias na mesma sala" (ListView)
 // quanto "alocar/desalocar um dia específico" (Grade) — ver tryAllocate /
-// deallocate em Dashboard.
+// deallocate em Dashboard. Qualquer função ativa pode alocar QUALQUER
+// disciplina em QUALQUER sala — "Alocação Cruzada" é intencional (ver
+// require_can_allocate/set_course_room_by_day em schema.sql) — só sessão
+// válida + coordenação/período não travados, sem checagem de dono.
 export async function setCourseRoomByDay(courseId, roomByDay) {
-  await unwrap(supabase.from('courses').update({ room_by_day: roomByDay }).eq('id', courseId));
+  await call('set_course_room_by_day', { p_course_id: courseId, p_room_by_day: roomByDay });
 }
 
+// Só a própria função dona da disciplina (ou institucional) pode editar —
+// ver edit_course em schema.sql, que lê o role_id já gravado na disciplina
+// antes de aplicar qualquer mudança.
 export async function editCourse(courseId, changes) {
-  const patch = {};
-  if (changes.code !== undefined) patch.code = changes.code;
-  if (changes.sec !== undefined) patch.sec = changes.sec;
-  if (changes.name !== undefined) patch.name = changes.name;
-  if (changes.teacher !== undefined) patch.teacher = changes.teacher;
-  if (changes.blocks !== undefined) patch.blocks = changes.blocks;
-  if (changes.enroll !== undefined) patch.enroll = changes.enroll;
-  if (changes.roomByDay !== undefined) patch.room_by_day = changes.roomByDay;
-  await unwrap(supabase.from('courses').update(patch).eq('id', courseId));
+  await call('edit_course', {
+    p_id: courseId,
+    p_code: changes.code ?? null,
+    p_sec: changes.sec ?? null,
+    p_name: changes.name ?? null,
+    p_teacher: changes.teacher ?? null,
+    p_blocks: changes.blocks ?? null,
+    p_enroll: changes.enroll ?? null,
+    p_room_by_day: changes.roomByDay ?? null,
+  });
 }
 
 export async function deleteCourse(courseId) {
-  await unwrap(supabase.from('courses').delete().eq('id', courseId));
+  await call('delete_course', { p_id: courseId });
 }
 
+// Institucional pode criar pra qualquer função; não-institucional só pra si
+// mesma — ver create_course em schema.sql (antes disso era só a UI que
+// nunca oferecia a opção de escolher outra função; um cliente malicioso
+// podia mandar um role_id alheio direto pra tabela).
 export async function createCourse(course) {
-  await unwrap(supabase.from('courses').insert({
-    id: course.id, code: course.code, name: course.name, sec: course.sec,
-    role_id: course.roleId, period: course.period, teacher: course.teacher, blocks: course.blocks,
-    enroll: course.enroll, room_by_day: {},
-  }));
+  await call('create_course', {
+    p_id: course.id, p_code: course.code, p_name: course.name, p_sec: course.sec,
+    p_role_id: course.roleId, p_period: course.period, p_teacher: course.teacher,
+    p_blocks: course.blocks, p_enroll: course.enroll,
+  });
 }
 
 // Destructive, but only within `period` — deletes existing rows for
 // role_id+period (allocated or not), then bulk-inserts the new set. Past
 // periods are read-only in the UI and never reach this function, but the
 // scoping lives here too so a bug upstream can't wipe another period's
-// history. Not transactional — known/accepted limitation for this
-// prototype stage. If insert fails after delete succeeds, the role+period
-// is left empty; the import modal keeps parsed rows in state so retrying
-// doesn't require re-uploading the file.
+// history. Agora atômica (replace_role_courses, ver schema.sql): se o
+// insert falhar depois do delete, a transação inteira desfaz — o
+// role+period nunca fica vazio por um erro no meio do caminho (diferente
+// da versão anterior em duas chamadas separadas do cliente).
 export async function replaceRoleCourses(roleId, period, courses) {
-  await unwrap(supabase.from('courses').delete().eq('role_id', roleId).eq('period', period));
-  if (courses.length === 0) return;
-  await unwrap(supabase.from('courses').insert(courses.map(c => ({
-    id: c.id, code: c.code, name: c.name, sec: c.sec, role_id: roleId, period,
-    teacher: c.teacher, blocks: c.blocks, enroll: c.enroll, room_by_day: {},
-  }))));
+  await call('replace_role_courses', {
+    p_role_id: roleId, p_period: period,
+    p_courses: courses.map(c => ({
+      id: c.id, code: c.code, name: c.name, sec: c.sec, teacher: c.teacher, blocks: c.blocks, enroll: c.enroll,
+    })),
+  });
 }
 
 export async function saveRoomFeatures(roomId, features, description) {
-  await unwrap(supabase.from('rooms').update({ features, description }).eq('id', roomId));
+  await call('save_room_features', { p_room_id: roomId, p_features: features, p_description: description });
 }
 
 export async function addFeatureOption(name) {
-  await unwrap(supabase.from('room_features').insert({ name }));
+  await call('add_feature_option', { p_name: name });
 }
 
 export async function removeFeatureOption(name) {
-  await unwrap(supabase.from('room_features').delete().eq('name', name));
+  await call('remove_feature_option', { p_name: name });
 }
 
-// Individual updates run concurrently rather than a single upsert: an upsert
-// would require every NOT NULL column in the payload (these course rows
-// already exist — only `room_by_day` changes), so per-row updates are
-// simpler here. autoAllocate (classroom-allocation.jsx) only ever proposes
-// one room for a course's *entire* week — it doesn't attempt the
-// different-room-per-day split, so every scheduled day maps to that room.
+// autoAllocate (classroom-allocation.jsx) só propõe uma sala pra semana
+// inteira de uma disciplina — não tenta o "sala diferente por dia". A
+// função no banco (apply_allocations) aplica cada atribuição na mesma
+// transação, checando require_can_allocate por disciplina.
 export async function applyAllocations(assignments) {
-  await Promise.all(assignments.map(({ course, room }) => {
+  const items = assignments.map(({ course, room }) => {
     const days = [...new Set(course.blocks.flatMap(b => b.days))];
-    const roomByDay = Object.fromEntries(days.map(d => [d, room.id]));
-    return unwrap(supabase.from('courses').update({ room_by_day: roomByDay }).eq('id', course.id));
-  }));
+    return { course_id: course.id, room_by_day: Object.fromEntries(days.map(d => [d, room.id])) };
+  });
+  await call('apply_allocations', { p_assignments: items });
 }
 
-export async function finishCoordination(roleId, roleName, userName) {
-  await unwrap(supabase.from('coordination_statuses').update({ status: 'finished' }).eq('role_id', roleId));
-  await unwrap(supabase.from('notifications').insert({
-    role_id: roleId, role_name: roleName, type: 'FINISHED', user_name: userName,
-  }));
+// Sem parâmetros: opera sobre a PRÓPRIA função de quem chama, derivada do
+// token de sessão — nome da função e nome do usuário (usados na
+// notificação da Diretoria) também vêm do servidor agora, não do cliente
+// (ver finish_coordination em schema.sql).
+export async function finishCoordination() {
+  await call('finish_coordination', {});
 }
 
+// Reabrir/bloquear a coordenação de QUALQUER função — só institucional com
+// MANAGE_COORDINATION_STATUS.
 export async function setCoordinationStatus(roleId, status) {
-  await unwrap(supabase.from('coordination_statuses').update({ status }).eq('role_id', roleId));
+  await call('set_coordination_status', { p_role_id: roleId, p_status: status });
 }
 
 export async function markAllNotificationsRead() {
-  await unwrap(supabase.from('notifications').update({ read: true }).eq('read', false));
+  await call('mark_all_notifications_read', {});
 }
 
 // period=null volta ao comportamento automático (maior período por
 // comparePeriods); um valor força esse período como "atual" pra todo mundo,
-// via a linha singleton de app_settings.
+// via a linha singleton de app_settings. Só institucional.
 export async function setCurrentPeriodOverride(period) {
-  await unwrap(supabase.from('app_settings').update({ current_period_override: period }).eq('id', 'singleton'));
+  await call('set_current_period_override', { p_period: period });
 }

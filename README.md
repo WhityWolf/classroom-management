@@ -27,6 +27,11 @@ salas e blocos novos.
   horários 8h–22h como linhas; um seletor filtra entre todas as salas, apenas
   alocadas ou apenas vazias) e, só pra quem tem permissão de gerenciamento
   (Diretor/secretários), uma terceira opção "Gerenciamento".
+- **Trocar a própria senha** — botão "Trocar Senha" nessa mesma tela de
+  seleção, ao lado de "Sair", disponível pra qualquer usuário logado
+  (inclusive chefes/coordenadores, que não têm `EDIT_ANY_USER` e por isso
+  não conseguiam mudar a própria senha antes desta função existir). Pede a
+  senha atual antes de aceitar a nova.
 - **Gerenciamento institucional** — tela dedicada (não é exclusiva por
   identidade de usuário, e sim por permissão) com abas, nesta ordem:
   **Sub-Unidades** (criar/editar/excluir); **Usuários e Funções** (uma aba
@@ -64,13 +69,15 @@ salas e blocos novos.
   mesma sala, pra quem só precisa do caso comum.
 - **Importação de disciplinas** — quem tem permissão de catálogo (a própria
   coordenação, ou a função institucional agindo por ela) sobe uma planilha
-  (`.ods`, `.xlsx` ou `.csv`) com uma linha por disciplina/turma (colunas
-  Código, Nome, Turma, Docente(s), Horário, Alunos Mat. — Turma é opcional e
-  nunca numerada automaticamente: fica em branco a menos que o usuário a
-  preencha, necessário só quando o mesmo código tem mais de uma turma no
-  arquivo; Horário usa o código do SIGAA, ex. `35M34`, podendo ter mais de um
-  bloco para dias diferentes). Um botão na própria tela de import baixa um
-  modelo `.ods` já preenchido com exemplos. O sistema decodifica o horário,
+  (`.ods`, `.xlsx` ou `.csv`) no formato do relatório de oferta de turmas do
+  SIGAA: uma linha de cabeçalho por disciplina (`"CÓDIGO - NOME (NÍVEL)"`)
+  seguida de uma linha por turma, com as colunas Ano Período, Turma,
+  Docente(s), Tipo, Situação, Horário, Local e Mat./Cap. — só Turma,
+  Docente(s), Horário e Mat./Cap. viram dado de verdade (Ano Período, Tipo,
+  Situação e Local do arquivo são ignorados; o período é o já selecionado na
+  tela, e turmas ainda com "A DEFINIR DOCENTE" entram normalmente, sem
+  filtro por situação). Horário usa o código do SIGAA, ex. `35M34`, podendo
+  ter mais de um bloco para dias diferentes. O sistema decodifica o horário,
   detecta duplicatas e mostra uma prévia (válidas / com erro) antes de
   confirmar a substituição completa das disciplinas daquela coordenação.
 - **Cadastro manual de disciplinas** — formulário para criar ou corrigir
@@ -246,13 +253,55 @@ tem permissão institucional.
 | `app_sessions` | Sessões de login (token + validade) |
 
 Tabelas de domínio (tudo exceto `app_users`/`app_sessions`) têm Realtime
-habilitado e políticas de RLS permissivas (`using (true)`) — ver
-"Limitações" sobre o que isso significa antes de usar isto além de um
-protótipo. `app_users`/`app_sessions` têm RLS habilitado **sem** nenhuma
-policy — só são acessíveis através das funções `security definer`
-(`create_app_user`, `authenticate_app_user`, `validate_app_session`,
-`update_app_user`, `deactivate_app_user`, `list_app_users`,
-`revoke_app_session`), nunca lidas/escritas direto.
+habilitado. RLS nelas libera **leitura** (`select using (true)`) pra
+`anon`, mas **INSERT/UPDATE/DELETE são revogados** — toda escrita passa por
+uma função `security definer` que valida o token de sessão (o mesmo devolvido
+por `authenticate_app_user` no login) e a permissão certa antes de gravar
+(`create_sub_unit`/`update_role`/`delete_room_and_unallocate`/
+`set_course_room_by_day`/etc. — ver `supabase/schema.sql`). `app_users`/
+`app_sessions` continuam sem nenhuma policy — só acessíveis através das
+funções de autenticação (`create_app_user`, `authenticate_app_user`,
+`validate_app_session`, `update_app_user`, `deactivate_app_user`,
+`list_app_users`, `delete_app_user`, `revoke_app_session`,
+`change_own_password`), nunca lidas/
+escritas direto. `bootstrap_admin_user` é a exceção: cria o primeiro usuário
+de um projeto novo e só pode ser chamada com acesso direto ao Postgres (SQL
+Editor), nunca pelo app.
+
+---
+
+## Segurança das mutações (RPC autenticado)
+
+Como não há Supabase Auth nem backend próprio (ver "Limitações" abaixo), o
+Postgres não tem como saber sozinho quem está fazendo uma requisição — só a
+chave anônima chega até ele, igual pra todo mundo. Por isso, toda mutação de
+domínio (sub-unidades, funções, blocos, salas, disciplinas, períodos,
+coordenação, usuários) é uma função `security definer` que recebe o token de
+sessão como primeiro parâmetro e valida ele mesma, via um punhado de helpers
+(`require_session`/`require_permission`/`require_can_allocate`/etc., topo de
+`supabase/schema.sql`) antes de escrever:
+
+- **Sessão**: token precisa existir em `app_sessions`, não estar expirado, e
+  o usuário dono dele precisa estar ativo — senão a função recusa com uma
+  mensagem de sessão inválida.
+- **Permissão**: a função checa exatamente a mesma flag de `PERMS` que a UI
+  já usava só como enfeite visual (esconder o botão) — agora ela também é
+  aplicada no servidor.
+- **Posse**: criar/editar/excluir uma disciplina exige que a função de quem
+  chama seja a dona dela (ou institucional) — mas **alocar/desalocar sala**
+  não tem essa checagem de propósito, porque "Alocação Cruzada" (qualquer
+  coordenação ativa aloca em salas de qualquer outra) é um recurso
+  intencional do sistema, não uma falha de isolamento.
+- **Trava de período/coordenação**: mexer numa disciplina exige que o
+  período dela seja o mais recente (institucional ignora essa trava) e que a
+  própria coordenação de quem chama não esteja com status `finished`.
+
+O cliente lê o token direto do `localStorage` (`src/db/sessionToken.js`) e
+anexa ele em cada chamada — nenhum componente React precisa saber disso,
+só a camada `src/db/*.js`. As mutações de sala/função/período que apagam
+dados em cascata (`delete_room_and_unallocate`, `delete_role_and_courses`,
+`delete_period_and_courses`) continuam atômicas (ver comentário de cada uma
+em `supabase/schema.sql`): se qualquer passo falhar no meio, tudo desfaz.
 
 ---
 
@@ -278,8 +327,15 @@ não configurado" após entrar — ver `src/db/supabaseClient.js`.
 5. **Seed manual via SQL Editor** (não tem script pra isso de propósito —
    é uma decisão institucional, não um dado a gerar): insira a função
    institucional raiz (`is_system = true`) e o primeiro usuário via
-   `select create_app_user('usuario', 'Nome', 'email@...', 'senha', 'ID_DA_FUNCAO', null);`,
-   depois as sub-unidades e funções de coordenação de exemplo (ou reais).
+   `select bootstrap_admin_user('usuario', 'Nome', 'email@...', 'senha', 'ID_DA_FUNCAO');`
+   — função separada de `create_app_user` porque esta última agora exige uma
+   sessão autenticada com `CREATE_ANY_USER` (ver Segurança abaixo), e o
+   primeiro usuário do projeto ainda não tem nenhuma sessão pra apresentar;
+   `bootstrap_admin_user` só roda uma vez (recusa se já existir algum
+   usuário) e não é liberada pro app via RPC, só pra quem tem acesso direto
+   ao SQL Editor. Depois disso, crie as sub-unidades e funções de
+   coordenação de exemplo (ou reais) — pelo próprio app já logado, ou ainda
+   via SQL Editor se preferir.
 6. Popule blocos/salas reais: `node --env-file=.env.local scripts/import-real-rooms.mjs`
    (depende das funções de coordenação do passo 5 já existirem).
 7. As disciplinas são cadastradas pela própria coordenação dentro do app
@@ -312,14 +368,15 @@ terceiros — ver `CLAUDE.md`.
 
 ## Limitações conhecidas (estágio de protótipo)
 
-- **RLS permissiva** (`using (true)`) nas tabelas de domínio — qualquer
-  cliente com a chave anônima lê/escreve tudo nelas (a única tabela
-  realmente trancada é `app_users`/`app_sessions`, só acessível via função).
-  Precisa de políticas reais por função/permissão antes de produção.
 - **Token de sessão em `localStorage`**, não um cookie `httpOnly` — não há
-  backend próprio ainda para emitir esse cookie.
-- **Sem transação** em `replaceRoleCourses` (importação de disciplinas) —
-  é um delete seguido de um insert em massa, não atômico.
+  backend próprio ainda para emitir esse cookie. Isso é ortogonal à
+  autorização (ver "Segurança das mutações" acima): mesmo com todo mutation
+  passando por checagem de permissão no servidor, o token em si ainda fica
+  num lugar acessível a qualquer JavaScript rodando na página (um XSS
+  roubaria o token deste usuário, por exemplo) — um cookie `httpOnly`
+  exigiria um backend próprio no meio pra emiti-lo, o que é uma mudança de
+  arquitetura maior (deixar de ser uma SPA estática falando direto com o
+  Supabase), não um ajuste pontual.
 - **Um único dataset Supabase** compartilhado entre os deploys de `main` e
   `dev`.
 - **Permissão de sala é só por função**, sem override individual por

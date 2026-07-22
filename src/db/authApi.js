@@ -6,6 +6,7 @@
  * directly, only through these controlled functions.
  */
 import { supabase } from './supabaseClient.js';
+import { getSessionToken } from './sessionToken.js';
 
 async function unwrap(query) {
   const { data, error } = await query;
@@ -20,7 +21,7 @@ const mapUser = (u) => !u ? null : ({
 });
 
 export async function getUsers() {
-  const rows = await unwrap(supabase.rpc('list_app_users'));
+  const rows = await unwrap(supabase.rpc('list_app_users', { p_token: getSessionToken() }));
   return rows.map(mapUser);
 }
 
@@ -29,16 +30,22 @@ export async function getUserById(id) {
   return users.find(u => u.id === id) || null;
 }
 
-export async function createUser(data, createdById) {
+// p_created_by não é mais mandado pelo cliente — a função no banco agora
+// deriva "quem criou" do próprio token de sessão (ver create_app_user em
+// supabase/schema.sql), então não dá mais pra um cliente se declarar
+// "criado por" outra pessoa.
+export async function createUser(data) {
   const rows = await unwrap(supabase.rpc('create_app_user', {
+    p_token: getSessionToken(),
     p_username: data.username, p_name: data.name, p_email: data.email,
-    p_password: data.password, p_role_id: data.roleId, p_created_by: createdById,
+    p_password: data.password, p_role_id: data.roleId,
   }));
   return mapUser(rows[0]);
 }
 
 export async function updateUser(id, updates) {
   const rows = await unwrap(supabase.rpc('update_app_user', {
+    p_token: getSessionToken(),
     p_id: id,
     p_name: updates.name ?? null,
     p_email: updates.email ?? null,
@@ -50,14 +57,17 @@ export async function updateUser(id, updates) {
 }
 
 export async function deactivateUser(id) {
-  const rows = await unwrap(supabase.rpc('deactivate_app_user', { p_id: id }));
+  const rows = await unwrap(supabase.rpc('deactivate_app_user', { p_token: getSessionToken(), p_id: id }));
   return mapUser(rows[0]);
 }
 
 export async function deleteUser(id) {
-  await unwrap(supabase.rpc('delete_app_user', { p_id: id }));
+  await unwrap(supabase.rpc('delete_app_user', { p_token: getSessionToken(), p_id: id }));
 }
 
+// Login/validação/revogação de sessão não levam p_token — são o próprio
+// mecanismo que emite/confere/apaga o token, não uma ação autenticada por
+// ele (ver comentário equivalente em supabase/schema.sql).
 export async function loginUser(username, password) {
   const rows = await unwrap(supabase.rpc('authenticate_app_user', { p_username: username, p_password: password }));
   if (!rows.length) return null;
@@ -73,4 +83,14 @@ export async function validateSession(token) {
 
 export async function revokeSession(token) {
   await unwrap(supabase.rpc('revoke_app_session', { p_token: token }));
+}
+
+// Autoatendimento — qualquer usuário logado troca a PRÓPRIA senha (não
+// depende de EDIT_ANY_USER, ao contrário de updateUser). A função no banco
+// (change_own_password) confere a senha atual antes de aceitar a nova.
+export async function changeOwnPassword(currentPassword, newPassword) {
+  const { error } = await supabase.rpc('change_own_password', {
+    p_token: getSessionToken(), p_current_password: currentPassword, p_new_password: newPassword,
+  });
+  if (error) throw error;
 }

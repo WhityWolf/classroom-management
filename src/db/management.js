@@ -1,8 +1,16 @@
 /**
- * src/db/management.js — sub_units / roles / blocks read+write access.
- * Same one-function-per-call convention as allocations.js/authApi.js.
+ * src/db/management.js — sub_units / roles / blocks / rooms / periods read
+ * access + mutations. Reads still go straight to the tables (RLS allows
+ * `select` for anon — see supabase/schema.sql). Every mutation instead
+ * calls a security-definer RPC that validates the session token
+ * (getSessionToken(), read from localStorage — see sessionToken.js) and the
+ * right permission server-side before writing; direct INSERT/UPDATE/DELETE
+ * from anon on these tables is revoked in schema.sql, so the RPC is the
+ * only way in. Same one-function-per-call convention as
+ * allocations.js/authApi.js.
  */
 import { supabase } from './supabaseClient.js';
+import { getSessionToken } from './sessionToken.js';
 
 export const mapSubUnit = s => ({
   id: s.id, name: s.name, fullName: s.full_name,
@@ -16,6 +24,12 @@ export const mapBlock = b => ({ id: b.id, local: b.local, name: b.name });
 
 async function unwrap(query) {
   const { data, error } = await query;
+  if (error) throw error;
+  return data;
+}
+
+async function call(fn, params) {
+  const { data, error } = await supabase.rpc(fn, { p_token: getSessionToken(), ...params });
   if (error) throw error;
   return data;
 }
@@ -42,40 +56,46 @@ export async function fetchRoleById(roleId) {
   return data ? mapRole(data) : null;
 }
 
+// ─── Sub-unidades (MANAGE_SUB_UNITS) ────────────────────────────────────────
 export async function createSubUnit(subUnit) {
-  await unwrap(supabase.from('sub_units').insert({
-    id: subUnit.id, name: subUnit.name, full_name: subUnit.fullName,
-    clr: subUnit.clr, text_clr: subUnit.textClr, bg: subUnit.bg, light_bg: subUnit.lightBg,
-  }));
+  await call('create_sub_unit', {
+    p_id: subUnit.id, p_name: subUnit.name, p_full_name: subUnit.fullName,
+    p_clr: subUnit.clr, p_text_clr: subUnit.textClr, p_bg: subUnit.bg, p_light_bg: subUnit.lightBg,
+  });
 }
 
 export async function updateSubUnit(id, changes) {
-  const patch = {};
-  if (changes.name !== undefined) patch.name = changes.name;
-  if (changes.fullName !== undefined) patch.full_name = changes.fullName;
-  if (changes.clr !== undefined) patch.clr = changes.clr;
-  if (changes.textClr !== undefined) patch.text_clr = changes.textClr;
-  if (changes.bg !== undefined) patch.bg = changes.bg;
-  if (changes.lightBg !== undefined) patch.light_bg = changes.lightBg;
-  await unwrap(supabase.from('sub_units').update(patch).eq('id', id));
+  await call('update_sub_unit', {
+    p_id: id,
+    p_name: changes.name ?? null, p_full_name: changes.fullName ?? null,
+    p_clr: changes.clr ?? null, p_text_clr: changes.textClr ?? null,
+    p_bg: changes.bg ?? null, p_light_bg: changes.lightBg ?? null,
+  });
 }
 
 export async function deleteSubUnit(id) {
-  await unwrap(supabase.from('sub_units').delete().eq('id', id));
+  await call('delete_sub_unit', { p_id: id });
 }
 
+// ─── Funções (MANAGE_ROLES) ─────────────────────────────────────────────────
 export async function createRole(role) {
-  await unwrap(supabase.from('roles').insert({
-    id: role.id, sub_unit_id: role.subUnitId, name: role.name, permissions: role.permissions,
-  }));
+  await call('create_role', {
+    p_id: role.id, p_sub_unit_id: role.subUnitId, p_name: role.name, p_permissions: role.permissions,
+  });
 }
 
 export async function updateRole(id, changes) {
-  const patch = {};
-  if (changes.subUnitId !== undefined) patch.sub_unit_id = changes.subUnitId;
-  if (changes.name !== undefined) patch.name = changes.name;
-  if (changes.permissions !== undefined) patch.permissions = changes.permissions;
-  await unwrap(supabase.from('roles').update(patch).eq('id', id));
+  await call('update_role', {
+    p_id: id,
+    // sub_unit_id é o único campo aqui que legitimamente precisa virar NULL
+    // (função vira institucional) — daí o flag separado p_clear_sub_unit_id
+    // em vez de deduzir "null" a partir de "undefined" (coalesce no servidor
+    // trataria null igual a "não mudar", perdendo essa transição).
+    p_sub_unit_id: changes.subUnitId ?? null,
+    p_clear_sub_unit_id: changes.subUnitId === null,
+    p_name: changes.name ?? null,
+    p_permissions: changes.permissions ?? null,
+  });
 }
 
 export async function countRoleCourses(id) {
@@ -84,76 +104,66 @@ export async function countRoleCourses(id) {
   return count ?? 0;
 }
 
-export async function deleteRole(id) {
-  await unwrap(supabase.from('roles').delete().eq('id', id));
-}
-
 // Atômica (função Postgres security definer, ver supabase/schema.sql) — se
 // a função ainda tiver salas/usuários vinculados, a FK restrict rejeita o
 // delete de roles e o Postgres desfaz o delete de courses junto, em vez de
-// deixar as disciplinas apagadas com a função presa.
+// deixar as disciplinas apagadas com a função presa. Usada tanto no caminho
+// "sem disciplinas" quanto no "com disciplinas" do RolesTab — não muda
+// nada rodar mesmo quando courseCount é 0.
 export async function deleteRoleAndCourses(id) {
-  const { error } = await supabase.rpc('delete_role_and_courses', { p_id: id });
-  if (error) throw error;
+  await call('delete_role_and_courses', { p_id: id });
 }
 
+// ─── Blocos (MANAGE_BLOCKS) ─────────────────────────────────────────────────
 export async function createBlock(block) {
-  await unwrap(supabase.from('blocks').insert({ id: block.id, local: block.local, name: block.name }));
+  await call('create_block', { p_id: block.id, p_local: block.local, p_name: block.name });
 }
 
 export async function updateBlock(id, changes) {
-  const patch = {};
-  if (changes.local !== undefined) patch.local = changes.local;
-  if (changes.name !== undefined) patch.name = changes.name;
-  await unwrap(supabase.from('blocks').update(patch).eq('id', id));
+  await call('update_block', { p_id: id, p_local: changes.local ?? null, p_name: changes.name ?? null });
 }
 
 export async function deleteBlock(id) {
-  await unwrap(supabase.from('blocks').delete().eq('id', id));
+  await call('delete_block', { p_id: id });
 }
 
+// ─── Salas (MANAGE_ROOMS — update_room também aceita MANAGE_ROLES, porque a
+// aba Funções usa esta mesma mutação pra alternar "esta sala pertence a
+// este papel") ───────────────────────────────────────────────────────────
 export async function createRoom(room) {
-  await unwrap(supabase.from('rooms').insert({
-    id: room.id, role_id: room.roleId, block_id: room.blockId, label: room.label,
-    cap: room.cap, type: room.type, floor: room.floor,
-    features: room.features || [], description: room.description || '',
-  }));
+  await call('create_room', {
+    p_id: room.id, p_role_id: room.roleId ?? null, p_block_id: room.blockId, p_label: room.label,
+    p_cap: room.cap, p_type: room.type, p_floor: room.floor,
+    p_features: room.features || [], p_description: room.description || '',
+  });
 }
 
 export async function updateRoom(id, changes) {
-  const patch = {};
-  if (changes.roleId !== undefined) patch.role_id = changes.roleId;
-  if (changes.blockId !== undefined) patch.block_id = changes.blockId;
-  if (changes.label !== undefined) patch.label = changes.label;
-  if (changes.cap !== undefined) patch.cap = changes.cap;
-  if (changes.type !== undefined) patch.type = changes.type;
-  if (changes.floor !== undefined) patch.floor = changes.floor;
-  if (changes.features !== undefined) patch.features = changes.features;
-  if (changes.description !== undefined) patch.description = changes.description;
-  await unwrap(supabase.from('rooms').update(patch).eq('id', id));
-}
-
-export async function deleteRoom(id) {
-  await unwrap(supabase.from('rooms').delete().eq('id', id));
+  await call('update_room', {
+    p_id: id,
+    p_role_id: changes.roleId ?? null,
+    p_clear_role_id: changes.roleId === null,
+    p_block_id: changes.blockId ?? null,
+    p_label: changes.label ?? null,
+    p_cap: changes.cap ?? null,
+    p_type: changes.type ?? null,
+    p_floor: changes.floor ?? null,
+    p_features: changes.features ?? null,
+    p_description: changes.description ?? null,
+  });
 }
 
 // Atômica (função Postgres security definer, ver supabase/schema.sql) —
 // limpa as referências a esta sala em courses.room_by_day (jsonb, sem FK
-// real pra rooms) e apaga a sala numa única transação no banco, em vez de
-// duas chamadas separadas do cliente. `affectedCourses` não é mais
-// necessário pra mutação em si (a função já resolve isso sozinha no
-// servidor) — só a contagem prévia pra mostrar na confirmação continua
-// sendo calculada no cliente a partir de `courses` já carregado. Retorna
+// real pra rooms) e apaga a sala numa única transação no banco. Retorna
 // quantas disciplinas foram desalocadas.
 export async function deleteRoomAndUnallocate(id) {
-  const { data, error } = await supabase.rpc('delete_room_and_unallocate', { p_id: id });
-  if (error) throw error;
-  return data ?? 0;
+  return (await call('delete_room_and_unallocate', { p_id: id })) ?? 0;
 }
 
-// ─── Períodos letivos ─────────────────────────────────────────────────────────
+// ─── Períodos letivos (institucional — sem PERMS.* dedicado) ────────────────
 export async function createPeriod(id) {
-  await unwrap(supabase.from('periods').insert({ id }));
+  await call('create_period', { p_id: id });
 }
 
 export async function countPeriodCourses(period) {
@@ -167,9 +177,7 @@ export async function countPeriodCourses(period) {
 // todas as disciplinas cadastradas nele (em qualquer função/sub-unidade)
 // numa única transação no banco, e limpa
 // app_settings.current_period_override se ele apontava pro período que
-// está sendo removido, pra não deixar o "período atual" fixado pendurado
-// numa referência inexistente.
+// está sendo removido.
 export async function deletePeriodAndCourses(id) {
-  const { error } = await supabase.rpc('delete_period_and_courses', { p_id: id });
-  if (error) throw error;
+  await call('delete_period_and_courses', { p_id: id });
 }
