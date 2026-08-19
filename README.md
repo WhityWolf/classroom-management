@@ -25,8 +25,23 @@ salas e blocos novos.
   (visão somente-leitura de todas as salas, organizadas por departamento →
   bloco; cada sala tem sua própria tabela com dias da semana como colunas e
   horários 8h–22h como linhas; um seletor filtra entre todas as salas, apenas
-  alocadas ou apenas vazias) e, só pra quem tem permissão de gerenciamento
-  (Diretor/secretários), uma terceira opção "Gerenciamento".
+  alocadas ou apenas vazias), "Mapa do Campus" (ver abaixo) e, só pra quem
+  tem permissão de gerenciamento (Diretor/secretários), uma opção
+  "Gerenciamento".
+- **Mapa do Campus** — mostra onde cada *bloco* (não sala individual) fica
+  fisicamente, como pinos sobre uma imagem estática do campus (gerada a
+  partir de um export do OpenStreetMap — `src/assets/campus-map.png`, sem
+  nenhuma chamada a serviço de mapa externo em tempo de execução, então
+  funciona em rede totalmente interna/offline). Clicar num pino mostra o
+  nome do bloco e a lista de salas dele. A posição de cada bloco é salva
+  como porcentagem da imagem (`blocks.map_x`/`map_y`, não pixel — continua
+  válida em qualquer tamanho de tela ou se a imagem for trocada depois), via
+  a função `set_block_position`. Editar posições (arrastar um pino
+  existente, ou clicar num bloco "sem posição" e depois no mapa pra
+  posicioná-lo) é restrito a quem tem `MANAGE_BLOCKS` — mesma permissão que
+  já controla o CRUD de blocos em Gerenciamento; qualquer usuário logado
+  pode *ver* o mapa. Atribuição "© OpenStreetMap contributors" incluída na
+  própria imagem (exigência da licença ODbL dos dados).
 - **Trocar a própria senha** — botão "Trocar Senha" nessa mesma tela de
   seleção, ao lado de "Sair", disponível pra qualquer usuário logado
   (inclusive chefes/coordenadores, que não têm `EDIT_ANY_USER` e por isso
@@ -242,7 +257,7 @@ tem permissão institucional.
 |---|---|
 | `sub_units` | Sub-unidades (ex. Matemática) — nome e cores de UI |
 | `roles` | Funções — `sub_unit_id` nulo = institucional; `permissions` (text[]) é o subconjunto de `PERMS` que essa função tem; `is_system` protege a função raiz do Diretor contra exclusão |
-| `blocks` | Blocos/prédios físicos (ex. `CCN1`/`SG-04`) |
+| `blocks` | Blocos/prédios físicos (ex. `CCN1`/`SG-04`) — `map_x`/`map_y` (percentual 0-100, `null` = sem posição) é o pino no Mapa do Campus |
 | `rooms` | Salas reais do CCN1/CCN2 — `role_id` nulo significa sala compartilhada (só quem tem `MANAGE_ROOMS` gerencia); `block_id` aponta pro bloco físico |
 | `courses` | Disciplinas — `role_id` é a coordenação dona; `blocks` (jsonb) guarda uma lista de `{dias, início, fim}` de horário (não confundir com a tabela `blocks` acima); `room_by_day` (jsonb) mapeia cada dia pra sala alocada nele; `period` (ex. `"2026.1"`) marca o período letivo — só o mais recente é editável |
 | `periods` | Períodos letivos (ex. `"2026.1"`) — existem por conta própria, independente de ter alguma disciplina cadastrada; `courses.period` não é uma FK pra cá (soft reference), pra não travar em dados legados |

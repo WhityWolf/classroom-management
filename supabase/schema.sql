@@ -50,7 +50,13 @@ create table blocks (
   id         text primary key,        -- slug estável, ex. 'CCN1-SG-04'
   local      text not null,           -- "CCN1" (prédio/campus)
   name       text not null,           -- "SG-04", "PPG-Matemática", "PROFMAT"
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Posição do pino no Mapa do Campus, em porcentagem da largura/altura da
+  -- imagem (0-100, não pixel) — assim continua válido em qualquer
+  -- resolução/tamanho de tela, mesmo se a imagem for trocada por uma
+  -- versão maior depois. null = bloco ainda não posicionado no mapa.
+  map_x      numeric(5,2),
+  map_y      numeric(5,2)
 );
 
 create table rooms (
@@ -175,7 +181,12 @@ create table app_users (
   created_at    timestamptz not null default now(),
   created_by    text references app_users(id) on delete set null,
   last_login    timestamptz,
-  updated_at    timestamptz
+  updated_at    timestamptz,
+  -- Controle de força bruta (ver authenticate_app_user) — bloqueia a CONTA
+  -- por 15min depois de 5 senhas erradas seguidas; zera em qualquer login
+  -- bem-sucedido.
+  failed_logins int not null default 0,
+  locked_until  timestamptz
 );
 create index app_users_role_idx on app_users(role_id);
 
@@ -434,7 +445,13 @@ end; $$;
 -- Login e validação/revogação de sessão não recebem p_token nem checam
 -- permissão — são o próprio mecanismo que EMITE o token que todas as
 -- outras funções deste arquivo passam a exigir. Continuam exatamente como
--- antes desta revisão.
+-- antes desta revisão, exceto authenticate_app_user, que ganhou bloqueio
+-- por força bruta (ver comentário abaixo).
+
+-- Bloqueia a CONTA (não o IP) por 15 minutos depois de 5 senhas erradas
+-- seguidas — protege contra força bruta sem depender de um header de IP
+-- que um proxy mal configurado poderia falsificar. O contador zera em
+-- qualquer login bem-sucedido.
 create or replace function authenticate_app_user(p_username text, p_password text)
 returns table (
   token text, id text, username text, name text, email text, role_id text,
@@ -445,11 +462,22 @@ declare v_user app_users; v_token text;
 begin
   select * into v_user from app_users u where u.username = lower(p_username);
   if v_user.id is null or not v_user.is_active then return; end if;
-  if crypt(p_password, v_user.password_hash) <> v_user.password_hash then return; end if;
+
+  if v_user.locked_until is not null and v_user.locked_until > now() then
+    raise exception 'Muitas tentativas incorretas. Tente novamente em alguns minutos.' using errcode = '28000';
+  end if;
+
+  if crypt(p_password, v_user.password_hash) <> v_user.password_hash then
+    update app_users u set
+      failed_logins = u.failed_logins + 1,
+      locked_until = case when u.failed_logins + 1 >= 5 then now() + interval '15 minutes' else u.locked_until end
+    where u.id = v_user.id;
+    return;
+  end if;
 
   v_token := encode(gen_random_bytes(24), 'hex');
   insert into app_sessions (token, user_id, expires_at) values (v_token, v_user.id, now() + interval '8 hours');
-  update app_users u set last_login = now() where u.id = v_user.id;
+  update app_users u set last_login = now(), failed_logins = 0, locked_until = null where u.id = v_user.id;
 
   return query
     select v_token, u.id, u.username, u.name, u.email, u.role_id, u.is_active, u.created_at, u.created_by, now(), u.updated_at
@@ -731,6 +759,22 @@ begin
   delete from blocks where id = p_id;
 end; $$;
 
+-- Posição do pino no Mapa do Campus. p_x/p_y null = "desmarcar" (bloco
+-- volta a aparecer como "sem posição"), não precisa de uma função
+-- separada só pra limpar.
+create or replace function set_block_position(p_token text, p_id text, p_x numeric, p_y numeric)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform require_permission(p_token, 'MANAGE_BLOCKS');
+  if p_x is not null and (p_x < 0 or p_x > 100) then
+    raise exception 'Posição X fora do intervalo (0-100).';
+  end if;
+  if p_y is not null and (p_y < 0 or p_y > 100) then
+    raise exception 'Posição Y fora do intervalo (0-100).';
+  end if;
+  update blocks set map_x = p_x, map_y = p_y where id = p_id;
+end; $$;
+
 -- ─── Salas (MANAGE_ROOMS — update_room também aceita MANAGE_ROLES, porque a
 -- aba Funções usa esta mesma mutação pra alternar "esta sala pertence a
 -- este papel", uma ação de dono de sala que hoje já é alcançável só com
@@ -844,6 +888,7 @@ revoke all on function delete_role_and_courses(text,text) from public;
 revoke all on function create_block(text,text,text,text) from public;
 revoke all on function update_block(text,text,text,text) from public;
 revoke all on function delete_block(text,text) from public;
+revoke all on function set_block_position(text,text,numeric,numeric) from public;
 revoke all on function create_room(text,text,text,text,text,int,text,int,text[],text) from public;
 revoke all on function update_room(text,text,text,boolean,text,text,int,text,int,text[],text) from public;
 revoke all on function delete_room_and_unallocate(text,text) from public;
@@ -863,6 +908,7 @@ grant execute on function delete_role_and_courses(text,text) to anon;
 grant execute on function create_block(text,text,text,text) to anon;
 grant execute on function update_block(text,text,text,text) to anon;
 grant execute on function delete_block(text,text) to anon;
+grant execute on function set_block_position(text,text,numeric,numeric) to anon;
 grant execute on function create_room(text,text,text,text,text,int,text,int,text[],text) to anon;
 grant execute on function update_room(text,text,text,boolean,text,text,int,text,int,text[],text) to anon;
 grant execute on function delete_room_and_unallocate(text,text) to anon;
