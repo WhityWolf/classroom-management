@@ -8,9 +8,11 @@ import LoginPage from './components/LoginPage.jsx';
 import UserManagement from './components/UserManagement.jsx';
 import ManagementScreen from './components/ManagementScreen.jsx';
 import * as db from './db/allocations.js';
+import * as mgmt from './db/management.js';
 import * as authApi from './db/authApi.js';
 import { useRealtimeSync } from './db/useRealtimeSync.js';
 import { supabaseConfigured } from './db/supabaseClient.js';
+import campusMapImg from './assets/campus-map.png';
 
 const DAYS  = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 // 6:00–21:00 start hours (eh can go one past the last entry, i.e. 22:00) —
@@ -754,6 +756,7 @@ function Dashboard(){
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
   if(screen==='select')return<ScreenSelector onPick={setScreen} subUnits={subUnits}/>;
   if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} periods={periods} currentPeriodOverride={currentPeriodOverride} onBack={()=>setScreen('select')}/>;
+  if(screen==='campus')return<CampusMapScreen blocks={blocks} rooms={ROOMS} onBack={()=>setScreen('select')}/>;
   if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')}
     courses={courses} onPeriodCreated={handlePeriodCreatedFromManagement}
     currentPeriodOverride={currentPeriodOverride}/>;
@@ -1032,6 +1035,7 @@ function ScreenSelector({onPick,subUnits}){
   const cards=[
     {key:'allocate',icon:'📋',title:'Alocar Disciplinas',desc:'Cadastre disciplinas e aloque-as nas salas da sua função.'},
     {key:'map',icon:'🗺',title:'Mapa de Salas',desc:'Veja uma visão geral de todas as salas, com disciplinas alocadas por dia e horário.'},
+    {key:'campus',icon:'📍',title:'Mapa do Campus',desc:'Veja onde cada bloco fica fisicamente no campus.'},
     ...(canManage?[{key:'manage',icon:'⚙️',title:'Gerenciamento',desc:'Usuários, funções, sub-unidades, salas e blocos.'}]:[]),
   ];
   return(
@@ -1383,6 +1387,207 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
 }
 
 // ─── Card de disciplina ───────────────────────────────────────────────────────
+// ─── Mapa do Campus — pinos de bloco sobre uma imagem estática (não usa
+// nenhum serviço de mapa externo: a imagem já vem "cozida" a partir de um
+// export do OpenStreetMap, então a tela funciona 100% offline/rede interna).
+// Posição de cada pino é salva como porcentagem da imagem (block.mapX/mapY,
+// 0-100), não pixel — continua válida em qualquer tamanho de tela ou se a
+// imagem for trocada por uma versão de resolução diferente depois. ─────────
+function CampusMapScreen({blocks,rooms,onBack}){
+  const{can}=useAuth();
+  const{T,theme,toggleTheme}=useT();
+  const mono={fontFamily:"'DM Mono',monospace"};
+  const canEdit=can(PERMS.MANAGE_BLOCKS);
+
+  const[editing,setEditing]=useState(false);
+  const[selectedId,setSelectedId]=useState(null);   // pino aberto (ver detalhes, os dois modos)
+  const[placingId,setPlacingId]=useState(null);      // bloco esperando um clique no mapa pra ser posicionado (só edição)
+  const[dragId,setDragId]=useState(null);            // bloco sendo arrastado agora (só edição)
+  const[dragPos,setDragPos]=useState(null);          // {x,y} prévia visual durante o arraste, antes de salvar
+  const[saving,setSaving]=useState(false);
+  const[toast,setToast]=useState(null);
+  const imgWrapRef=useRef(null);
+
+  const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),4000);};
+
+  const positioned=useMemo(()=>blocks.filter(b=>b.mapX!=null&&b.mapY!=null),[blocks]);
+  const unpositioned=useMemo(()=>blocks.filter(b=>b.mapX==null||b.mapY==null),[blocks]);
+  const roomsOf=blockId=>rooms.filter(r=>r.blockId===blockId);
+  const selectedBlock=blocks.find(b=>b.id===selectedId)??null;
+
+  const stopEditing=()=>{setEditing(false);setPlacingId(null);setDragId(null);setDragPos(null);setSelectedId(null);};
+
+  const posFromEvent=e=>{
+    const rect=imgWrapRef.current.getBoundingClientRect();
+    const x=((e.clientX-rect.left)/rect.width)*100;
+    const y=((e.clientY-rect.top)/rect.height)*100;
+    return{x:Math.max(0,Math.min(100,x)),y:Math.max(0,Math.min(100,y))};
+  };
+
+  const savePosition=async(blockId,x,y)=>{
+    setSaving(true);
+    try{ await mgmt.setBlockPosition(blockId,x,y); }
+    catch(e){ showToast(`Falha ao salvar posição: ${ptError(e)}`,'err'); }
+    finally{ setSaving(false); }
+  };
+
+  const handleMapClick=e=>{
+    if(!editing||!placingId||dragId)return;
+    const{x,y}=posFromEvent(e);
+    const id=placingId;
+    setPlacingId(null);
+    savePosition(id,x,y).then(()=>showToast('Posição definida.'));
+  };
+
+  // Arraste: acompanha o mouse na janela inteira (o cursor pode sair do
+  // pino durante o arraste), só grava no banco no mouseup — sem isso, cada
+  // pixel de movimento viraria uma chamada de rede.
+  useEffect(()=>{
+    if(!dragId)return;
+    const onMove=e=>setDragPos(posFromEvent(e));
+    const onUp=e=>{
+      const{x,y}=posFromEvent(e);
+      const id=dragId;
+      setDragId(null);setDragPos(null);
+      savePosition(id,x,y).then(()=>showToast('Posição atualizada.'));
+    };
+    window.addEventListener('mousemove',onMove);
+    window.addEventListener('mouseup',onUp);
+    return()=>{window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);};
+    // eslint-disable-next-line
+  },[dragId]);
+
+  const clearPosition=async blockId=>{
+    setSelectedId(null);
+    await savePosition(blockId,null,null);
+    showToast('Bloco voltou pra lista de "sem posição".');
+  };
+
+  return(
+    <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        button{font-family:inherit;}
+        .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
+        .campus-pin{transition:transform .1s;}
+        .campus-pin:hover{transform:translate(-50%,-100%) scale(1.15);}
+      `}</style>
+
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+        <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
+        <span style={{fontSize:14,fontWeight:700,color:T.txt}}>📍 Mapa do Campus</span>
+        <div style={{width:1,height:16,background:T.bdr2}}/>
+        <span style={{...mono,fontSize:11,color:T.dim}}>{positioned.length} bloco{positioned.length!==1?'s':''} no mapa{unpositioned.length>0?` · ${unpositioned.length} sem posição`:''}</span>
+        <div style={{flex:1}}/>
+        {saving&&<span style={{...mono,fontSize:10,color:T.dim}}>Salvando…</span>}
+        {canEdit&&(
+          <button className="icon-btn" onClick={()=>editing?stopEditing():setEditing(true)}
+            style={{padding:'5px 12px',background:editing?'#3b82f6':T.inner,border:`1px solid ${editing?'#3b82f6':T.bdr2}`,borderRadius:6,color:editing?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+            {editing?'✕ Concluir edição':'✎ Editar posições'}
+          </button>
+        )}
+        <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+      </div>
+
+      <div style={{flex:1,display:'flex',overflow:'hidden'}}>
+        {editing&&(
+          <div style={{width:260,flexShrink:0,borderRight:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:4}}>Blocos sem posição</div>
+            <div style={{fontSize:11,color:T.dim,marginBottom:12,lineHeight:1.5}}>
+              Clique num bloco da lista e depois clique no mapa pra posicioná-lo. Pra reposicionar um que já está no mapa, arraste o pino direto.
+            </div>
+            {unpositioned.length===0?(
+              <div style={{fontSize:11,color:T.dim,fontStyle:'italic'}}>Todos os blocos já têm posição definida.</div>
+            ):unpositioned.map(b=>(
+              <button key={b.id} onClick={()=>setPlacingId(placingId===b.id?null:b.id)}
+                style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',marginBottom:6,borderRadius:7,cursor:'pointer',
+                  background:placingId===b.id?'#3b82f622':T.inner,border:`1px solid ${placingId===b.id?'#3b82f6':T.bdr2}`}}>
+                <div style={{fontSize:12,fontWeight:600,color:T.txt}}>{b.local} — {b.name}</div>
+                {placingId===b.id&&<div style={{...mono,fontSize:9,color:'#3b82f6',marginTop:2}}>Clique no mapa…</div>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{flex:1,overflow:'auto',position:'relative',background:'#dfe3e0',display:'flex',alignItems:'flex-start',justifyContent:'center'}}>
+          <div ref={imgWrapRef} onClick={handleMapClick}
+            style={{position:'relative',display:'inline-block',cursor:editing&&placingId?'crosshair':'default'}}>
+            <img src={campusMapImg} alt="Mapa do campus" draggable={false}
+              style={{display:'block',maxWidth:'none',width:1400,userSelect:'none'}}/>
+
+            {positioned.map(b=>{
+              const isDragging=dragId===b.id;
+              const x=isDragging&&dragPos?dragPos.x:b.mapX;
+              const y=isDragging&&dragPos?dragPos.y:b.mapY;
+              return(
+                <div key={b.id} className="campus-pin"
+                  onMouseDown={e=>{if(!editing)return;e.preventDefault();e.stopPropagation();setDragId(b.id);}}
+                  onClick={e=>{e.stopPropagation();if(!editing)setSelectedId(b.id);}}
+                  title={`${b.local} — ${b.name}`}
+                  style={{
+                    position:'absolute',left:`${x}%`,top:`${y}%`,transform:'translate(-50%,-100%)',
+                    cursor:editing?'grab':'pointer',zIndex:isDragging?20:selectedId===b.id?15:10,
+                    filter:isDragging?'drop-shadow(0 4px 6px rgba(0,0,0,.35))':'drop-shadow(0 2px 3px rgba(0,0,0,.25))',
+                  }}>
+                  <svg width="30" height="38" viewBox="0 0 30 38">
+                    <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 23 15 23s15-12.5 15-23C30 6.7 23.3 0 15 0z"
+                      fill={selectedId===b.id||isDragging?'#3b82f6':'#1e3a5f'} stroke="#fff" strokeWidth="1.5"/>
+                    <circle cx="15" cy="15" r="6" fill="#fff"/>
+                  </svg>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {selectedBlock&&!editing&&(
+        <div onClick={()=>setSelectedId(null)} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.35)':'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:24,width:340,maxHeight:'70vh',display:'flex',flexDirection:'column',boxShadow:T.shadowMd}}>
+            <div style={{display:'flex',alignItems:'flex-start',marginBottom:14}}>
+              <div>
+                <div style={{fontSize:16,fontWeight:700,color:T.txt}}>{selectedBlock.local}</div>
+                <div style={{fontSize:13,color:T.muted}}>{selectedBlock.name}</div>
+              </div>
+              <button onClick={()=>setSelectedId(null)} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
+            </div>
+            <div style={{...mono,fontSize:10,color:T.dim,textTransform:'uppercase',letterSpacing:1,marginBottom:8}}>
+              {roomsOf(selectedBlock.id).length} sala{roomsOf(selectedBlock.id).length!==1?'s':''}
+            </div>
+            <div style={{overflow:'auto',flex:1}}>
+              {roomsOf(selectedBlock.id).length===0?(
+                <div style={{fontSize:12,color:T.dim,fontStyle:'italic'}}>Nenhuma sala cadastrada neste bloco ainda.</div>
+              ):roomsOf(selectedBlock.id).map(r=>(
+                <div key={r.id} style={{padding:'7px 0',borderBottom:`1px solid ${T.bdr}`,fontSize:12,color:T.txt}}>
+                  Sala {r.label} <span style={{color:T.dim}}>· {r.cap} lugares</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedBlock&&editing&&(
+        <div style={{position:'fixed',bottom:20,left:'50%',transform:'translateX(-50%)',background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:10,padding:'10px 16px',display:'flex',alignItems:'center',gap:12,boxShadow:T.shadowMd,zIndex:100}}>
+          <span style={{fontSize:12,color:T.txt}}><strong>{selectedBlock.local} — {selectedBlock.name}</strong></span>
+          <button onClick={()=>clearPosition(selectedBlock.id)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Remover do mapa</button>
+          <button onClick={()=>setSelectedId(null)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Fechar</button>
+        </div>
+      )}
+
+      {toast&&(
+        <div style={{position:'fixed',bottom:20,right:20,padding:'10px 16px',borderRadius:8,fontSize:12,fontWeight:600,zIndex:200,
+          background:toast.type==='err'?(theme==='light'?'#fef2f2':'#2a0a0a'):(theme==='light'?'#f0fdf4':'#0a2a0a'),
+          border:`1px solid ${toast.type==='err'?'#ef444444':'#34d39944'}`,
+          color:toast.type==='err'?(theme==='light'?'#b91c1c':'#ef4444'):(theme==='light'?'#15803d':'#34d399')}}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CourseCard({course,activeRole,showRoleBadge,selected,locked,roomLabel,onSelect,onEdit,onRemove,onDelete}){
   const{T,theme}=useT();
   const{gRole}=useRolesData();

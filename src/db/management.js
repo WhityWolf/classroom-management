@@ -20,7 +20,7 @@ export const mapRole = r => ({
   id: r.id, subUnitId: r.sub_unit_id, name: r.name,
   permissions: r.permissions || [], isSystem: r.is_system,
 });
-export const mapBlock = b => ({ id: b.id, local: b.local, name: b.name });
+export const mapBlock = b => ({ id: b.id, local: b.local, name: b.name, mapX: b.map_x, mapY: b.map_y });
 
 async function unwrap(query) {
   const { data, error } = await query;
@@ -125,6 +125,12 @@ export async function updateBlock(id, changes) {
 
 export async function deleteBlock(id) {
   await call('delete_block', { p_id: id });
+}
+
+// Posição do pino no Mapa do Campus (0-100, porcentagem da imagem). x/y
+// null = "desmarcar" (bloco volta a aparecer como sem posição).
+export async function setBlockPosition(id, x, y) {
+  await call('set_block_position', { p_id: id, p_x: x, p_y: y });
 }
 
 // ─── Salas (MANAGE_ROOMS — update_room também aceita MANAGE_ROLES, porque a

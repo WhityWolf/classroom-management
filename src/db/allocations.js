@@ -66,7 +66,7 @@ export async function fetchAll() {
       id: r.id, subUnitId: r.sub_unit_id, name: r.name,
       permissions: r.permissions || [], isSystem: r.is_system,
     })),
-    blocks: blockRows.map(b => ({ id: b.id, local: b.local, name: b.name })),
+    blocks: blockRows.map(b => ({ id: b.id, local: b.local, name: b.name, mapX: b.map_x, mapY: b.map_y })),
     rooms: rooms.map(mapRoom),
     courses: courses.map(mapCourse),
     coordinationStatuses: Object.fromEntries(statusRows.map(r => [r.role_id, r.status])),
