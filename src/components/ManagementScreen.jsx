@@ -393,7 +393,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
       <form onSubmit={e=>{e.preventDefault();save();}}>
         <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Novo Usuário':'Editar Usuário'}</div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome Completo</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
-        <div style={{marginBottom:12}}><label style={lblStyle(T)}>Usuário</label><input value={form.username} readOnly={editing!=='new'} onChange={e=>setForm({...form,username:e.target.value})} style={{...inpStyle(T),opacity:editing!=='new'?.6:1}}/></div>
+        <div style={{marginBottom:12}}><label style={lblStyle(T)}>Usuário</label><input value={form.username} readOnly={editing!=='new'} onChange={e=>setForm({...form,username:e.target.value.toLowerCase()})} style={{...inpStyle(T),opacity:editing!=='new'?.6:1}}/></div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>E-mail</label><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} style={inpStyle(T)}/></div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>{editing==='new'?'Senha':'Nova Senha (deixe em branco para manter)'}</label><input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} style={inpStyle(T)}/></div>
         <div style={{marginBottom:12}}>
