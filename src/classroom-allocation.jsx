@@ -913,7 +913,7 @@ function Dashboard(){
                   <button onClick={()=>setImportingCourses(true)}
                     style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
                     onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
-                    ⇪ Importar ODS
+                    ⇪ Subir Planilha
                   </button>
                 </div>
               )}
