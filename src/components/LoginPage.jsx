@@ -68,7 +68,7 @@ export default function LoginPage() {
             </div>
           </div>
           <div style={{fontSize:23,fontWeight:700,color:'#f1f5f9',lineHeight:1.25,marginBottom:8,position:'relative'}}>
-            Sistema de Gerenciamento de Salas de Aula do CCN
+            Sistema de Gerenciamento de Salas de Aula — CCN/UFPI
           </div>
           <div style={{fontSize:13,color:'#94a3b8',lineHeight:1.6,marginBottom:32,position:'relative'}}>
             Gerenciamento centralizado de salas do Centro de Ciências da Natureza (CCN)

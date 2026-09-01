@@ -1061,8 +1061,7 @@ function ScreenSelector({onPick,subUnits}){
       {showChangePassword&&<ChangePasswordModal onClose={()=>setShowChangePassword(false)}/>}
       <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,animation:'fadeIn .2s ease'}}>
         <div style={{textAlign:'center'}}>
-          <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>O que você quer fazer?</div>
-          <div style={{...mono,fontSize:12,color:T.dim}}>Sistema de Alocação de Salas — CCN/UFPI</div>
+          <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>Sistema de Gerenciamento de Salas de Aula — CCN/UFPI</div>
         </div>
         <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center'}}>
           {cards.map(c=>(
