@@ -70,7 +70,7 @@ function ptError(e) {
   return msg;
 }
 
-export default function ManagementScreen({ onBack, courses=[], onPeriodCreated, currentPeriodOverride=null }) {
+export default function ManagementScreen({ onBack, onProfile, courses=[], onPeriodCreated, currentPeriodOverride=null }) {
   const { currentUser, logout, can } = useAuth();
   const { T, theme, toggleTheme } = useT();
   const mono = { fontFamily:"'DM Mono',monospace" };
@@ -170,6 +170,7 @@ export default function ManagementScreen({ onBack, courses=[], onPeriodCreated, 
           <span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={onProfile} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
 

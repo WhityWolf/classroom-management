@@ -7,6 +7,7 @@ import { DEFAULT_PERIOD, PERIOD_RE, comparePeriods } from './periods.js';
 import LoginPage from './components/LoginPage.jsx';
 import UserManagement from './components/UserManagement.jsx';
 import ManagementScreen from './components/ManagementScreen.jsx';
+import ProfileScreen from './components/ProfileScreen.jsx';
 import * as db from './db/allocations.js';
 import * as mgmt from './db/management.js';
 import * as authApi from './db/authApi.js';
@@ -755,9 +756,10 @@ function Dashboard(){
   if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>Carregando dados…</div>;
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
   if(screen==='select')return<ScreenSelector onPick={setScreen} subUnits={subUnits}/>;
-  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} periods={periods} currentPeriodOverride={currentPeriodOverride} onBack={()=>setScreen('select')}/>;
+  if(screen==='profile')return<ProfileScreen onBack={()=>setScreen('select')} subUnits={subUnits}/>;
+  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} periods={periods} currentPeriodOverride={currentPeriodOverride} onBack={()=>setScreen('select')} onProfile={()=>setScreen('profile')}/>;
   if(screen==='campus')return<CampusMapScreen blocks={blocks} rooms={ROOMS} onBack={()=>setScreen('select')}/>;
-  if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')}
+  if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')} onProfile={()=>setScreen('profile')}
     courses={courses} onPeriodCreated={handlePeriodCreatedFromManagement}
     currentPeriodOverride={currentPeriodOverride}/>;
 
@@ -856,6 +858,7 @@ function Dashboard(){
           </>
         )}
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={()=>setScreen('profile')} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
 
@@ -1027,7 +1030,6 @@ function ScreenSelector({onPick,subUnits}){
   const{currentUser,logout,can}=useAuth();
   const{T,theme,toggleTheme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
-  const[showChangePassword,setShowChangePassword]=useState(false);
   // "Gerenciamento" não é exclusivo do Diretor por identidade de role — é
   // qualquer função institucional com pelo menos uma destas permissões
   // (Diretor e seus secretários têm todas, por exemplo).
@@ -1055,10 +1057,9 @@ function ScreenSelector({onPick,subUnits}){
           {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
-        <button className="icon-btn" onClick={()=>setShowChangePassword(true)} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Trocar Senha</button>
+        <button className="icon-btn" onClick={()=>onPick('profile')} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
-      {showChangePassword&&<ChangePasswordModal onClose={()=>setShowChangePassword(false)}/>}
       <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,animation:'fadeIn .2s ease'}}>
         <div style={{textAlign:'center'}}>
           <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>Sistema de Gerenciamento de Salas de Aula — CCN/UFPI</div>
@@ -1084,7 +1085,7 @@ function ScreenSelector({onPick,subUnits}){
 // Visão somente-leitura — mostra uma tabela por sala, com dias da semana como
 // colunas e faixas horárias (8h–22h) como linhas, para todos os departamentos
 // de uma vez.
-function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPeriodOverride,onBack}){
+function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPeriodOverride,onBack,onProfile}){
   const{currentUser,logout}=useAuth();
   const{T,theme,toggleTheme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
@@ -1253,6 +1254,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPerio
           {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={onProfile} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
       {presentGroups.length>0&&(
@@ -2069,72 +2071,6 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
 }
 
 // ─── Modal de confirmação de conclusão ────────────────────────────────────────
-// ─── Trocar a própria senha (autoatendimento — qualquer usuário logado,
-// não depende de EDIT_ANY_USER) ─────────────────────────────────────────────
-function ChangePasswordModal({onClose}){
-  const{T,theme}=useT();
-  const[current,setCurrent]=useState('');
-  const[next,setNext]=useState('');
-  const[confirm,setConfirm]=useState('');
-  const[error,setError]=useState(null);
-  const[saving,setSaving]=useState(false);
-  const[done,setDone]=useState(false);
-  const lbl={...{fontFamily:"'DM Mono',monospace"},fontSize:10,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:5};
-  const inp={width:'100%',padding:'9px 11px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt,fontSize:13,outline:'none'};
-
-  const submit=async e=>{
-    e.preventDefault();
-    setError(null);
-    if(next.length<6){setError('A nova senha deve ter pelo menos 6 caracteres.');return;}
-    if(next!==confirm){setError('A confirmação não bate com a nova senha.');return;}
-    setSaving(true);
-    try{
-      await authApi.changeOwnPassword(current,next);
-      setDone(true);
-    }catch(e){setError(ptError(e));}
-    finally{setSaving(false);}
-  };
-
-  return(
-    <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:380,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
-        <div style={{display:'flex',alignItems:'center',marginBottom:20}}>
-          <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Trocar Senha</div>
-          <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
-        </div>
-        {done?(
-          <>
-            <div style={{background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:13,color:theme==='light'?'#15803d':'#34d399'}}>
-              ✓ Senha alterada com sucesso.
-            </div>
-            <button onClick={onClose} style={{width:'100%',padding:'9px',background:'#3b82f6',border:'none',borderRadius:7,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>Fechar</button>
-          </>
-        ):(
-          <form onSubmit={submit}>
-            <div style={{marginBottom:12}}>
-              <label style={lbl}>Senha Atual</label>
-              <input autoFocus type="password" value={current} onChange={e=>{setCurrent(e.target.value);setError(null);}} style={inp}/>
-            </div>
-            <div style={{marginBottom:12}}>
-              <label style={lbl}>Nova Senha</label>
-              <input type="password" value={next} onChange={e=>{setNext(e.target.value);setError(null);}} style={inp}/>
-            </div>
-            <div style={{marginBottom:12}}>
-              <label style={lbl}>Confirmar Nova Senha</label>
-              <input type="password" value={confirm} onChange={e=>{setConfirm(e.target.value);setError(null);}} style={inp}/>
-            </div>
-            {error&&<div style={{fontSize:11,color:'#ef4444',marginBottom:12}}>{error}</div>}
-            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button type="button" onClick={onClose} disabled={saving} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:saving?'wait':'pointer'}}>Cancelar</button>
-              <button type="submit" disabled={saving} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,background:'#3b82f6',border:'none',color:'#fff',cursor:saving?'wait':'pointer',opacity:saving?.7:1}}>{saving?'Salvando…':'Salvar Nova Senha'}</button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function FinishConfirmModal({roleName,remaining,onConfirm,onCancel}){
   const{T,theme}=useT();
   return(

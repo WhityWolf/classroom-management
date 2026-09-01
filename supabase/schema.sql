@@ -539,6 +539,42 @@ begin
   where id = v_user_id;
 end; $$;
 
+-- Autoatendimento: a própria tela de Perfil precisa reler os dados do
+-- usuário logado (ex. depois de trocar o nome) sem exigir nenhuma das
+-- permissões de gerenciamento que list_app_users pede — sem esta função,
+-- AuthContext.refreshUser() só funcionava pra quem já tinha EDIT_ANY_USER/
+-- CREATE_ANY_USER/etc. (só nunca foi notado porque só era chamada de dentro
+-- de UserManagement, que já exige uma dessas permissões pra abrir).
+create or replace function whoami(p_token text)
+returns table (
+  id text, username text, name text, email text, role_id text,
+  is_active boolean, created_at timestamptz, created_by text,
+  last_login timestamptz, updated_at timestamptz
+) language plpgsql security definer set search_path = public, extensions as $$
+declare v_user_id text;
+begin
+  v_user_id := auth_user_id(p_token);
+  perform require_session(p_token); -- só valida; levanta exceção se inválido/expirado
+  return query
+    select u.id, u.username, u.name, u.email, u.role_id, u.is_active, u.created_at, u.created_by, u.last_login, u.updated_at
+    from app_users u where u.id = v_user_id;
+end; $$;
+
+-- Autoatendimento: qualquer usuário logado troca o PRÓPRIO nome — outros
+-- campos (usuário, e-mail, função) continuam exigindo EDIT_ANY_USER (tela
+-- de Perfil informa que essas mudanças passam pela Diretoria).
+create or replace function change_own_name(p_token text, p_name text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare v_user_id text;
+begin
+  v_user_id := auth_user_id(p_token);
+  perform require_session(p_token);
+  if trim(p_name) = '' then
+    raise exception 'Informe um nome.';
+  end if;
+  update app_users set name = trim(p_name), updated_at = now() where id = v_user_id;
+end; $$;
+
 revoke all on function create_app_user(text,text,text,text,text,text) from public;
 revoke all on function update_app_user(text,text,text,text,text,text,boolean) from public;
 revoke all on function deactivate_app_user(text,text) from public;
@@ -548,6 +584,8 @@ revoke all on function authenticate_app_user(text,text) from public;
 revoke all on function validate_app_session(text) from public;
 revoke all on function revoke_app_session(text) from public;
 revoke all on function change_own_password(text,text,text) from public;
+revoke all on function whoami(text) from public;
+revoke all on function change_own_name(text,text) from public;
 
 grant execute on function create_app_user(text,text,text,text,text,text) to anon;
 grant execute on function update_app_user(text,text,text,text,text,text,boolean) to anon;
@@ -558,6 +596,8 @@ grant execute on function authenticate_app_user(text,text) to anon;
 grant execute on function validate_app_session(text) to anon;
 grant execute on function revoke_app_session(text) to anon;
 grant execute on function change_own_password(text,text,text) to anon;
+grant execute on function whoami(text) to anon;
+grant execute on function change_own_name(text,text) to anon;
 
 -- ═══ Lote 1: helpers de autorização ═══════════════════════════════════════
 

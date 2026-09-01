@@ -30,6 +30,18 @@ export async function getUserById(id) {
   return users.find(u => u.id === id) || null;
 }
 
+// Autoatendimento: lê os dados do PRÓPRIO usuário logado (whoami), sem
+// exigir nenhuma permissão de gerenciamento — ao contrário de getUsers()/
+// getUserById() (que passam por list_app_users, gated por
+// CREATE_ANY_USER/EDIT_ANY_USER/etc.). É o que AuthContext.refreshUser()
+// usa, já que qualquer usuário logado pode acabar precisando recarregar o
+// próprio perfil (ex. depois de trocar o nome), não só quem tem permissão
+// de gerenciar outras contas.
+export async function getOwnUser() {
+  const rows = await unwrap(supabase.rpc('whoami', { p_token: getSessionToken() }));
+  return rows.length ? mapUser(rows[0]) : null;
+}
+
 // p_created_by não é mais mandado pelo cliente — a função no banco agora
 // deriva "quem criou" do próprio token de sessão (ver create_app_user em
 // supabase/schema.sql), então não dá mais pra um cliente se declarar
@@ -92,5 +104,13 @@ export async function changeOwnPassword(currentPassword, newPassword) {
   const { error } = await supabase.rpc('change_own_password', {
     p_token: getSessionToken(), p_current_password: currentPassword, p_new_password: newPassword,
   });
+  if (error) throw error;
+}
+
+// Autoatendimento: qualquer usuário logado troca o próprio nome — outros
+// campos (usuário, e-mail, função) continuam exigindo EDIT_ANY_USER e
+// passam pela Diretoria (ver src/components/ProfileScreen.jsx).
+export async function changeOwnName(name) {
+  const { error } = await supabase.rpc('change_own_name', { p_token: getSessionToken(), p_name: name });
   if (error) throw error;
 }

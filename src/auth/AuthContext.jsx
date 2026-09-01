@@ -11,7 +11,7 @@
  */
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { loginUser, validateSession, revokeSession, getUserById } from '../db/authApi.js';
+import { loginUser, validateSession, revokeSession, getOwnUser } from '../db/authApi.js';
 import { fetchRoleById } from '../db/management.js';
 import { hasPermission } from './permissions.js';
 import { isInstitutionalRole } from './roles.js';
@@ -108,10 +108,16 @@ export function AuthProvider({ children }) {
   /**
    * Re-fetch the current user from the database.
    * Call this after updating the current user's own profile.
+   *
+   * Uses the self-service `whoami` RPC (getOwnUser), not getUserById — the
+   * latter goes through list_app_users, which requires a management
+   * permission (CREATE_ANY_USER/EDIT_ANY_USER/etc.). Any logged-in user
+   * needs to be able to refresh their own profile (e.g. after changing
+   * their name from the Perfil screen), not just users with those grants.
    */
   const refreshUser = useCallback(async () => {
     if (!currentUser) return;
-    const fresh = await getUserById(currentUser.id);
+    const fresh = await getOwnUser();
     setCurrentUser(await withRole(fresh));
   }, [currentUser]);
 
