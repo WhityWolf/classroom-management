@@ -608,7 +608,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
   const [confirmDeleteRoom, setConfirmDeleteRoom] = useState(null);   // room | null
   const [confirmDeleteBlock, setConfirmDeleteBlock] = useState(null); // block | null
   const [deleting, setDeleting] = useState(false);
-  const [sortKey, setSortKey] = useState(null);   // 'label'|'block'|'cap'|'role'|'subUnit'
+  const [sortKey, setSortKey] = useState('role'); // 'label'|'block'|'type'|'cap'|'role'|'subUnit'
   const [sortDir, setSortDir] = useState('asc');
 
   const blockLabel = id => { const b=blocks.find(x=>x.id===id); return b?`${b.local} — ${b.name}`:'—'; };
@@ -636,15 +636,26 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(key); setSortDir('asc'); }
   };
+  // Desempate fixo, sempre nesta ordem (Sub-Unidade → Função → Bloco → Sala),
+  // pulando a coluna já usada como critério principal — a coluna escolhida
+  // manualmente vira o primeiro critério, o resto da hierarquia resolve os
+  // empates na ordem acima.
+  const TIEBREAK_HIERARCHY = ['subUnit', 'role', 'block', 'label'];
+  const compareByKey = (a, b, key) => {
+    const va = roomSortValue(a, key), vb = roomSortValue(b, key);
+    return typeof va === 'number' && typeof vb === 'number'
+      ? va - vb
+      : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true });
+  };
   const sortedRooms = useMemo(() => {
-    if (!sortKey) return rooms;
+    const chain = [sortKey, ...TIEBREAK_HIERARCHY.filter(k => k !== sortKey)];
     const arr = [...rooms];
     arr.sort((a, b) => {
-      const va = roomSortValue(a, sortKey), vb = roomSortValue(b, sortKey);
-      const cmp = typeof va === 'number' && typeof vb === 'number'
-        ? va - vb
-        : String(va).localeCompare(String(vb), 'pt-BR');
-      return sortDir === 'asc' ? cmp : -cmp;
+      for (let i = 0; i < chain.length; i++) {
+        const cmp = compareByKey(a, b, chain[i]);
+        if (cmp !== 0) return i === 0 && sortDir === 'desc' ? -cmp : cmp;
+      }
+      return 0;
     });
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps

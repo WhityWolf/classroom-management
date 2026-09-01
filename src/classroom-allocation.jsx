@@ -1766,7 +1766,7 @@ function RoomSection({title,rooms,alloc,courses,sel,roleId,dept,canAllocate,canD
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:theme==='light'?'#d97706':'#F59E0B'}}>{busy.length} {canMerge?'disponíveis para mescla':'ocupadas'}</span>
       </div>
       {byBlock.map(([blockLabel,bRooms])=>{
-        const bSorted=[...bRooms].sort((a,b)=>(freeSet.has(b.id)?1:0)-(freeSet.has(a.id)?1:0));
+        const bSorted=[...bRooms].sort((a,b)=>(freeSet.has(b.id)?1:0)-(freeSet.has(a.id)?1:0)||a.label.localeCompare(b.label,undefined,{numeric:true}));
         return(
           <div key={blockLabel} style={{marginBottom:14}}>
             <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:600,color:T.txt2,marginBottom:6,paddingLeft:2,letterSpacing:.5}}>{blockLabel}</div>
