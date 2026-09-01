@@ -405,6 +405,7 @@ function Dashboard(){
   const[importingCourses,setImportingCourses]=useState(false);
   const[featuresModal,  setFeaturesModal]  =useState(null);
   const[autoAllocResult,setAutoAllocResult]=useState(null);
+  const[autoAllocAskScope,setAutoAllocAskScope]=useState(false);
   const[deptPanel,      setDeptPanel]      =useState(false);
   const[notifPanel,     setNotifPanel]     =useState(false);
   const[mergeModal,     setMergeModal]     =useState(null);
@@ -499,10 +500,21 @@ function Dashboard(){
   // O algoritmo (autoAllocate) só sabe propor uma sala única pra semana toda
   // — rodar nele uma disciplina parcial sobrescreveria silenciosamente os
   // dias que o usuário já tinha colocado manualmente em salas diferentes.
-  const autoAllocInput=useMemo(()=>{
+  // "All" = universo total pra quem clica (todas as funções pra
+  // institucional vendo "Todas", só a própria função pra coordenação) — é o
+  // que sempre alimentou o botão/contador. "Mine" só faz sentido pra
+  // institucional com uma função específica selecionada no topo (não
+  // "Todas"): dá pra escolher rodar só nela em vez de em todas de uma vez —
+  // ver autoAllocAskScope/handleAutoAllocateClick abaixo.
+  const autoAllocInputAll=useMemo(()=>{
     const base=!isInstitutional?periodCourses.filter(c=>c.roleId===currentUser.roleId):periodCourses;
     return base.filter(c=>!hasAnyAllocation(c));
   },[periodCourses,isInstitutional,currentUser.roleId]);
+  const autoAllocInputMine=useMemo(()=>{
+    if(activeRoleId===ALL_ROLES)return autoAllocInputAll;
+    return periodCourses.filter(c=>c.roleId===activeRoleId&&!hasAnyAllocation(c));
+  },[periodCourses,activeRoleId,autoAllocInputAll]);
+  const autoAllocInput=autoAllocInputAll;
 
   const stats=useMemo(()=>{
     const viewingAll=activeRoleId===ALL_ROLES;
@@ -709,10 +721,23 @@ function Dashboard(){
     showToast(`Período ${trimmed} criado e selecionado.`,'ok');
   };
 
+  const runAutoAllocate=courseList=>{
+    if(courseList.length===0){showToast('Não há disciplinas para alocar.','warn');return;}
+    setAutoAllocResult(autoAllocate(courseList,visRooms,alloc));
+  };
+  // Institucional com uma função específica selecionada no topo (não
+  // "Todas") pode escolher entre alocar automaticamente só as disciplinas
+  // dessa função ou de todas de uma vez — passo extra só faz sentido aqui;
+  // com "Todas" selecionada (ou pra coordenação, que só tem a própria função
+  // de qualquer forma) não há ambiguidade de escopo, roda direto como antes.
   const handleAutoAllocate=()=>{
     if(!canManageCatalog)return;
-    if(autoAllocInput.length===0){showToast('Não há disciplinas para alocar.','warn');return;}
-    setAutoAllocResult(autoAllocate(autoAllocInput,visRooms,alloc));
+    if(isInstitutional&&activeRoleId!==ALL_ROLES){setAutoAllocAskScope(true);return;}
+    runAutoAllocate(autoAllocInputAll);
+  };
+  const handleAutoAllocateScope=scope=>{
+    setAutoAllocAskScope(false);
+    runAutoAllocate(scope==='mine'?autoAllocInputMine:autoAllocInputAll);
   };
   const handleApplyAllocation=async()=>{
     if(!autoAllocResult||!canManageCatalog)return;
@@ -998,6 +1023,7 @@ function Dashboard(){
         existingCourses={courses.filter(c=>c.roleId===targetRoleId&&c.period===selectedPeriod)}
         onConfirm={handleImportCourses} onCancel={()=>setImportingCourses(false)}/>}
       {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
+      {autoAllocAskScope&&<AutoAllocScopeModal roleName={d.full} allCount={autoAllocInputAll.length} mineCount={autoAllocInputMine.length} onChoose={handleAutoAllocateScope} onCancel={()=>setAutoAllocAskScope(false)}/>}
       {autoAllocResult&&<AutoAllocModal result={autoAllocResult} dept={d} onApply={handleApplyAllocation} onCancel={()=>setAutoAllocResult(null)}/>}
       {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={mergeModal.day} onConfirm={()=>forceAllocate(mergeModal.roomId,mergeModal.day)} onCancel={()=>setMergeModal(null)}/>}
       {dayPickerModal&&sel&&<DayPickerModal room={ROOMS.find(r=>r.id===dayPickerModal.roomId)} course={sel} dept={d} onConfirm={days=>forceAllocate(dayPickerModal.roomId,days)} onCancel={()=>setDayPickerModal(null)}/>}
@@ -1958,6 +1984,34 @@ function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,
         <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:16,flexShrink:0,borderTop:`1px solid ${T.bdr}`,paddingTop:16}}>
           <button onClick={onClose} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
           <button onClick={()=>onSave(room.id,[...selected],desc.trim())} style={{padding:'8px 20px',background:dept.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:12,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>Salvar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Escolha de escopo antes da alocação automática (só institucional com
+// uma função específica selecionada — ver handleAutoAllocate) ────────────────
+function AutoAllocScopeModal({roleName,allCount,mineCount,onChoose,onCancel}){
+  const{T,theme}=useT();
+  return(
+    <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:420,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+        <div style={{display:'flex',alignItems:'center',marginBottom:16}}>
+          <div style={{fontSize:16,fontWeight:700,color:T.txt}}>✨ Alocar Automaticamente</div>
+          <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
+        </div>
+        <div style={{fontSize:13,color:T.txt2,lineHeight:1.6,marginBottom:20}}>Você está vendo a função <strong>{roleName}</strong>. Quer alocar automaticamente as disciplinas pendentes de todas as funções, ou só as de <strong>{roleName}</strong>?</div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          <button onClick={()=>onChoose('mine')} disabled={mineCount===0}
+            style={{padding:'10px 14px',background:'#3b82f6',border:'none',borderRadius:8,color:'#fff',fontSize:13,fontWeight:600,cursor:mineCount===0?'default':'pointer',opacity:mineCount===0?.5:1,textAlign:'left'}}>
+            Apenas {roleName} <span style={{fontWeight:400,opacity:.85}}>({mineCount} disciplina{mineCount!==1?'s':''})</span>
+          </button>
+          <button onClick={()=>onChoose('all')} disabled={allCount===0}
+            style={{padding:'10px 14px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:8,color:T.txt,fontSize:13,fontWeight:600,cursor:allCount===0?'default':'pointer',opacity:allCount===0?.5:1,textAlign:'left'}}>
+            Todas as funções <span style={{fontWeight:400,color:T.dim}}>({allCount} disciplina{allCount!==1?'s':''})</span>
+          </button>
+          <button onClick={onCancel} style={{padding:'8px',background:'transparent',border:'none',borderRadius:8,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
         </div>
       </div>
     </div>
