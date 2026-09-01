@@ -14,6 +14,14 @@ import * as authApi from './db/authApi.js';
 import { useRealtimeSync } from './db/useRealtimeSync.js';
 import { supabaseConfigured } from './db/supabaseClient.js';
 import campusMapImg from './assets/campus-map.png';
+// ?url força o Vite a tratar o import como URL de asset estático mesmo
+// .xlsx não estando na lista padrão de extensões reconhecidas (que cobre
+// principalmente imagem/mídia/fonte) — sem isso, precisaria de
+// assetsInclude no vite.config.js. Modelo de exemplo pro botão "Baixar
+// modelo" em CourseImportModal — mesma cópia também em
+// scripts/data/exemplo-importacao-disciplinas.xlsx, pra quem quiser o
+// arquivo sem abrir o app.
+import importTemplateXlsx from './assets/modelo-importacao-disciplinas.xlsx?url';
 
 const DAYS  = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 // 6:00–21:00 start hours (eh can go one past the last entry, i.e. 22:00) —
@@ -152,13 +160,6 @@ function ptError(e) {
   if (msg.includes('invalid input syntax'))    return 'Formato de dado inválido em um dos campos.';
   return msg;
 }
-// Planilha (.csv/.ods/.xlsx) com uma linha por disciplina/turma — modelo
-// próprio do app (não o relatório bruto do SIGAA, que vem em blocos
-// cabeçalho+turmas e exige outra estrutura). Colunas, na ordem:
-//   Código | Nome | Turma | Docente(s) | Horário | Alunos Mat.
-// "Turma" é opcional: em branco, a linha não recebe número de turma nenhum
-// (não é inventado a partir da ordem das linhas) — só é preciso preencher
-// quando o mesmo código tem mais de uma turma no arquivo, para diferenciá-las.
 
 // Parser de CSV com suporte a campos entre aspas (a célula "Docente(s)" do
 // SIGAA costuma ter vírgulas dentro, ex. "NOME (20h), OUTRO NOME (20h)" — um
@@ -2440,7 +2441,9 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
                 <br/>Ano Período, Tipo, Situação e Local do arquivo são ignorados — o período é o já selecionado nesta tela, e turmas sem professor definido ainda entram normalmente.
                 <br/>Horário usa o código do SIGAA (ex.: <span style={mono}>35M34</span>, podendo ter mais de um bloco separado por espaço para dias com horários diferentes).
               </div>
-              <input type="file" accept=".csv,.ods,.xlsx,.xls" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}} style={{...mono,fontSize:12,color:T.txt}}/>
+              <a href={importTemplateXlsx} download="modelo-importacao-disciplinas.xlsx"
+                style={{display:'inline-block',padding:'6px 12px',marginBottom:12,background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,textDecoration:'none',cursor:'pointer'}}>⬇ Baixar modelo (.xlsx)</a>
+              <input type="file" accept=".csv,.ods,.xlsx,.xls" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}} style={{...mono,fontSize:12,color:T.txt,display:'block'}}/>
               {parseError&&<div style={{fontSize:12,color:'#ef4444',marginTop:10}}>{parseError}</div>}
             </div>
             <div style={{padding:'14px 20px',borderTop:`1px solid ${T.bdr}`,display:'flex',justifyContent:'flex-end'}}>

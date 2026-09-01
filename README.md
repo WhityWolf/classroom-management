@@ -99,7 +99,15 @@ salas e blocos novos.
   filtro por situação). Horário usa o código do SIGAA, ex. `35M34`, podendo
   ter mais de um bloco para dias diferentes. O sistema decodifica o horário,
   detecta duplicatas e mostra uma prévia (válidas / com erro) antes de
-  confirmar a substituição completa das disciplinas daquela coordenação.
+  confirmar a substituição completa das disciplinas daquela coordenação. O
+  botão "⬇ Baixar modelo (.xlsx)" na primeira etapa do modal de importação
+  baixa um arquivo de exemplo (`src/assets/modelo-importacao-disciplinas.xlsx`
+  — `.xlsx` em vez de `.csv` porque abre nativamente no Excel, sem os avisos
+  de conversão que `.ods` costuma dar; mesmo arquivo também salvo em
+  `scripts/data/exemplo-importacao-disciplinas.xlsx` pra quem quiser
+  distribuir sem abrir o app) cobrindo os casos mais comuns: mais de uma
+  turma por disciplina, mais de um docente numa turma,
+  turma sem docente definido e horário com mais de um bloco.
 - **Cadastro manual de disciplinas** — formulário para criar ou corrigir
   disciplinas pontualmente, com suporte a múltiplos blocos de horário.
 - **Alocação automática** — algoritmo que distribui as disciplinas
