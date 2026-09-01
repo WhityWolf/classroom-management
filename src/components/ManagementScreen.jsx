@@ -250,6 +250,11 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
   const [form, setForm] = useState(null);
   const [search, setSearch] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(null); // user id | null
+  // null = ordenação padrão (a que já vem do backend, por nome — ver
+  // list_app_users em schema.sql) — só entra em jogo depois que o usuário
+  // clica em alguma coluna.
+  const [sortKey, setSortKey] = useState(null); // 'name'|'username'|'role'|'status'
+  const [sortDir, setSortDir] = useState('asc');
 
   const isSystemUser = u => u.username === 'admin';
 
@@ -262,6 +267,33 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
     const q = search.toLowerCase();
     return users.filter(u => u.name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q));
   }, [users, search]);
+
+  const userSortValue = (u, key) => {
+    switch (key) {
+      case 'name': return u.name ?? '';
+      case 'username': return u.username ?? '';
+      case 'role': return gRole(u.roleId).full;
+      case 'status': return u.isActive ? 1 : 0;
+      default: return '';
+    }
+  };
+  const toggleSort = key => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const sorted = useMemo(() => {
+    if (!sortKey) return visible;
+    const arr = [...visible];
+    arr.sort((a, b) => {
+      const va = userSortValue(a, sortKey), vb = userSortValue(b, sortKey);
+      const cmp = typeof va === 'number' && typeof vb === 'number'
+        ? va - vb
+        : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true });
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, sortKey, sortDir, roles]);
 
   const save = async () => {
     if (!form.name.trim())     return flash('err', 'Informe o nome completo.');
@@ -300,10 +332,15 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
         </div>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
           <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-            {['Nome','Usuário','Função','Status',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
+            {[['Nome','name'],['Usuário','username'],['Função','role'],['Status','status'],['',null]].map(([h,key])=>(
+              <th key={h||'actions'} onClick={key?()=>toggleSort(key):undefined}
+                style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:sortKey===key?T.txt:T.dim,textTransform:'uppercase',cursor:key?'pointer':'default',userSelect:'none',whiteSpace:'nowrap'}}>
+                {h}{sortKey===key?(sortDir==='asc'?' ▲':' ▼'):''}
+              </th>
+            ))}
           </tr></thead>
           <tbody>
-            {visible.map(u=>{
+            {sorted.map(u=>{
               const role=gRole(u.roleId);
               return(
                 <tr key={u.id} style={{borderBottom:`1px solid ${T.bdr}`,opacity:u.isActive?1:.55}}>
