@@ -17,7 +17,7 @@ import { getSessionToken } from './sessionToken.js';
 
 export const mapRoom = r => ({
   id: r.id, roleId: r.role_id, blockId: r.block_id, label: r.label, cap: r.cap, type: r.type,
-  features: r.features, floor: r.floor, desc: r.description,
+  features: r.features, floor: r.floor, desc: r.description, isActive: r.is_active,
 });
 // '2026.1' fallback mirrors DEFAULT_PERIOD in classroom-allocation.jsx —
 // only hit if the `period` migration hasn't run yet on this Supabase project
@@ -60,13 +60,13 @@ export async function fetchAll() {
   return {
     subUnits: subUnitRows.map(s => ({
       id: s.id, name: s.name, fullName: s.full_name,
-      clr: s.clr, textClr: s.text_clr, bg: s.bg, lightBg: s.light_bg,
+      clr: s.clr, textClr: s.text_clr, bg: s.bg, lightBg: s.light_bg, isActive: s.is_active,
     })),
     roles: roleRows.map(r => ({
       id: r.id, subUnitId: r.sub_unit_id, name: r.name,
       permissions: r.permissions || [], isSystem: r.is_system,
     })),
-    blocks: blockRows.map(b => ({ id: b.id, local: b.local, name: b.name, mapX: b.map_x, mapY: b.map_y })),
+    blocks: blockRows.map(b => ({ id: b.id, local: b.local, name: b.name, mapX: b.map_x, mapY: b.map_y, isActive: b.is_active })),
     rooms: rooms.map(mapRoom),
     courses: courses.map(mapCourse),
     coordinationStatuses: Object.fromEntries(statusRows.map(r => [r.role_id, r.status])),

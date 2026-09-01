@@ -18,6 +18,7 @@ create table sub_units (
   text_clr   text not null,
   bg         text not null,
   light_bg   text not null,
+  is_active  boolean not null default true, -- flag administrativa (mesmo padrão de app_users.is_active) — não altera nada fora de Gerenciamento; só precisa estar false para permitir excluir
   created_at timestamptz not null default now()
 );
 
@@ -50,6 +51,7 @@ create table blocks (
   id         text primary key,        -- slug estável, ex. 'CCN1-SG-04'
   local      text not null,           -- "CCN1" (prédio/campus)
   name       text not null,           -- "SG-04", "PPG-Matemática", "PROFMAT"
+  is_active  boolean not null default true, -- flag administrativa (ver sub_units.is_active) — precisa estar false pra permitir excluir
   created_at timestamptz not null default now(),
   -- Posição do pino no Mapa do Campus, em porcentagem da largura/altura da
   -- imagem (0-100, não pixel) — assim continua válido em qualquer
@@ -68,7 +70,8 @@ create table rooms (
   type        text not null,
   features    text[] not null default '{}',
   floor       integer not null,
-  description text not null default ''
+  description text not null default '',
+  is_active   boolean not null default true -- flag administrativa (ver sub_units.is_active) — precisa estar false pra permitir excluir
 );
 create index rooms_role_idx on rooms(role_id);
 create index rooms_block_idx on rooms(block_id);
@@ -684,16 +687,22 @@ begin
   values (p_id, p_name, p_full_name, p_clr, p_text_clr, p_bg, p_light_bg);
 end; $$;
 
+-- Assinatura mudou (novo p_is_active no final) — precisa dropar a versão
+-- antiga antes, senão "create or replace" cria uma segunda função
+-- sobrecarregada em vez de substituir a existente.
+drop function if exists update_sub_unit(text,text,text,text,text,text,text,text);
 create or replace function update_sub_unit(
   p_token text, p_id text, p_name text default null, p_full_name text default null,
-  p_clr text default null, p_text_clr text default null, p_bg text default null, p_light_bg text default null
+  p_clr text default null, p_text_clr text default null, p_bg text default null, p_light_bg text default null,
+  p_is_active boolean default null
 ) returns void language plpgsql security definer set search_path = public, extensions as $$
 begin
   perform require_permission(p_token, 'MANAGE_SUB_UNITS');
   update sub_units set
     name = coalesce(p_name, name), full_name = coalesce(p_full_name, full_name),
     clr = coalesce(p_clr, clr), text_clr = coalesce(p_text_clr, text_clr),
-    bg = coalesce(p_bg, bg), light_bg = coalesce(p_light_bg, light_bg)
+    bg = coalesce(p_bg, bg), light_bg = coalesce(p_light_bg, light_bg),
+    is_active = coalesce(p_is_active, is_active)
   where id = p_id;
 end; $$;
 
@@ -745,11 +754,12 @@ begin
   insert into blocks (id, local, name) values (p_id, p_local, p_name);
 end; $$;
 
-create or replace function update_block(p_token text, p_id text, p_local text default null, p_name text default null)
+drop function if exists update_block(text,text,text,text);
+create or replace function update_block(p_token text, p_id text, p_local text default null, p_name text default null, p_is_active boolean default null)
 returns void language plpgsql security definer set search_path = public, extensions as $$
 begin
   perform require_permission(p_token, 'MANAGE_BLOCKS');
-  update blocks set local = coalesce(p_local, local), name = coalesce(p_name, name) where id = p_id;
+  update blocks set local = coalesce(p_local, local), name = coalesce(p_name, name), is_active = coalesce(p_is_active, is_active) where id = p_id;
 end; $$;
 
 create or replace function delete_block(p_token text, p_id text)
@@ -789,10 +799,12 @@ begin
   values (p_id, p_role_id, p_block_id, p_label, p_cap, p_type, p_floor, coalesce(p_features,'{}'), coalesce(p_description,''));
 end; $$;
 
+drop function if exists update_room(text,text,text,boolean,text,text,int,text,int,text[],text);
 create or replace function update_room(
   p_token text, p_id text, p_role_id text default null, p_clear_role_id boolean default false,
   p_block_id text default null, p_label text default null, p_cap int default null,
-  p_type text default null, p_floor int default null, p_features text[] default null, p_description text default null
+  p_type text default null, p_floor int default null, p_features text[] default null, p_description text default null,
+  p_is_active boolean default null
 ) returns void language plpgsql security definer set search_path = public, extensions as $$
 declare v_role_id text;
 begin
@@ -804,7 +816,8 @@ begin
     role_id = case when p_clear_role_id then null else coalesce(p_role_id, role_id) end,
     block_id = coalesce(p_block_id, block_id), label = coalesce(p_label, label),
     cap = coalesce(p_cap, cap), type = coalesce(p_type, type), floor = coalesce(p_floor, floor),
-    features = coalesce(p_features, features), description = coalesce(p_description, description)
+    features = coalesce(p_features, features), description = coalesce(p_description, description),
+    is_active = coalesce(p_is_active, is_active)
   where id = p_id;
 end; $$;
 
@@ -880,17 +893,17 @@ begin
 end; $$;
 
 revoke all on function create_sub_unit(text,text,text,text,text,text,text,text) from public;
-revoke all on function update_sub_unit(text,text,text,text,text,text,text,text) from public;
+revoke all on function update_sub_unit(text,text,text,text,text,text,text,text,boolean) from public;
 revoke all on function delete_sub_unit(text,text) from public;
 revoke all on function create_role(text,text,text,text,text[]) from public;
 revoke all on function update_role(text,text,text,text,text[],boolean) from public;
 revoke all on function delete_role_and_courses(text,text) from public;
 revoke all on function create_block(text,text,text,text) from public;
-revoke all on function update_block(text,text,text,text) from public;
+revoke all on function update_block(text,text,text,text,boolean) from public;
 revoke all on function delete_block(text,text) from public;
 revoke all on function set_block_position(text,text,numeric,numeric) from public;
 revoke all on function create_room(text,text,text,text,text,int,text,int,text[],text) from public;
-revoke all on function update_room(text,text,text,boolean,text,text,int,text,int,text[],text) from public;
+revoke all on function update_room(text,text,text,boolean,text,text,int,text,int,text[],text,boolean) from public;
 revoke all on function delete_room_and_unallocate(text,text) from public;
 revoke all on function save_room_features(text,text,text[],text) from public;
 revoke all on function add_feature_option(text,text) from public;
@@ -900,17 +913,17 @@ revoke all on function delete_period_and_courses(text,text) from public;
 revoke all on function set_current_period_override(text,text) from public;
 
 grant execute on function create_sub_unit(text,text,text,text,text,text,text,text) to anon;
-grant execute on function update_sub_unit(text,text,text,text,text,text,text,text) to anon;
+grant execute on function update_sub_unit(text,text,text,text,text,text,text,text,boolean) to anon;
 grant execute on function delete_sub_unit(text,text) to anon;
 grant execute on function create_role(text,text,text,text,text[]) to anon;
 grant execute on function update_role(text,text,text,text,text[],boolean) to anon;
 grant execute on function delete_role_and_courses(text,text) to anon;
 grant execute on function create_block(text,text,text,text) to anon;
-grant execute on function update_block(text,text,text,text) to anon;
+grant execute on function update_block(text,text,text,text,boolean) to anon;
 grant execute on function delete_block(text,text) to anon;
 grant execute on function set_block_position(text,text,numeric,numeric) to anon;
 grant execute on function create_room(text,text,text,text,text,int,text,int,text[],text) to anon;
-grant execute on function update_room(text,text,text,boolean,text,text,int,text,int,text[],text) to anon;
+grant execute on function update_room(text,text,text,boolean,text,text,int,text,int,text[],text,boolean) to anon;
 grant execute on function delete_room_and_unallocate(text,text) to anon;
 grant execute on function save_room_features(text,text,text[],text) to anon;
 grant execute on function add_feature_option(text,text) to anon;

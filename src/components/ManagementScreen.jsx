@@ -249,17 +249,19 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
   const [editing, setEditing] = useState(null); // user object | 'new' | null
   const [form, setForm] = useState(null);
   const [search, setSearch] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(null); // user id | null
-  // null = ordenação padrão (a que já vem do backend, por nome — ver
-  // list_app_users em schema.sql) — só entra em jogo depois que o usuário
-  // clica em alguma coluna.
-  const [sortKey, setSortKey] = useState(null); // 'name'|'username'|'role'|'status'
+  const [confirmDelete, setConfirmDelete] = useState(null); // user | null
+  const [deleting, setDeleting] = useState(false);
+  // Já nasce em 'name' pois é a ordenação que já vem do backend (ver
+  // list_app_users em schema.sql) — assim o indicador de coluna ativa reflete
+  // a ordenação real desde a primeira renderização, em vez de nenhuma coluna
+  // aparecer marcada enquanto a lista já está, de fato, ordenada por nome.
+  const [sortKey, setSortKey] = useState('name'); // 'name'|'username'|'role'|'status'
   const [sortDir, setSortDir] = useState('asc');
 
   const isSystemUser = u => u.username === 'admin';
 
-  const startCreate = () => { setEditing('new'); setForm({ name:'', username:'', email:'', roleId:'', password:'' }); };
-  const startEdit = u => { setEditing(u); setForm({ name:u.name, username:u.username, email:u.email, roleId:u.roleId, password:'', isActive:u.isActive }); };
+  const startCreate = () => { setEditing('new'); setForm({ name:'', username:'', email:'', roleId:'', password:'' }); setConfirmDelete(null); };
+  const startEdit = u => { setEditing(u); setForm({ name:u.name, username:u.username, email:u.email, roleId:u.roleId, password:'', isActive:u.isActive }); setConfirmDelete(null); };
   const cancel = () => { setEditing(null); setForm(null); };
 
   const visible = useMemo(() => {
@@ -318,9 +320,18 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
     try { await authApi.deactivateUser(u.id); flash('ok', `${u.name} foi desativado(a).`); reloadUsers(); }
     catch (e) { flash('err', e.message); }
   };
-  const deleteUser = async u => {
-    try { await authApi.deleteUser(u.id); flash('ok', `${u.name} foi excluído(a) permanentemente.`); setConfirmDelete(null); reloadUsers(); }
-    catch (e) { flash('err', e.message); setConfirmDelete(null); }
+  const activate = async u => {
+    try { await authApi.updateUser(u.id, { isActive:true }); flash('ok', `${u.name} foi reativado(a).`); reloadUsers(); }
+    catch (e) { flash('err', e.message); }
+  };
+  const confirmDeleteNow = async () => {
+    const u = confirmDelete;
+    setDeleting(true);
+    try {
+      await authApi.deleteUser(u.id);
+      flash('ok', `${u.name} foi excluído(a) permanentemente.`); setConfirmDelete(null); reloadUsers();
+    } catch (e) { flash('err', e.message); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -355,14 +366,8 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
                     <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                       {can(PERMS.EDIT_ANY_USER)&&<button onClick={()=>startEdit(u)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>}
                       {can(PERMS.DEACTIVATE_USER)&&u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&<button onClick={()=>deactivate(u)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Desativar</button>}
-                      {can(PERMS.DELETE_USER)&&!u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&(
-                        confirmDelete===u.id
-                          ? <>
-                              <button onClick={()=>deleteUser(u)} style={{padding:'3px 10px',background:'#ef4444',border:'none',borderRadius:4,color:'#fff',fontSize:11,cursor:'pointer',fontWeight:600}}>Confirmar</button>
-                              <button onClick={()=>setConfirmDelete(null)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
-                            </>
-                          : <button onClick={()=>setConfirmDelete(u.id)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
-                      )}
+                      {can(PERMS.EDIT_ANY_USER)&&!u.isActive&&!isSystemUser(u)&&<button onClick={()=>activate(u)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #22c55e55',borderRadius:4,color:'#22c55e',fontSize:11,cursor:'pointer'}}>Ativar</button>}
+                      {can(PERMS.DELETE_USER)&&!u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&<button onClick={()=>{cancel();setConfirmDelete(u);}} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>}
                     </div>
                   </td>
                 </tr>
@@ -371,7 +376,19 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
           </tbody>
         </table>
       </>
-    )} panel={editing&&(
+    )} panel={confirmDelete?(
+      <div>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+        <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+          O usuário <strong>{confirmDelete.name}</strong> ({confirmDelete.username}) será excluído permanentemente.
+        </div>
+        <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>
+        <div style={{display:'flex',gap:8}}>
+          <button type="button" onClick={()=>setConfirmDelete(null)} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>Cancelar</button>
+          <button type="button" onClick={confirmDeleteNow} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':'Excluir usuário'}</button>
+        </div>
+      </div>
+    ):editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
         <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Novo Usuário':'Editar Usuário'}</div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome Completo</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
@@ -410,10 +427,11 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
   const [editing, setEditing] = useState(null); // role | 'new' | null
   const [form, setForm] = useState(null);
   const [advOpen, setAdvOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(null); // {role, courseCount} | null
+  const [confirmDelete, setConfirmDelete] = useState(null); // {role, blocked, courseCount} | null
+  const [deleting, setDeleting] = useState(false);
 
-  const startCreate = () => { setForm({ id:crypto.randomUUID(), name:'', subUnitId:subUnits[0]?.id??'', permissions:[] }); setEditing('new'); setAdvOpen(false); };
-  const startEdit = r => { setForm({ id:r.id, name:r.name, subUnitId:r.subUnitId??'', permissions:[...r.permissions] }); setEditing(r); setAdvOpen(false); };
+  const startCreate = () => { setForm({ id:crypto.randomUUID(), name:'', subUnitId:subUnits[0]?.id??'', permissions:[] }); setEditing('new'); setAdvOpen(false); setConfirmDelete(null); };
+  const startEdit = r => { setForm({ id:r.id, name:r.name, subUnitId:r.subUnitId??'', permissions:[...r.permissions] }); setEditing(r); setAdvOpen(false); setConfirmDelete(null); };
   const cancel = () => { setEditing(null); setForm(null); setAdvOpen(false); };
   const togglePerm = p => setForm(f=>({...f,permissions:f.permissions.includes(p)?f.permissions.filter(x=>x!==p):[...f.permissions,p]}));
 
@@ -428,21 +446,30 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
   };
   const remove = async r => {
     if (r.isSystem) { flash('err','Esta função é protegida e não pode ser excluída.'); return; }
+    cancel();
     const linkedRooms = rooms.filter(rm=>rm.roleId===r.id);
-    if (linkedRooms.length) { flash('err',`Ainda há ${linkedRooms.length} sala(s) vinculada(s) a esta função. Desvincule-as antes de excluir.`); return; }
+    if (linkedRooms.length) {
+      setConfirmDelete({ role:r, blocked:`Ainda há ${linkedRooms.length} sala(s) vinculada(s) a esta função (${linkedRooms.map(x=>x.label).join(', ')}). Desvincule-as antes de excluir.` });
+      return;
+    }
     const linkedUsers = users.filter(u=>u.roleId===r.id);
-    if (linkedUsers.length) { flash('err',`Ainda há ${linkedUsers.length} usuário(s) vinculado(s) a esta função (incluindo desativados). Edite cada um e atribua outra função antes de excluir.`); return; }
+    if (linkedUsers.length) {
+      setConfirmDelete({ role:r, blocked:`Ainda há ${linkedUsers.length} usuário(s) vinculado(s) a esta função (incluindo desativados) (${linkedUsers.map(x=>x.name).join(', ')}). Edite cada um e atribua outra função antes de excluir.` });
+      return;
+    }
     try {
       const courseCount = await mgmt.countRoleCourses(r.id);
-      if (courseCount > 0) { setConfirmDelete({ role:r, courseCount }); return; }
-      await mgmt.deleteRoleAndCourses(r.id); flash('ok','Função excluída.'); reloadDomain();
-    } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+      setConfirmDelete({ role:r, blocked:null, courseCount });
+    } catch (e) { flash('err', `Não foi possível verificar disciplinas: ${e.message}`); }
   };
   const confirmRemove = async () => {
+    setDeleting(true);
     try {
       await mgmt.deleteRoleAndCourses(confirmDelete.role.id);
-      flash('ok','Função e disciplinas associadas excluídas.'); setConfirmDelete(null); reloadDomain();
-    } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); setConfirmDelete(null); }
+      flash('ok', confirmDelete.courseCount>0?'Função e disciplinas associadas excluídas.':'Função excluída.');
+      setConfirmDelete(null); reloadDomain();
+    } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+    finally { setDeleting(false); }
   };
   const roomsOfRole = id => rooms.filter(r=>r.roleId===id);
   const toggleRoom = async (room, checked) => {
@@ -475,12 +502,16 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
       <div>
         <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
         <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
-          A função <strong>{confirmDelete.role.name}</strong> possui <strong>{confirmDelete.courseCount} disciplina(s)</strong> associada(s) em todos os períodos. Ao excluir, todas serão removidas permanentemente.
+          {confirmDelete.blocked
+            ? confirmDelete.blocked
+            : confirmDelete.courseCount>0
+              ? <>A função <strong>{confirmDelete.role.name}</strong> possui <strong>{confirmDelete.courseCount} disciplina(s)</strong> associada(s) em todos os períodos. Ao excluir, todas serão removidas permanentemente.</>
+              : <>A função <strong>{confirmDelete.role.name}</strong> não tem nenhuma sala, usuário ou disciplina vinculada e pode ser excluída com segurança.</>}
         </div>
-        <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>
+        {!confirmDelete.blocked&&<div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>}
         <div style={{display:'flex',gap:8}}>
-          <button type="button" onClick={()=>setConfirmDelete(null)} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
-          <button type="button" onClick={confirmRemove} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Excluir tudo</button>
+          <button type="button" onClick={()=>setConfirmDelete(null)} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>{confirmDelete.blocked?'Entendi':'Cancelar'}</button>
+          {!confirmDelete.blocked&&<button type="button" onClick={confirmRemove} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':confirmDelete.courseCount>0?'Excluir tudo':'Excluir função'}</button>}
         </div>
       </div>
     ):editing&&(
@@ -555,14 +586,16 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
 
 // ─── Aba Sub-unidades ─────────────────────────────────────────────────────────
 function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
-  const { T } = useT();
+  const { T, theme } = useT();
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
   const [colorOpen, setColorOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // {subUnit, blocked} | null
+  const [deleting, setDeleting] = useState(false);
   const DEFAULT_COLORS = { clr:'#60A5FA', textClr:'#1d4ed8', bg:'#0d1f3d', lightBg:'#eff6ff' };
 
-  const startCreate = () => { setForm({ id:crypto.randomUUID(), name:'', fullName:'', ...DEFAULT_COLORS }); setEditing('new'); setColorOpen(false); };
-  const startEdit = s => { setForm({ ...s }); setEditing(s); };
+  const startCreate = () => { setForm({ id:crypto.randomUUID(), name:'', fullName:'', ...DEFAULT_COLORS }); setEditing('new'); setColorOpen(false); setConfirmDelete(null); };
+  const startEdit = s => { setForm({ ...s }); setEditing(s); setConfirmDelete(null); };
   const cancel = () => { setEditing(null); setForm(null); };
 
   const save = async () => {
@@ -574,11 +607,28 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
       flash('ok','Sub-unidade salva.'); cancel(); reloadDomain();
     } catch (e) { flash('err', ptError(e)); }
   };
-  const remove = async s => {
+  const toggleActive = async s => {
+    try {
+      await mgmt.setSubUnitActive(s.id, !s.isActive);
+      flash('ok', s.isActive ? `${s.fullName} foi desativada.` : `${s.fullName} foi reativada.`);
+      reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+  };
+  const remove = s => {
+    cancel();
     const linked = roles.filter(r=>r.subUnitId===s.id);
-    if (linked.length) { flash('err',`Ainda há ${linked.length} função(ões) vinculada(s) a esta sub-unidade. Remova-as ou reatribua-as antes de excluir.`); return; }
-    try { await mgmt.deleteSubUnit(s.id); flash('ok','Sub-unidade excluída.'); reloadDomain(); }
-    catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+    setConfirmDelete({
+      subUnit: s,
+      blocked: linked.length ? `Ainda há ${linked.length} função(ões) vinculada(s) a esta sub-unidade (${linked.map(r=>r.name).join(', ')}). Remova-as ou reatribua-as antes de excluir.` : null,
+    });
+  };
+  const confirmRemoveNow = async () => {
+    setDeleting(true);
+    try {
+      await mgmt.deleteSubUnit(confirmDelete.subUnit.id);
+      flash('ok','Sub-unidade excluída.'); setConfirmDelete(null); reloadDomain();
+    } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -587,19 +637,38 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
         {can(PERMS.MANAGE_SUB_UNITS)&&<button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sub-unidade</button>}
         <div style={{display:'flex',flexDirection:'column',gap:8}}>
           {subUnits.map(s=>(
-            <div key={s.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
+            <div key={s.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12,opacity:s.isActive?1:.55}}>
               <div style={{width:3,height:28,borderRadius:1,background:s.clr}}/>
               <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:600,color:T.txt}}>{s.fullName}</div>
+                <div style={{fontSize:13,fontWeight:600,color:T.txt}}>{s.fullName}{!s.isActive&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginLeft:6}}>(inativa)</span>}</div>
                 <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{s.name&&<span style={{marginRight:8}}>{s.name}</span>}{roles.filter(r=>r.subUnitId===s.id).length} funções</div>
               </div>
               <button onClick={()=>startEdit(s)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
-              <button onClick={()=>remove(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+              {s.isActive
+                ? <button onClick={()=>toggleActive(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Desativar</button>
+                : <>
+                    <button onClick={()=>toggleActive(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #22c55e55',borderRadius:5,color:'#22c55e',fontSize:11,cursor:'pointer'}}>Ativar</button>
+                    <button onClick={()=>remove(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                  </>}
             </div>
           ))}
         </div>
       </>
-    )} panel={editing&&(
+    )} panel={confirmDelete?(
+      <div>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+        <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+          {confirmDelete.blocked
+            ? confirmDelete.blocked
+            : <>A sub-unidade <strong>{confirmDelete.subUnit.fullName}</strong> não tem nenhuma função vinculada e pode ser excluída com segurança.</>}
+        </div>
+        {!confirmDelete.blocked&&<div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>}
+        <div style={{display:'flex',gap:8}}>
+          <button type="button" onClick={()=>setConfirmDelete(null)} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>{confirmDelete.blocked?'Entendi':'Cancelar'}</button>
+          {!confirmDelete.blocked&&<button type="button" onClick={confirmRemoveNow} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':'Excluir sub-unidade'}</button>}
+        </div>
+      </div>
+    ):editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
         <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Nova Sub-unidade':'Editar Sub-unidade'}</div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome curto</label><input value={form.name} maxLength={20} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
@@ -711,6 +780,13 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
       flash('ok','Sala salva.'); cancelRoom(); reloadDomain();
     } catch (e) { flash('err', ptError(e)); }
   };
+  const toggleRoomActive = async r => {
+    try {
+      await mgmt.setRoomActive(r.id, !r.isActive);
+      flash('ok', r.isActive ? `Sala ${r.label} foi desativada.` : `Sala ${r.label} foi reativada.`);
+      reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+  };
   const startDeleteRoom = r => { setConfirmDeleteRoom(r); cancelRoom(); setConfirmDeleteBlock(null); };
   const cancelDeleteRoom = () => setConfirmDeleteRoom(null);
   const confirmDeleteRoomNow = async () => {
@@ -735,6 +811,13 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
       if (editingBlock==='new') await mgmt.createBlock(blockForm);
       else await mgmt.updateBlock(editingBlock.id, blockForm);
       flash('ok','Bloco salvo.'); cancelBlock(); reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+  };
+  const toggleBlockActive = async b => {
+    try {
+      await mgmt.setBlockActive(b.id, !b.isActive);
+      flash('ok', b.isActive ? `Bloco ${b.local} — ${b.name} foi desativado.` : `Bloco ${b.local} — ${b.name} foi reativado.`);
+      reloadDomain();
     } catch (e) { flash('err', ptError(e)); }
   };
   const startDeleteBlock = b => { setConfirmDeleteBlock(b); cancelBlock(); setConfirmDeleteRoom(null); };
@@ -778,17 +861,22 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
                   const su=roleObj?.subUnitId?subUnits.find(s=>s.id===roleObj.subUnitId):null;
                   const roleLabel=roleLabelOf(r);
                   return(
-                    <tr key={r.id} style={{borderBottom:`1px solid ${T.bdr}`}}>
-                      <td style={{padding:'7px 10px'}}>{r.label}</td>
+                    <tr key={r.id} style={{borderBottom:`1px solid ${T.bdr}`,opacity:r.isActive?1:.55}}>
+                      <td style={{padding:'7px 10px'}}>{r.label}{!r.isActive&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginLeft:6}}>(inativa)</span>}</td>
                       <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{blockLabel(r.blockId)}</td>
                       <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{r.type}</td>
                       <td style={{padding:'7px 10px'}}>{r.cap}</td>
                       <td style={{padding:'7px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:role.textClr,background:`${role.clr}22`,borderRadius:4,padding:'2px 6px'}}>{roleLabel}</span></td>
                       <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{su?su.fullName:'—'}</td>
                       <td style={{padding:'7px 10px'}}>
-                        <div style={{display:'flex',gap:6}}>
+                        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                           <button onClick={()=>startEditRoom(r)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
-                          <button onClick={()=>startDeleteRoom(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                          {r.isActive
+                            ? <button onClick={()=>toggleRoomActive(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Desativar</button>
+                            : <>
+                                <button onClick={()=>toggleRoomActive(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #22c55e55',borderRadius:4,color:'#22c55e',fontSize:11,cursor:'pointer'}}>Ativar</button>
+                                <button onClick={()=>startDeleteRoom(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                              </>}
                         </div>
                       </td>
                     </tr>
@@ -802,10 +890,15 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
             {can(PERMS.MANAGE_BLOCKS)&&<button onClick={startCreateBlock} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Novo Bloco</button>}
             <div style={{display:'flex',flexDirection:'column',gap:8}}>
               {blocks.map(b=>(
-                <div key={b.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{flex:1,fontSize:13,color:T.txt}}>{b.local} — {b.name}</div>
+                <div key={b.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12,opacity:b.isActive?1:.55}}>
+                  <div style={{flex:1,fontSize:13,color:T.txt}}>{b.local} — {b.name}{!b.isActive&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginLeft:6}}>(inativo)</span>}</div>
                   <button onClick={()=>startEditBlock(b)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
-                  <button onClick={()=>startDeleteBlock(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                  {b.isActive
+                    ? <button onClick={()=>toggleBlockActive(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Desativar</button>
+                    : <>
+                        <button onClick={()=>toggleBlockActive(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #22c55e55',borderRadius:5,color:'#22c55e',fontSize:11,cursor:'pointer'}}>Ativar</button>
+                        <button onClick={()=>startDeleteBlock(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                      </>}
                 </div>
               ))}
             </div>
@@ -864,7 +957,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
             </select>
           </div>
           <div style={{marginBottom:16}}>
-            <label style={lblStyle(T)}>Função dona (vazio = compartilhada)</label>
+            <label style={lblStyle(T)}>Função Dona</label>
             <select value={roomForm.roleId} onChange={e=>setRoomForm({...roomForm,roleId:e.target.value})} style={{...inpStyle(T),cursor:'pointer'}}>
               <option value="" style={{fontWeight:'bold'}}>{roles.find(r=>r.isSystem)?.name??'Diretoria'}</option>
               {subUnits.map(su=>{
