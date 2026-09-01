@@ -406,6 +406,7 @@ function Dashboard(){
   const[importingCourses,setImportingCourses]=useState(false);
   const[featuresModal,  setFeaturesModal]  =useState(null);
   const[autoAllocResult,setAutoAllocResult]=useState(null);
+  const[autoAllocConfirm,setAutoAllocConfirm]=useState(false);
   const[autoAllocAskScope,setAutoAllocAskScope]=useState(false);
   const[deptPanel,      setDeptPanel]      =useState(false);
   const[notifPanel,     setNotifPanel]     =useState(false);
@@ -726,13 +727,21 @@ function Dashboard(){
     if(courseList.length===0){showToast('Não há disciplinas para alocar.','warn');return;}
     setAutoAllocResult(autoAllocate(courseList,visRooms,alloc));
   };
+  // Sempre mostra o aviso primeiro — o algoritmo (autoAllocate) só olha
+  // capacidade e disponibilidade de horário, nunca tipo/recursos da sala,
+  // então disciplinas que precisam de uma sala específica (ex.: laboratório)
+  // podem acabar numa sala comum se não forem alocadas manualmente antes.
+  const handleAutoAllocate=()=>{
+    if(!canManageCatalog)return;
+    setAutoAllocConfirm(true);
+  };
   // Institucional com uma função específica selecionada no topo (não
   // "Todas") pode escolher entre alocar automaticamente só as disciplinas
   // dessa função ou de todas de uma vez — passo extra só faz sentido aqui;
   // com "Todas" selecionada (ou pra coordenação, que só tem a própria função
   // de qualquer forma) não há ambiguidade de escopo, roda direto como antes.
-  const handleAutoAllocate=()=>{
-    if(!canManageCatalog)return;
+  const confirmAutoAllocateWarning=()=>{
+    setAutoAllocConfirm(false);
     if(isInstitutional&&activeRoleId!==ALL_ROLES){setAutoAllocAskScope(true);return;}
     runAutoAllocate(autoAllocInputAll);
   };
@@ -1024,6 +1033,7 @@ function Dashboard(){
         existingCourses={courses.filter(c=>c.roleId===targetRoleId&&c.period===selectedPeriod)}
         onConfirm={handleImportCourses} onCancel={()=>setImportingCourses(false)}/>}
       {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
+      {autoAllocConfirm&&<AutoAllocWarningModal onConfirm={confirmAutoAllocateWarning} onCancel={()=>setAutoAllocConfirm(false)}/>}
       {autoAllocAskScope&&<AutoAllocScopeModal roleName={d.full} allCount={autoAllocInputAll.length} mineCount={autoAllocInputMine.length} onChoose={handleAutoAllocateScope} onCancel={()=>setAutoAllocAskScope(false)}/>}
       {autoAllocResult&&<AutoAllocModal result={autoAllocResult} dept={d} onApply={handleApplyAllocation} onCancel={()=>setAutoAllocResult(null)}/>}
       {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={mergeModal.day} onConfirm={()=>forceAllocate(mergeModal.roomId,mergeModal.day)} onCancel={()=>setMergeModal(null)}/>}
@@ -1985,6 +1995,32 @@ function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,
         <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:16,flexShrink:0,borderTop:`1px solid ${T.bdr}`,paddingTop:16}}>
           <button onClick={onClose} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
           <button onClick={()=>onSave(room.id,[...selected],desc.trim())} style={{padding:'8px 20px',background:dept.clr,border:'none',borderRadius:7,color:theme==='light'?'#fff':'#000',fontSize:12,fontWeight:700,cursor:'pointer'}} onMouseEnter={e=>e.currentTarget.style.filter='brightness(1.08)'} onMouseLeave={e=>e.currentTarget.style.filter='none'}>Salvar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Aviso antes da alocação automática — o algoritmo (autoAllocate) só
+// considera capacidade e disponibilidade de horário, nunca tipo/recursos da
+// sala, então disciplinas que precisam de uma sala específica (laboratório,
+// projetor etc.) devem ser alocadas manualmente antes ─────────────────────
+function AutoAllocWarningModal({onConfirm,onCancel}){
+  const{T,theme}=useT();
+  return(
+    <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:440,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+        <div style={{display:'flex',alignItems:'center',marginBottom:16}}>
+          <div style={{fontSize:16,fontWeight:700,color:T.txt}}>✨ Alocar Automaticamente</div>
+          <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
+        </div>
+        <div style={{background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:13,color:theme==='light'?'#b45309':'#FBBF24',lineHeight:1.6}}>
+          ⚠ A alocação automática só considera capacidade e horário livre — ela <strong>não sabe</strong> que uma disciplina precisa de um tipo específico de sala (ex.: um laboratório) e pode colocá-la numa sala comum.
+        </div>
+        <div style={{fontSize:13,color:T.txt2,lineHeight:1.6,marginBottom:20}}>Aloque manualmente as disciplinas que dependem de uma sala específica antes de continuar. Quer prosseguir com a alocação automática para as demais disciplinas pendentes?</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={onConfirm} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,background:'#3b82f6',border:'none',color:'#fff',cursor:'pointer'}}>Continuar</button>
         </div>
       </div>
     </div>
