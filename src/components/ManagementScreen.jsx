@@ -608,10 +608,46 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
   const [confirmDeleteRoom, setConfirmDeleteRoom] = useState(null);   // room | null
   const [confirmDeleteBlock, setConfirmDeleteBlock] = useState(null); // block | null
   const [deleting, setDeleting] = useState(false);
+  const [sortKey, setSortKey] = useState(null);   // 'label'|'block'|'cap'|'role'|'subUnit'
+  const [sortDir, setSortDir] = useState('asc');
 
   const blockLabel = id => { const b=blocks.find(x=>x.id===id); return b?`${b.local} — ${b.name}`:'—'; };
   const roomCoursesOf = r => courses.filter(c => Object.values(c.roomByDay).includes(r.id));
   const roomsOfBlock = b => rooms.filter(r => r.blockId === b.id);
+
+  const roleLabelOf = r => r.roleId ? gRole(r.roleId).full : (roles.find(ro=>ro.isSystem)?.name??'Diretoria');
+  const subUnitLabelOf = r => {
+    const roleObj = roles.find(ro=>ro.id===r.roleId);
+    const su = roleObj?.subUnitId ? subUnits.find(s=>s.id===roleObj.subUnitId) : null;
+    return su ? su.fullName : '';
+  };
+  const roomSortValue = (r, key) => {
+    switch (key) {
+      case 'label': return r.label ?? '';
+      case 'block': return blockLabel(r.blockId);
+      case 'cap': return r.cap ?? 0;
+      case 'role': return roleLabelOf(r);
+      case 'subUnit': return subUnitLabelOf(r);
+      default: return '';
+    }
+  };
+  const toggleSort = key => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const sortedRooms = useMemo(() => {
+    if (!sortKey) return rooms;
+    const arr = [...rooms];
+    arr.sort((a, b) => {
+      const va = roomSortValue(a, sortKey), vb = roomSortValue(b, sortKey);
+      const cmp = typeof va === 'number' && typeof vb === 'number'
+        ? va - vb
+        : String(va).localeCompare(String(vb), 'pt-BR');
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rooms, sortKey, sortDir, blocks, roles, subUnits]);
 
   const startCreateRoom = () => { setRoomForm({ id:crypto.randomUUID(), label:'', cap:30, type:'Sala de Aula', floor:1, blockId:blocks[0]?.id??'', roleId:'', features:[], description:'' }); setEditingRoom('new'); setConfirmDeleteRoom(null); };
   const startEditRoom = r => { setRoomForm({ ...r, roleId:r.roleId??'' }); setEditingRoom(r); setConfirmDeleteRoom(null); };
@@ -679,14 +715,19 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
             {can(PERMS.MANAGE_ROOMS)&&<button onClick={startCreateRoom} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sala</button>}
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
               <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-                {['Sala','Bloco','Vagas','Função','Sub-unidade',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
+                {[['Sala','label'],['Bloco','block'],['Vagas','cap'],['Função','role'],['Sub-unidade','subUnit'],[ '',null]].map(([h,key])=>(
+                  <th key={h||'actions'} onClick={key?()=>toggleSort(key):undefined}
+                    style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:sortKey===key?T.txt:T.dim,textTransform:'uppercase',cursor:key?'pointer':'default',userSelect:'none',whiteSpace:'nowrap'}}>
+                    {h}{sortKey===key?(sortDir==='asc'?' ▲':' ▼'):''}
+                  </th>
+                ))}
               </tr></thead>
               <tbody>
-                {rooms.map(r=>{
+                {sortedRooms.map(r=>{
                   const role=gRole(r.roleId);
                   const roleObj=roles.find(ro=>ro.id===r.roleId);
                   const su=roleObj?.subUnitId?subUnits.find(s=>s.id===roleObj.subUnitId):null;
-                  const roleLabel=r.roleId?role.full:(roles.find(ro=>ro.isSystem)?.name??'Diretoria');
+                  const roleLabel=roleLabelOf(r);
                   return(
                     <tr key={r.id} style={{borderBottom:`1px solid ${T.bdr}`}}>
                       <td style={{padding:'7px 10px'}}>{r.label}</td>
