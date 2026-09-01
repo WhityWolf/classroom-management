@@ -625,6 +625,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
     switch (key) {
       case 'label': return r.label ?? '';
       case 'block': return blockLabel(r.blockId);
+      case 'type': return r.type ?? '';
       case 'cap': return r.cap ?? 0;
       case 'role': return roleLabelOf(r);
       case 'subUnit': return subUnitLabelOf(r);
@@ -715,7 +716,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
             {can(PERMS.MANAGE_ROOMS)&&<button onClick={startCreateRoom} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sala</button>}
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
               <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-                {[['Sala','label'],['Bloco','block'],['Vagas','cap'],['Função','role'],['Sub-unidade','subUnit'],[ '',null]].map(([h,key])=>(
+                {[['Sala','label'],['Bloco','block'],['Tipo','type'],['Vagas','cap'],['Função','role'],['Sub-unidade','subUnit'],[ '',null]].map(([h,key])=>(
                   <th key={h||'actions'} onClick={key?()=>toggleSort(key):undefined}
                     style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:sortKey===key?T.txt:T.dim,textTransform:'uppercase',cursor:key?'pointer':'default',userSelect:'none',whiteSpace:'nowrap'}}>
                     {h}{sortKey===key?(sortDir==='asc'?' ▲':' ▼'):''}
@@ -732,6 +733,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
                     <tr key={r.id} style={{borderBottom:`1px solid ${T.bdr}`}}>
                       <td style={{padding:'7px 10px'}}>{r.label}</td>
                       <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{blockLabel(r.blockId)}</td>
+                      <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{r.type}</td>
                       <td style={{padding:'7px 10px'}}>{r.cap}</td>
                       <td style={{padding:'7px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:role.textClr,background:`${role.clr}22`,borderRadius:4,padding:'2px 6px'}}>{roleLabel}</span></td>
                       <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{su?su.fullName:'—'}</td>

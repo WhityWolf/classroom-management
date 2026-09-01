@@ -1172,7 +1172,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPerio
       return`<div class="room-card" style="${isLast?'':'page-break-after:always;'}">`
         +`<div class="room-hdr" style="border-left:3px solid ${rd.clr}">`
         +`<div class="room-ctx">${escapeHtml(deptName)} · ${escapeHtml(blockLabel)}</div>`
-        +`<div class="room-title" style="color:${rd.textClr}" title="${escapeHtml(`${room.cap} alunos · ${responsible}`)}">Sala ${escapeHtml(room.label)}</div>`
+        +`<div class="room-title" style="color:${rd.textClr}" title="${escapeHtml(`${room.type} · ${room.cap} alunos · ${responsible}`)}">Sala ${escapeHtml(room.label)}</div>`
         +`</div>`
         +`<table><thead><tr><th class="hth">Horário</th>${thDays}</tr></thead><tbody>${bodyRows}</tbody></table>`
         +`<div class="room-meta">Período ${escapeHtml(selectedPeriod)} · Gerado em ${dateStr}</div>`
@@ -1331,7 +1331,7 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
                       return(
                         <div key={room.id} style={{flex:'1 1 620px',minWidth:520,border:`1px solid ${tableBdrClr}`,borderRadius:8,overflow:'hidden',background:T.surface}}>
                           <div style={{padding:'6px 10px',borderBottom:`1px solid ${tableBdrClr}`,borderLeft:`3px solid ${rdR.clr}`,background:`${rdR.clr}${theme==='light'?'10':'0a'}`,textAlign:'center'}}>
-                            <span title={`${room.cap} alunos · ${getRoomResponsible(room)}`} style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:700,color:rdRClr,cursor:'help'}}>Sala {room.label}</span>
+                            <span title={`${room.type} · ${room.cap} alunos · ${getRoomResponsible(room)}`} style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:700,color:rdRClr,cursor:'help'}}>Sala {room.label}</span>
                           </div>
                           <div>
                       <table style={{borderCollapse:'collapse',width:'100%',tableLayout:'fixed'}}>
