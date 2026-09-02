@@ -1617,7 +1617,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
       </div>
 
-      <div style={{flex:1,display:'flex',overflow:'hidden'}}>
+      <div style={{flex:1,minHeight:0,display:'flex',overflow:'hidden'}}>
         {editing?(
           <div style={{width:260,flexShrink:0,borderRight:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14}}>
             <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:4}}>Blocos sem posição</div>
@@ -1637,11 +1637,19 @@ function CampusMapScreen({blocks,rooms,onBack}){
           </div>
         ):renderBlockPanel('CCN2','left')}
 
-        <div style={{flex:1,overflow:'auto',position:'relative',background:'#dfe3e0',display:'flex',alignItems:'flex-start',justifyContent:'center'}}>
+        <div style={{flex:1,minWidth:0,minHeight:0,overflow:'hidden',position:'relative',background:'#dfe3e0',display:'flex',alignItems:'center',justifyContent:'center'}}>
+          {/* aspectRatio+max-w/h (em vez de um width fixo em px) faz esse
+          wrapper ocupar o maior tamanho possível preservando a proporção da
+          imagem sem nunca estourar o espaço disponível — a tela inteira cabe
+          sem precisar rolar, em qualquer resolução. Os pinos continuam
+          posicionados por % em cima desse wrapper (não da imagem em si), e
+          como o wrapper agora tem exatamente o formato/tamanho renderizado
+          da imagem (sem sobra tipo letterbox), a matemática de % continua
+          válida sem nenhuma mudança. */}
           <div ref={imgWrapRef} onClick={handleMapClick}
-            style={{position:'relative',display:'inline-block',cursor:editing&&placingId?'crosshair':'default'}}>
+            style={{position:'relative',aspectRatio:'2906/2124',maxWidth:'100%',maxHeight:'100%',width:'auto',height:'auto',cursor:editing&&placingId?'crosshair':'default'}}>
             <img src={campusMapImg} alt="Mapa do campus" draggable={false}
-              style={{display:'block',maxWidth:'none',width:1400,userSelect:'none'}}/>
+              style={{display:'block',width:'100%',height:'100%',userSelect:'none'}}/>
 
             {positioned.map(b=>{
               const isDragging=dragId===b.id;
