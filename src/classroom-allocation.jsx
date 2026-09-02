@@ -1527,6 +1527,17 @@ function CampusMapScreen({blocks,rooms,onBack}){
     return{x:Math.max(0,Math.min(100,x)),y:Math.max(0,Math.min(100,y))};
   };
 
+  // block.mapX/mapY só existe em relação ao mapa geral — clicar/arrastar
+  // num dos recortes com zoom dá uma posição % relativa àquela imagem, que
+  // precisa passar por lat/lon (mesmo mecanismo de pinsToRender, só que ao
+  // contrário) antes de virar a posição geral que de fato é salva. No
+  // próprio mapa geral isso é a identidade (sem custo extra).
+  const toGeralPct=(x,y)=>{
+    if(mapView==='geral')return{x,y};
+    const{lat,lon}=pctToLatLng(mapView,x,y);
+    return latLngToPct('geral',lat,lon);
+  };
+
   const savePosition=async(blockId,x,y)=>{
     setSaving(true);
     try{ await mgmt.setBlockPosition(blockId,x,y); }
@@ -1536,7 +1547,8 @@ function CampusMapScreen({blocks,rooms,onBack}){
 
   const handleMapClick=e=>{
     if(!editing||!placingId||dragId)return;
-    const{x,y}=posFromEvent(e);
+    const clicked=posFromEvent(e);
+    const{x,y}=toGeralPct(clicked.x,clicked.y);
     const id=placingId;
     setPlacingId(null);
     savePosition(id,x,y).then(()=>showToast('Posição definida.'));
@@ -1544,12 +1556,15 @@ function CampusMapScreen({blocks,rooms,onBack}){
 
   // Arraste: acompanha o mouse na janela inteira (o cursor pode sair do
   // pino durante o arraste), só grava no banco no mouseup — sem isso, cada
-  // pixel de movimento viraria uma chamada de rede.
+  // pixel de movimento viraria uma chamada de rede. dragPos fica no espaço
+  // % da imagem exibida no momento (é só pra prévia visual do próprio
+  // pino); a conversão pro mapa geral só acontece na hora de salvar.
   useEffect(()=>{
     if(!dragId)return;
     const onMove=e=>setDragPos(posFromEvent(e));
     const onUp=e=>{
-      const{x,y}=posFromEvent(e);
+      const dropped=posFromEvent(e);
+      const{x,y}=toGeralPct(dropped.x,dropped.y);
       const id=dragId;
       setDragId(null);setDragPos(null);
       savePosition(id,x,y).then(()=>showToast('Posição atualizada.'));
@@ -1637,21 +1652,19 @@ function CampusMapScreen({blocks,rooms,onBack}){
         <span style={{fontSize:14,fontWeight:700,color:T.txt}}>📍 Localização de Salas</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
         <span style={{...mono,fontSize:11,color:T.dim}}>{pinsToRender.length} bloco{pinsToRender.length!==1?'s':''} no mapa{mapView==='geral'&&unpositioned.length>0?` · ${unpositioned.length} sem posição`:''}</span>
-        {!editing&&(
-          <div style={{display:'flex',gap:3,background:T.inner,padding:3,borderRadius:8,border:`1px solid ${T.bdr2}`,marginLeft:6}}>
-            {Object.entries(CAMPUS_MAPS).map(([key,m])=>(
-              <button key={key} onClick={()=>setMapView(key)}
-                style={{padding:'4px 11px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,
-                  background:mapView===key?'#3b82f6':'transparent',color:mapView===key?'#fff':T.muted}}>
-                {m.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div style={{display:'flex',gap:3,background:T.inner,padding:3,borderRadius:8,border:`1px solid ${T.bdr2}`,marginLeft:6}}>
+          {Object.entries(CAMPUS_MAPS).map(([key,m])=>(
+            <button key={key} onClick={()=>setMapView(key)}
+              style={{padding:'4px 11px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,
+                background:mapView===key?'#3b82f6':'transparent',color:mapView===key?'#fff':T.muted}}>
+              {m.label}
+            </button>
+          ))}
+        </div>
         <div style={{flex:1}}/>
         {saving&&<span style={{...mono,fontSize:10,color:T.dim}}>Salvando…</span>}
         {canEdit&&(
-          <button className="icon-btn" onClick={()=>{if(editing){stopEditing();}else{setMapView('geral');setEditing(true);}}}
+          <button className="icon-btn" onClick={()=>editing?stopEditing():setEditing(true)}
             style={{padding:'5px 12px',background:editing?'#3b82f6':T.inner,border:`1px solid ${editing?'#3b82f6':T.bdr2}`,borderRadius:6,color:editing?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
             {editing?'✕ Concluir edição':'✎ Editar posições'}
           </button>
@@ -1664,7 +1677,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
           <div style={{width:260,flexShrink:0,borderRight:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14}}>
             <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:4}}>Blocos sem posição</div>
             <div style={{fontSize:11,color:T.dim,marginBottom:12,lineHeight:1.5}}>
-              Clique num bloco da lista e depois clique no mapa pra posicioná-lo. Pra reposicionar um que já está no mapa, arraste o pino direto.
+              Clique num bloco da lista e depois clique no mapa pra posicioná-lo. Pra reposicionar um que já está no mapa, arraste o pino direto. Dá pra trocar pro mapa do CCN1/CCN2 pra mirar com mais precisão — a posição é convertida de volta pro mapa geral automaticamente.
             </div>
             {unpositioned.length===0?(
               <div style={{fontSize:11,color:T.dim,fontStyle:'italic'}}>Todos os blocos já têm posição definida.</div>
