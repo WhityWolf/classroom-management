@@ -698,6 +698,8 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
 }
 
 // ─── Aba Salas e Blocos ───────────────────────────────────────────────────────
+const KNOWN_CENTROS = ['CCN1', 'CCN2'];
+
 function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDomain, flash, gRole }) {
   const { T, theme } = useT();
   const [sub, setSub] = useState('rooms'); // 'rooms' | 'blocks'
@@ -705,6 +707,11 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
   const [roomForm, setRoomForm] = useState(null);
   const [editingBlock, setEditingBlock] = useState(null);
   const [blockForm, setBlockForm] = useState(null);
+  // Centro do bloco continua um campo de texto livre no banco (não é um
+  // enum) — CCN1/CCN2 são só atalhos pros dois valores reais que existem
+  // hoje; "Outro…" troca pra um <input> de texto livre, pra não travar
+  // quem precisar cadastrar um centro novo.
+  const [blockCentroCustom, setBlockCentroCustom] = useState(false);
   // Sala: sem FK real pra courses (room_by_day é jsonb — soft reference),
   // então excluir não é bloqueado pelo banco; mostramos quantas disciplinas
   // seriam desalocadas antes de confirmar. Bloco: TEM FK real
@@ -802,8 +809,8 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
     finally { setDeleting(false); }
   };
 
-  const startCreateBlock = () => { setBlockForm({ id:crypto.randomUUID(), local:'', name:'' }); setEditingBlock('new'); setConfirmDeleteBlock(null); };
-  const startEditBlock = b => { setBlockForm({ ...b }); setEditingBlock(b); setConfirmDeleteBlock(null); };
+  const startCreateBlock = () => { setBlockForm({ id:crypto.randomUUID(), local:'', name:'' }); setEditingBlock('new'); setConfirmDeleteBlock(null); setBlockCentroCustom(false); };
+  const startEditBlock = b => { setBlockForm({ ...b }); setEditingBlock(b); setConfirmDeleteBlock(null); setBlockCentroCustom(!KNOWN_CENTROS.includes(b.local)); };
   const cancelBlock = () => { setEditingBlock(null); setBlockForm(null); };
   const saveBlock = async () => {
     if (!blockForm.local.trim()) return flash('err', 'Informe o centro do bloco.');
@@ -976,7 +983,29 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
       ):editingBlock?(
         <form onSubmit={e=>{e.preventDefault();saveBlock();}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editingBlock==='new'?'Novo Bloco':'Editar Bloco'}</div>
-          <div style={{marginBottom:12}}><label style={lblStyle(T)}>Centro (ex.: CCN1)</label><input value={blockForm.local} onChange={e=>setBlockForm({...blockForm,local:e.target.value})} style={inpStyle(T)}/></div>
+          <div style={{marginBottom:12}}>
+            <label style={lblStyle(T)}>Centro</label>
+            {blockCentroCustom?(
+              <>
+                <input autoFocus value={blockForm.local} onChange={e=>setBlockForm({...blockForm,local:e.target.value})} placeholder="Digite o centro" style={inpStyle(T)}/>
+                <button type="button" onClick={()=>{setBlockCentroCustom(false);setBlockForm({...blockForm,local:''});}}
+                  style={{marginTop:4,background:'none',border:'none',padding:0,color:T.dim,fontSize:10,cursor:'pointer',textDecoration:'underline'}}>
+                  ← escolher CCN1/CCN2
+                </button>
+              </>
+            ):(
+              <select value={KNOWN_CENTROS.includes(blockForm.local)?blockForm.local:''}
+                onChange={e=>{
+                  if(e.target.value==='__custom__'){ setBlockCentroCustom(true); setBlockForm({...blockForm,local:''}); }
+                  else setBlockForm({...blockForm,local:e.target.value});
+                }}
+                style={{...inpStyle(T),cursor:'pointer'}}>
+                <option value="" disabled>Selecione…</option>
+                {KNOWN_CENTROS.map(c=><option key={c} value={c}>{c}</option>)}
+                <option value="__custom__">Outro…</option>
+              </select>
+            )}
+          </div>
           <div style={{marginBottom:16}}><label style={lblStyle(T)}>Nome do bloco (ex.: SG-04)</label><input value={blockForm.name} onChange={e=>setBlockForm({...blockForm,name:e.target.value})} style={inpStyle(T)}/></div>
           <div style={{display:'flex',gap:8}}>
             <button type="button" onClick={cancelBlock} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
