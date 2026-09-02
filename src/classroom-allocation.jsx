@@ -1431,6 +1431,34 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
 // Posição de cada pino é salva como porcentagem da imagem (block.mapX/mapY,
 // 0-100), não pixel — continua válida em qualquer tamanho de tela ou se a
 // imagem for trocada por uma versão de resolução diferente depois. ─────────
+// Converte a posição percentual de um pino (block.mapX/mapY, 0-100) em
+// lat/lon real, pra abrir a localização/rota no Google Maps sem precisar
+// cadastrar coordenada por bloco. A princípio dava pra fazer isso por
+// interpolação linear direta usando a tag <bounds> do map.osm original
+// (export do OpenStreetMap usado pra gerar campus-map.png, mantido fora do
+// repo) — mas a proporção lon/lat desse bbox bruto não bate com a
+// proporção da imagem renderizada (a ferramenta de export recortou/deu
+// margem diferente da consulta bruta), o que gerava erro de até ~50-116m.
+// Por isso os coeficientes abaixo vêm de uma transformação afim (rotação +
+// escala não-uniforme, sem distorção perspectiva) calibrada por mínimos
+// quadrados a partir de 5 pontos de controle: prédios com marcador/rótulo
+// já "cozidos" na própria imagem (RU-CCN, Reitoria, HU, RU II, Biblioteca
+// Universitária) cuja posição em pixel foi extraída detectando o ponto
+// escuro do marcador na imagem, casada com a lat/lon real do mesmo prédio
+// lida do map.osm — erro residual caiu pra ~2-17m. Se a imagem for trocada
+// de novo, repetir esse processo (achar prédios rotulados na imagem nova,
+// pegar lat/lon deles no .osm correspondente, reajustar os coeficientes).
+const CAMPUS_GEO_TRANSFORM={
+  latA:7.39853864e-6,  latB:-1.08716770e-4, latC:-5.05296922,
+  lonA:1.53449600e-4,  lonB:-3.49992620e-6, lonC:-42.80189400,
+};
+function pinLatLng(x,y){
+  const{latA,latB,latC,lonA,lonB,lonC}=CAMPUS_GEO_TRANSFORM;
+  const lat=latA*x+latB*y+latC;
+  const lon=lonA*x+lonB*y+lonC;
+  return{lat,lon};
+}
+
 function CampusMapScreen({blocks,rooms,onBack}){
   const{can}=useAuth();
   const{T,theme,toggleTheme}=useT();
@@ -1608,6 +1636,18 @@ function CampusMapScreen({blocks,rooms,onBack}){
                 </div>
               ))}
             </div>
+            {(()=>{const{lat,lon}=pinLatLng(selectedBlock.mapX,selectedBlock.mapY);return(
+              <div style={{display:'flex',gap:8,marginTop:14,paddingTop:14,borderTop:`1px solid ${T.bdr}`}}>
+                <a href={`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`} target="_blank" rel="noopener noreferrer"
+                  style={{flex:1,textAlign:'center',padding:'8px 0',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt,fontSize:12,fontWeight:600,textDecoration:'none'}}>
+                  📍 Ver no Google Maps
+                </a>
+                <a href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`} target="_blank" rel="noopener noreferrer"
+                  style={{flex:1,textAlign:'center',padding:'8px 0',background:'#3b82f6',border:'1px solid #3b82f6',borderRadius:7,color:'#fff',fontSize:12,fontWeight:600,textDecoration:'none'}}>
+                  🧭 Traçar rota
+                </a>
+              </div>
+            );})()}
           </div>
         </div>
       )}
