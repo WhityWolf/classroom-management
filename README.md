@@ -42,11 +42,16 @@ salas e blocos novos.
   já controla o CRUD de blocos em Gerenciamento; qualquer usuário logado
   pode *ver* o mapa. Atribuição "© OpenStreetMap contributors" incluída na
   própria imagem (exigência da licença ODbL dos dados).
-- **Trocar a própria senha** — botão "Trocar Senha" nessa mesma tela de
-  seleção, ao lado de "Sair", disponível pra qualquer usuário logado
-  (inclusive chefes/coordenadores, que não têm `EDIT_ANY_USER` e por isso
-  não conseguiam mudar a própria senha antes desta função existir). Pede a
-  senha atual antes de aceitar a nova.
+- **Perfil** — tela própria (`src/components/ProfileScreen.jsx`), acessível
+  pelo botão "👤 Perfil" ao lado de "Sair" em toda tela principal (seleção,
+  Alocar Disciplinas, Mapa de Salas, Gerenciamento), não só a partir do menu.
+  Qualquer usuário logado pode ver os próprios dados (usuário, e-mail,
+  função, sub-unidade — somente leitura, mudam só pela Diretoria) e alterar
+  o próprio nome e a própria senha. Alterar o nome usa `change_own_name`
+  (autoatendimento, sem exigir `EDIT_ANY_USER`); trocar a senha reaproveita
+  `change_own_password` (pede a senha atual antes de aceitar a nova) — antes
+  vivia como um botão "Trocar Senha" solto na tela de seleção, agora mora
+  dentro do Perfil.
 - **Gerenciamento institucional** — tela dedicada (não é exclusiva por
   identidade de usuário, e sim por permissão) com abas, nesta ordem:
   **Sub-Unidades** (criar/editar/excluir); **Usuários e Funções** (uma aba
@@ -94,7 +99,15 @@ salas e blocos novos.
   filtro por situação). Horário usa o código do SIGAA, ex. `35M34`, podendo
   ter mais de um bloco para dias diferentes. O sistema decodifica o horário,
   detecta duplicatas e mostra uma prévia (válidas / com erro) antes de
-  confirmar a substituição completa das disciplinas daquela coordenação.
+  confirmar a substituição completa das disciplinas daquela coordenação. O
+  botão "⬇ Baixar modelo (.xlsx)" na primeira etapa do modal de importação
+  baixa um arquivo de exemplo (`src/assets/modelo-importacao-disciplinas.xlsx`
+  — `.xlsx` em vez de `.csv` porque abre nativamente no Excel, sem os avisos
+  de conversão que `.ods` costuma dar; mesmo arquivo também salvo em
+  `scripts/data/exemplo-importacao-disciplinas.xlsx` pra quem quiser
+  distribuir sem abrir o app) cobrindo os casos mais comuns: mais de uma
+  turma por disciplina, mais de um docente numa turma,
+  turma sem docente definido e horário com mais de um bloco.
 - **Cadastro manual de disciplinas** — formulário para criar ou corrigir
   disciplinas pontualmente, com suporte a múltiplos blocos de horário.
 - **Alocação automática** — algoritmo que distribui as disciplinas

@@ -14,13 +14,13 @@ import { getSessionToken } from './sessionToken.js';
 
 export const mapSubUnit = s => ({
   id: s.id, name: s.name, fullName: s.full_name,
-  clr: s.clr, textClr: s.text_clr, bg: s.bg, lightBg: s.light_bg,
+  clr: s.clr, textClr: s.text_clr, bg: s.bg, lightBg: s.light_bg, isActive: s.is_active,
 });
 export const mapRole = r => ({
   id: r.id, subUnitId: r.sub_unit_id, name: r.name,
   permissions: r.permissions || [], isSystem: r.is_system,
 });
-export const mapBlock = b => ({ id: b.id, local: b.local, name: b.name, mapX: b.map_x, mapY: b.map_y });
+export const mapBlock = b => ({ id: b.id, local: b.local, name: b.name, mapX: b.map_x, mapY: b.map_y, isActive: b.is_active });
 
 async function unwrap(query) {
   const { data, error } = await query;
@@ -70,11 +70,16 @@ export async function updateSubUnit(id, changes) {
     p_name: changes.name ?? null, p_full_name: changes.fullName ?? null,
     p_clr: changes.clr ?? null, p_text_clr: changes.textClr ?? null,
     p_bg: changes.bg ?? null, p_light_bg: changes.lightBg ?? null,
+    p_is_active: changes.isActive ?? null,
   });
 }
 
 export async function deleteSubUnit(id) {
   await call('delete_sub_unit', { p_id: id });
+}
+
+export async function setSubUnitActive(id, active) {
+  await updateSubUnit(id, { isActive: active });
 }
 
 // ─── Funções (MANAGE_ROLES) ─────────────────────────────────────────────────
@@ -120,11 +125,18 @@ export async function createBlock(block) {
 }
 
 export async function updateBlock(id, changes) {
-  await call('update_block', { p_id: id, p_local: changes.local ?? null, p_name: changes.name ?? null });
+  await call('update_block', {
+    p_id: id, p_local: changes.local ?? null, p_name: changes.name ?? null,
+    p_is_active: changes.isActive ?? null,
+  });
 }
 
 export async function deleteBlock(id) {
   await call('delete_block', { p_id: id });
+}
+
+export async function setBlockActive(id, active) {
+  await updateBlock(id, { isActive: active });
 }
 
 // Posição do pino no Mapa do Campus (0-100, porcentagem da imagem). x/y
@@ -156,7 +168,12 @@ export async function updateRoom(id, changes) {
     p_floor: changes.floor ?? null,
     p_features: changes.features ?? null,
     p_description: changes.description ?? null,
+    p_is_active: changes.isActive ?? null,
   });
+}
+
+export async function setRoomActive(id, active) {
+  await updateRoom(id, { isActive: active });
 }
 
 // Atômica (função Postgres security definer, ver supabase/schema.sql) —

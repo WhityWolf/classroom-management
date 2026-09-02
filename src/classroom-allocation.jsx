@@ -7,12 +7,23 @@ import { DEFAULT_PERIOD, PERIOD_RE, comparePeriods } from './periods.js';
 import LoginPage from './components/LoginPage.jsx';
 import UserManagement from './components/UserManagement.jsx';
 import ManagementScreen from './components/ManagementScreen.jsx';
+import ProfileScreen from './components/ProfileScreen.jsx';
 import * as db from './db/allocations.js';
 import * as mgmt from './db/management.js';
 import * as authApi from './db/authApi.js';
 import { useRealtimeSync } from './db/useRealtimeSync.js';
 import { supabaseConfigured } from './db/supabaseClient.js';
 import campusMapImg from './assets/campus-map.png';
+import campusMapCcn1Img from './assets/campus-map-ccn1.png';
+import campusMapCcn2Img from './assets/campus-map-ccn2.png';
+// ?url força o Vite a tratar o import como URL de asset estático mesmo
+// .xlsx não estando na lista padrão de extensões reconhecidas (que cobre
+// principalmente imagem/mídia/fonte) — sem isso, precisaria de
+// assetsInclude no vite.config.js. Modelo de exemplo pro botão "Baixar
+// modelo" em CourseImportModal — mesma cópia também em
+// scripts/data/exemplo-importacao-disciplinas.xlsx, pra quem quiser o
+// arquivo sem abrir o app.
+import importTemplateXlsx from './assets/modelo-importacao-disciplinas.xlsx?url';
 
 const DAYS  = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
 // 6:00–21:00 start hours (eh can go one past the last entry, i.e. 22:00) —
@@ -151,13 +162,6 @@ function ptError(e) {
   if (msg.includes('invalid input syntax'))    return 'Formato de dado inválido em um dos campos.';
   return msg;
 }
-// Planilha (.csv/.ods/.xlsx) com uma linha por disciplina/turma — modelo
-// próprio do app (não o relatório bruto do SIGAA, que vem em blocos
-// cabeçalho+turmas e exige outra estrutura). Colunas, na ordem:
-//   Código | Nome | Turma | Docente(s) | Horário | Alunos Mat.
-// "Turma" é opcional: em branco, a linha não recebe número de turma nenhum
-// (não é inventado a partir da ordem das linhas) — só é preciso preencher
-// quando o mesmo código tem mais de uma turma no arquivo, para diferenciá-las.
 
 // Parser de CSV com suporte a campos entre aspas (a célula "Docente(s)" do
 // SIGAA costuma ter vírgulas dentro, ex. "NOME (20h), OUTRO NOME (20h)" — um
@@ -404,6 +408,8 @@ function Dashboard(){
   const[importingCourses,setImportingCourses]=useState(false);
   const[featuresModal,  setFeaturesModal]  =useState(null);
   const[autoAllocResult,setAutoAllocResult]=useState(null);
+  const[autoAllocConfirm,setAutoAllocConfirm]=useState(false);
+  const[autoAllocAskScope,setAutoAllocAskScope]=useState(false);
   const[deptPanel,      setDeptPanel]      =useState(false);
   const[notifPanel,     setNotifPanel]     =useState(false);
   const[mergeModal,     setMergeModal]     =useState(null);
@@ -498,10 +504,21 @@ function Dashboard(){
   // O algoritmo (autoAllocate) só sabe propor uma sala única pra semana toda
   // — rodar nele uma disciplina parcial sobrescreveria silenciosamente os
   // dias que o usuário já tinha colocado manualmente em salas diferentes.
-  const autoAllocInput=useMemo(()=>{
+  // "All" = universo total pra quem clica (todas as funções pra
+  // institucional vendo "Todas", só a própria função pra coordenação) — é o
+  // que sempre alimentou o botão/contador. "Mine" só faz sentido pra
+  // institucional com uma função específica selecionada no topo (não
+  // "Todas"): dá pra escolher rodar só nela em vez de em todas de uma vez —
+  // ver autoAllocAskScope/handleAutoAllocateClick abaixo.
+  const autoAllocInputAll=useMemo(()=>{
     const base=!isInstitutional?periodCourses.filter(c=>c.roleId===currentUser.roleId):periodCourses;
     return base.filter(c=>!hasAnyAllocation(c));
   },[periodCourses,isInstitutional,currentUser.roleId]);
+  const autoAllocInputMine=useMemo(()=>{
+    if(activeRoleId===ALL_ROLES)return autoAllocInputAll;
+    return periodCourses.filter(c=>c.roleId===activeRoleId&&!hasAnyAllocation(c));
+  },[periodCourses,activeRoleId,autoAllocInputAll]);
+  const autoAllocInput=autoAllocInputAll;
 
   const stats=useMemo(()=>{
     const viewingAll=activeRoleId===ALL_ROLES;
@@ -708,10 +725,31 @@ function Dashboard(){
     showToast(`Período ${trimmed} criado e selecionado.`,'ok');
   };
 
+  const runAutoAllocate=courseList=>{
+    if(courseList.length===0){showToast('Não há disciplinas para alocar.','warn');return;}
+    setAutoAllocResult(autoAllocate(courseList,visRooms,alloc));
+  };
+  // Sempre mostra o aviso primeiro — o algoritmo (autoAllocate) só olha
+  // capacidade e disponibilidade de horário, nunca tipo/recursos da sala,
+  // então disciplinas que precisam de uma sala específica (ex.: laboratório)
+  // podem acabar numa sala comum se não forem alocadas manualmente antes.
   const handleAutoAllocate=()=>{
     if(!canManageCatalog)return;
-    if(autoAllocInput.length===0){showToast('Não há disciplinas para alocar.','warn');return;}
-    setAutoAllocResult(autoAllocate(autoAllocInput,visRooms,alloc));
+    setAutoAllocConfirm(true);
+  };
+  // Institucional com uma função específica selecionada no topo (não
+  // "Todas") pode escolher entre alocar automaticamente só as disciplinas
+  // dessa função ou de todas de uma vez — passo extra só faz sentido aqui;
+  // com "Todas" selecionada (ou pra coordenação, que só tem a própria função
+  // de qualquer forma) não há ambiguidade de escopo, roda direto como antes.
+  const confirmAutoAllocateWarning=()=>{
+    setAutoAllocConfirm(false);
+    if(isInstitutional&&activeRoleId!==ALL_ROLES){setAutoAllocAskScope(true);return;}
+    runAutoAllocate(autoAllocInputAll);
+  };
+  const handleAutoAllocateScope=scope=>{
+    setAutoAllocAskScope(false);
+    runAutoAllocate(scope==='mine'?autoAllocInputMine:autoAllocInputAll);
   };
   const handleApplyAllocation=async()=>{
     if(!autoAllocResult||!canManageCatalog)return;
@@ -755,9 +793,10 @@ function Dashboard(){
   if(dataLoading)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:T.dim}}>Carregando dados…</div>;
   if(loadError)return<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:T.bg,fontFamily:"'DM Mono',monospace",fontSize:12,color:'#ef4444',padding:20,textAlign:'center'}}>Erro ao carregar dados: {loadError}</div>;
   if(screen==='select')return<ScreenSelector onPick={setScreen} subUnits={subUnits}/>;
-  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} periods={periods} currentPeriodOverride={currentPeriodOverride} onBack={()=>setScreen('select')}/>;
+  if(screen==='profile')return<ProfileScreen onBack={()=>setScreen('select')} subUnits={subUnits}/>;
+  if(screen==='map')return<RoomMapScreen rooms={ROOMS} courses={courses} roles={roles} subUnits={subUnits} blocks={blocks} periods={periods} currentPeriodOverride={currentPeriodOverride} onBack={()=>setScreen('select')} onProfile={()=>setScreen('profile')}/>;
   if(screen==='campus')return<CampusMapScreen blocks={blocks} rooms={ROOMS} onBack={()=>setScreen('select')}/>;
-  if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')}
+  if(screen==='manage')return<ManagementScreen onBack={()=>setScreen('select')} onProfile={()=>setScreen('profile')}
     courses={courses} onPeriodCreated={handlePeriodCreatedFromManagement}
     currentPeriodOverride={currentPeriodOverride}/>;
 
@@ -856,6 +895,7 @@ function Dashboard(){
           </>
         )}
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={()=>setScreen('profile')} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
 
@@ -913,7 +953,7 @@ function Dashboard(){
                   <button onClick={()=>setImportingCourses(true)}
                     style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt2,fontSize:12,fontWeight:600,cursor:'pointer',transition:'all .15s'}}
                     onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr2;}}>
-                    ⇪ Importar ODS
+                    ⇪ Subir Planilha
                   </button>
                 </div>
               )}
@@ -995,6 +1035,8 @@ function Dashboard(){
         existingCourses={courses.filter(c=>c.roleId===targetRoleId&&c.period===selectedPeriod)}
         onConfirm={handleImportCourses} onCancel={()=>setImportingCourses(false)}/>}
       {featuresModal&&canEditFeatures&&<RoomFeaturesModal room={ROOMS.find(r=>r.id===featuresModal)} dept={d} featureOptions={featureOptions} onSave={saveFeatures} onClose={()=>setFeaturesModal(null)} onAddOption={addFeatureOption} onRemoveOption={removeFeatureOption}/>}
+      {autoAllocConfirm&&<AutoAllocWarningModal onConfirm={confirmAutoAllocateWarning} onCancel={()=>setAutoAllocConfirm(false)}/>}
+      {autoAllocAskScope&&<AutoAllocScopeModal roleName={d.full} allCount={autoAllocInputAll.length} mineCount={autoAllocInputMine.length} onChoose={handleAutoAllocateScope} onCancel={()=>setAutoAllocAskScope(false)}/>}
       {autoAllocResult&&<AutoAllocModal result={autoAllocResult} dept={d} onApply={handleApplyAllocation} onCancel={()=>setAutoAllocResult(null)}/>}
       {mergeModal&&sel&&mergeRoom&&<MergeModal room={mergeRoom} incomingCourse={sel} conflicts={mergeCons} totalEnroll={mergeTotal} dept={d} day={mergeModal.day} onConfirm={()=>forceAllocate(mergeModal.roomId,mergeModal.day)} onCancel={()=>setMergeModal(null)}/>}
       {dayPickerModal&&sel&&<DayPickerModal room={ROOMS.find(r=>r.id===dayPickerModal.roomId)} course={sel} dept={d} onConfirm={days=>forceAllocate(dayPickerModal.roomId,days)} onCancel={()=>setDayPickerModal(null)}/>}
@@ -1027,7 +1069,6 @@ function ScreenSelector({onPick,subUnits}){
   const{currentUser,logout,can}=useAuth();
   const{T,theme,toggleTheme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
-  const[showChangePassword,setShowChangePassword]=useState(false);
   // "Gerenciamento" não é exclusivo do Diretor por identidade de role — é
   // qualquer função institucional com pelo menos uma destas permissões
   // (Diretor e seus secretários têm todas, por exemplo).
@@ -1035,7 +1076,7 @@ function ScreenSelector({onPick,subUnits}){
   const cards=[
     {key:'allocate',icon:'📋',title:'Alocar Disciplinas',desc:'Cadastre disciplinas e aloque-as nas salas da sua função.'},
     {key:'map',icon:'🗺',title:'Mapa de Salas',desc:'Veja uma visão geral de todas as salas, com disciplinas alocadas por dia e horário.'},
-    {key:'campus',icon:'📍',title:'Mapa do Campus',desc:'Veja onde cada bloco fica fisicamente no campus.'},
+    {key:'campus',icon:'📍',title:'Localização de Salas',desc:'Veja onde cada bloco fica fisicamente no campus.'},
     ...(canManage?[{key:'manage',icon:'⚙️',title:'Gerenciamento',desc:'Usuários, funções, sub-unidades, salas e blocos.'}]:[]),
   ];
   return(
@@ -1055,14 +1096,12 @@ function ScreenSelector({onPick,subUnits}){
           {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
-        <button className="icon-btn" onClick={()=>setShowChangePassword(true)} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Trocar Senha</button>
+        <button className="icon-btn" onClick={()=>onPick('profile')} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
-      {showChangePassword&&<ChangePasswordModal onClose={()=>setShowChangePassword(false)}/>}
       <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,animation:'fadeIn .2s ease'}}>
         <div style={{textAlign:'center'}}>
-          <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>O que você quer fazer?</div>
-          <div style={{...mono,fontSize:12,color:T.dim}}>Sistema de Alocação de Salas — CCN/UFPI</div>
+          <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>Sistema de Gerenciamento de Salas de Aula — CCN/UFPI</div>
         </div>
         <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center'}}>
           {cards.map(c=>(
@@ -1085,7 +1124,7 @@ function ScreenSelector({onPick,subUnits}){
 // Visão somente-leitura — mostra uma tabela por sala, com dias da semana como
 // colunas e faixas horárias (8h–22h) como linhas, para todos os departamentos
 // de uma vez.
-function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPeriodOverride,onBack}){
+function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPeriodOverride,onBack,onProfile}){
   const{currentUser,logout}=useAuth();
   const{T,theme,toggleTheme}=useT();
   const mono={fontFamily:"'DM Mono',monospace"};
@@ -1172,7 +1211,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPerio
       return`<div class="room-card" style="${isLast?'':'page-break-after:always;'}">`
         +`<div class="room-hdr" style="border-left:3px solid ${rd.clr}">`
         +`<div class="room-ctx">${escapeHtml(deptName)} · ${escapeHtml(blockLabel)}</div>`
-        +`<div class="room-title" style="color:${rd.textClr}" title="${escapeHtml(`${room.cap} alunos · ${responsible}`)}">Sala ${escapeHtml(room.label)}</div>`
+        +`<div class="room-title" style="color:${rd.textClr}" title="${escapeHtml(`${room.type} · ${room.cap} alunos · ${responsible}`)}">Sala ${escapeHtml(room.label)}</div>`
         +`</div>`
         +`<table><thead><tr><th class="hth">Horário</th>${thDays}</tr></thead><tbody>${bodyRows}</tbody></table>`
         +`<div class="room-meta">Período ${escapeHtml(selectedPeriod)} · Gerado em ${dateStr}</div>`
@@ -1254,6 +1293,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPerio
           {(()=>{const su=subUnits.find(s=>s.id===currentUser.role?.subUnitId);return su&&<span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{su.name}</span>;})()}
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={onProfile} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
       {presentGroups.length>0&&(
@@ -1331,7 +1371,7 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
                       return(
                         <div key={room.id} style={{flex:'1 1 620px',minWidth:520,border:`1px solid ${tableBdrClr}`,borderRadius:8,overflow:'hidden',background:T.surface}}>
                           <div style={{padding:'6px 10px',borderBottom:`1px solid ${tableBdrClr}`,borderLeft:`3px solid ${rdR.clr}`,background:`${rdR.clr}${theme==='light'?'10':'0a'}`,textAlign:'center'}}>
-                            <span title={`${room.cap} alunos · ${getRoomResponsible(room)}`} style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:700,color:rdRClr,cursor:'help'}}>Sala {room.label}</span>
+                            <span title={`${room.type} · ${room.cap} alunos · ${getRoomResponsible(room)}`} style={{fontFamily:"'DM Mono',monospace",fontSize:13,fontWeight:700,color:rdRClr,cursor:'help'}}>Sala {room.label}</span>
                           </div>
                           <div>
                       <table style={{borderCollapse:'collapse',width:'100%',tableLayout:'fixed'}}>
@@ -1393,6 +1433,44 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
 // Posição de cada pino é salva como porcentagem da imagem (block.mapX/mapY,
 // 0-100), não pixel — continua válida em qualquer tamanho de tela ou se a
 // imagem for trocada por uma versão de resolução diferente depois. ─────────
+// Três imagens: o mapa geral (onde block.mapX/mapY — 0-100% — é de fato
+// salvo/editado) e dois recortes com mais zoom, um por centro (CCN1 =
+// cluster leste/Reitoria, CCN2 = cluster oeste/HU) — ver "zoom" mais abaixo.
+// Cada bbox aqui é o lon/lat real coberto pelos 4 cantos da respectiva
+// imagem, medido a partir do dado geográfico de origem (não é mais a tag
+// <bounds> bruta de uma consulta OSM, que numa versão anterior desta tela
+// não batia com a proporção da imagem já renderizada e gerava erro de
+// ~50-116m) — a proporção lon/lat de cada bbox abaixo já bate com o
+// px_width/px_height da respectiva imagem, então dá pra interpolar
+// linearmente sem precisar de nenhuma calibração extra.
+const CAMPUS_MAPS={
+  geral:{img:campusMapImg,local:null,label:'Mapa Geral',pxWidth:2600,pxHeight:1892,
+    lonMin:-42.802288408,lonMax:-42.786554792,latMin:-5.063605871999999,latMax:-5.052200228},
+  ccn1:{img:campusMapCcn1Img,local:'CCN1',label:'CCN1',pxWidth:1600,pxHeight:2227,
+    lonMin:-42.793978816,lonMax:-42.787177184,latMin:-5.061485530000001,latMax:-5.05205597},
+  ccn2:{img:campusMapCcn2Img,local:'CCN2',label:'CCN2',pxWidth:2400,pxHeight:1778,
+    lonMin:-42.801539245,lonMax:-42.794836055,latMin:-5.060280730000001,latMax:-5.05533527},
+};
+// Posição percentual (0-100, em cima da imagem `mapKey`) -> lat/lon real.
+function pctToLatLng(mapKey,xPct,yPct){
+  const m=CAMPUS_MAPS[mapKey];
+  const lat=m.latMax-(yPct/100)*(m.latMax-m.latMin);
+  const lon=m.lonMin+(xPct/100)*(m.lonMax-m.lonMin);
+  return{lat,lon};
+}
+// Inverso: lat/lon real -> posição percentual na imagem `mapKey`. Usado pra
+// projetar um pino salvo em relação ao mapa geral dentro de um dos recortes
+// com zoom (CCN1/CCN2), que não têm sua própria coluna de posição — a
+// mesma coordenada real é reaproveitada nos três mapas.
+function latLngToPct(mapKey,lat,lon){
+  const m=CAMPUS_MAPS[mapKey];
+  return{
+    x:((lon-m.lonMin)/(m.lonMax-m.lonMin))*100,
+    y:((m.latMax-lat)/(m.latMax-m.latMin))*100,
+  };
+}
+function pinLatLng(x,y){ return pctToLatLng('geral',x,y); }
+
 function CampusMapScreen({blocks,rooms,onBack}){
   const{can}=useAuth();
   const{T,theme,toggleTheme}=useT();
@@ -1407,13 +1485,38 @@ function CampusMapScreen({blocks,rooms,onBack}){
   const[saving,setSaving]=useState(false);
   const[toast,setToast]=useState(null);
   const imgWrapRef=useRef(null);
+  // Menus laterais (CCN1/CCN2): bloco expandido mostra suas salas inline; o
+  // último bloco clicado num menu fica "em destaque" (cor diferente da
+  // seleção-por-clique-no-pino, que abre o modal) e o mapa rola até o pino
+  // correspondente, se ele já tiver posição.
+  const[expandedIds,setExpandedIds]=useState(()=>new Set());
+  const[highlightId,setHighlightId]=useState(null);
+  const pinRefs=useRef({});
+  // "Zoom" simples: troca a imagem exibida por um recorte focado num dos
+  // centros. Editar posição só faz sentido no mapa geral (é onde
+  // block.mapX/mapY de fato mora), então entrar em edição sempre volta pra
+  // 'geral' e a troca de mapa fica escondida enquanto editing=true.
+  const[mapView,setMapView]=useState('geral');
 
   const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),4000);};
 
   const positioned=useMemo(()=>blocks.filter(b=>b.mapX!=null&&b.mapY!=null),[blocks]);
   const unpositioned=useMemo(()=>blocks.filter(b=>b.mapX==null||b.mapY==null),[blocks]);
-  const roomsOf=blockId=>rooms.filter(r=>r.blockId===blockId);
+  const roomsOf=blockId=>rooms.filter(r=>r.blockId===blockId)
+    .sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true,sensitivity:'base'}));
   const selectedBlock=blocks.find(b=>b.id===selectedId)??null;
+  const currentMap=CAMPUS_MAPS[mapView];
+  // Pinos a desenhar no mapa atual: no geral é a posição salva direto; num
+  // recorte com zoom, reprojeta a mesma coordenada real (via mapa geral)
+  // pra posição % dentro daquele recorte, e só pros blocos daquele centro.
+  const pinsToRender=useMemo(()=>{
+    if(mapView==='geral')return positioned.map(b=>({...b,_x:b.mapX,_y:b.mapY}));
+    return positioned.filter(b=>b.local===currentMap.local).map(b=>{
+      const{lat,lon}=pctToLatLng('geral',b.mapX,b.mapY);
+      const{x,y}=latLngToPct(mapView,lat,lon);
+      return{...b,_x:x,_y:y};
+    });
+  },[mapView,positioned,currentMap.local]);
 
   const stopEditing=()=>{setEditing(false);setPlacingId(null);setDragId(null);setDragPos(null);setSelectedId(null);};
 
@@ -1422,6 +1525,17 @@ function CampusMapScreen({blocks,rooms,onBack}){
     const x=((e.clientX-rect.left)/rect.width)*100;
     const y=((e.clientY-rect.top)/rect.height)*100;
     return{x:Math.max(0,Math.min(100,x)),y:Math.max(0,Math.min(100,y))};
+  };
+
+  // block.mapX/mapY só existe em relação ao mapa geral — clicar/arrastar
+  // num dos recortes com zoom dá uma posição % relativa àquela imagem, que
+  // precisa passar por lat/lon (mesmo mecanismo de pinsToRender, só que ao
+  // contrário) antes de virar a posição geral que de fato é salva. No
+  // próprio mapa geral isso é a identidade (sem custo extra).
+  const toGeralPct=(x,y)=>{
+    if(mapView==='geral')return{x,y};
+    const{lat,lon}=pctToLatLng(mapView,x,y);
+    return latLngToPct('geral',lat,lon);
   };
 
   const savePosition=async(blockId,x,y)=>{
@@ -1433,7 +1547,8 @@ function CampusMapScreen({blocks,rooms,onBack}){
 
   const handleMapClick=e=>{
     if(!editing||!placingId||dragId)return;
-    const{x,y}=posFromEvent(e);
+    const clicked=posFromEvent(e);
+    const{x,y}=toGeralPct(clicked.x,clicked.y);
     const id=placingId;
     setPlacingId(null);
     savePosition(id,x,y).then(()=>showToast('Posição definida.'));
@@ -1441,12 +1556,15 @@ function CampusMapScreen({blocks,rooms,onBack}){
 
   // Arraste: acompanha o mouse na janela inteira (o cursor pode sair do
   // pino durante o arraste), só grava no banco no mouseup — sem isso, cada
-  // pixel de movimento viraria uma chamada de rede.
+  // pixel de movimento viraria uma chamada de rede. dragPos fica no espaço
+  // % da imagem exibida no momento (é só pra prévia visual do próprio
+  // pino); a conversão pro mapa geral só acontece na hora de salvar.
   useEffect(()=>{
     if(!dragId)return;
     const onMove=e=>setDragPos(posFromEvent(e));
     const onUp=e=>{
-      const{x,y}=posFromEvent(e);
+      const dropped=posFromEvent(e);
+      const{x,y}=toGeralPct(dropped.x,dropped.y);
       const id=dragId;
       setDragId(null);setDragPos(null);
       savePosition(id,x,y).then(()=>showToast('Posição atualizada.'));
@@ -1463,6 +1581,59 @@ function CampusMapScreen({blocks,rooms,onBack}){
     showToast('Bloco voltou pra lista de "sem posição".');
   };
 
+  const toggleBlockPanel=id=>{
+    setExpandedIds(prev=>{
+      const next=new Set(prev);
+      if(next.has(id))next.delete(id);else next.add(id);
+      return next;
+    });
+    setHighlightId(id);
+    pinRefs.current[id]?.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
+  };
+
+  const renderBlockPanel=(local,side,disabled=false)=>{
+    const list=blocks.filter(b=>b.local===local);
+    return(
+      <div style={{width:250,flexShrink:0,[side==='left'?'borderRight':'borderLeft']:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14,
+        opacity:disabled?.45:1,filter:disabled?'grayscale(1)':'none',pointerEvents:disabled?'none':'auto',transition:'opacity .15s,filter .15s'}}>
+        <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:2}}>{local}</div>
+        <div style={{...mono,fontSize:10,color:T.dim,marginBottom:10}}>{list.length} bloco{list.length!==1?'s':''}</div>
+        {list.length===0?(
+          <div style={{fontSize:11,color:T.dim,fontStyle:'italic'}}>Nenhum bloco cadastrado.</div>
+        ):list.map(b=>{
+          const expanded=expandedIds.has(b.id);
+          const rs=roomsOf(b.id);
+          const isHighlighted=highlightId===b.id;
+          const hasPosition=b.mapX!=null&&b.mapY!=null;
+          return(
+            <div key={b.id} style={{marginBottom:6}}>
+              <button onClick={()=>toggleBlockPanel(b.id)}
+                style={{display:'flex',alignItems:'center',gap:8,width:'100%',textAlign:'left',padding:'8px 10px',borderRadius:7,cursor:'pointer',
+                  background:isHighlighted?'#f59e0b22':T.inner,border:`1px solid ${isHighlighted?'#f59e0b':T.bdr2}`}}>
+                <span style={{fontSize:9,color:T.dim,transform:expanded?'rotate(90deg)':'none',transition:'transform .15s',flexShrink:0}}>▶</span>
+                <span style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:600,color:T.txt}}>{b.name}</div>
+                  <div style={{...mono,fontSize:9,color:T.dim}}>{rs.length} sala{rs.length!==1?'s':''}{!hasPosition?' · sem posição no mapa':''}</div>
+                </span>
+              </button>
+              {expanded&&(
+                <div style={{paddingLeft:22,marginTop:4}}>
+                  {rs.length===0?(
+                    <div style={{fontSize:11,color:T.dim,fontStyle:'italic',padding:'4px 0'}}>Nenhuma sala cadastrada.</div>
+                  ):rs.map(r=>(
+                    <div key={r.id} style={{fontSize:11,color:T.txt,padding:'4px 0',borderBottom:`1px solid ${T.bdr}`}}>
+                      Sala {r.label} <span style={{color:T.dim}}>· {r.cap} lugares</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <style>{`
@@ -1472,13 +1643,24 @@ function CampusMapScreen({blocks,rooms,onBack}){
         .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
         .campus-pin{transition:transform .1s;}
         .campus-pin:hover{transform:translate(-50%,-100%) scale(1.15);}
+        @keyframes campus-pin-pulse{0%,100%{filter:drop-shadow(0 0 2px #f59e0b);}50%{filter:drop-shadow(0 0 10px #f59e0b);}}
+        .campus-pin-highlighted{animation:campus-pin-pulse 1.3s ease-in-out infinite;}
       `}</style>
 
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
-        <span style={{fontSize:14,fontWeight:700,color:T.txt}}>📍 Mapa do Campus</span>
+        <span style={{fontSize:14,fontWeight:700,color:T.txt}}>📍 Localização de Salas</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
-        <span style={{...mono,fontSize:11,color:T.dim}}>{positioned.length} bloco{positioned.length!==1?'s':''} no mapa{unpositioned.length>0?` · ${unpositioned.length} sem posição`:''}</span>
+        <span style={{...mono,fontSize:11,color:T.dim}}>{pinsToRender.length} bloco{pinsToRender.length!==1?'s':''} no mapa{mapView==='geral'&&unpositioned.length>0?` · ${unpositioned.length} sem posição`:''}</span>
+        <div style={{display:'flex',gap:3,background:T.inner,padding:3,borderRadius:8,border:`1px solid ${T.bdr2}`,marginLeft:6}}>
+          {Object.entries(CAMPUS_MAPS).map(([key,m])=>(
+            <button key={key} onClick={()=>setMapView(key)}
+              style={{padding:'4px 11px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,
+                background:mapView===key?'#3b82f6':'transparent',color:mapView===key?'#fff':T.muted}}>
+              {m.label}
+            </button>
+          ))}
+        </div>
         <div style={{flex:1}}/>
         {saving&&<span style={{...mono,fontSize:10,color:T.dim}}>Salvando…</span>}
         {canEdit&&(
@@ -1490,12 +1672,12 @@ function CampusMapScreen({blocks,rooms,onBack}){
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
       </div>
 
-      <div style={{flex:1,display:'flex',overflow:'hidden'}}>
-        {editing&&(
+      <div style={{flex:1,minHeight:0,display:'flex',overflow:'hidden'}}>
+        {editing?(
           <div style={{width:260,flexShrink:0,borderRight:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14}}>
             <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:4}}>Blocos sem posição</div>
             <div style={{fontSize:11,color:T.dim,marginBottom:12,lineHeight:1.5}}>
-              Clique num bloco da lista e depois clique no mapa pra posicioná-lo. Pra reposicionar um que já está no mapa, arraste o pino direto.
+              Clique num bloco da lista e depois clique no mapa pra posicioná-lo. Pra reposicionar um que já está no mapa, arraste o pino direto. Dá pra trocar pro mapa do CCN1/CCN2 pra mirar com mais precisão — a posição é convertida de volta pro mapa geral automaticamente.
             </div>
             {unpositioned.length===0?(
               <div style={{fontSize:11,color:T.dim,fontStyle:'italic'}}>Todos os blocos já têm posição definida.</div>
@@ -1508,38 +1690,56 @@ function CampusMapScreen({blocks,rooms,onBack}){
               </button>
             ))}
           </div>
-        )}
+        ):renderBlockPanel('CCN2','left',mapView==='ccn1')}
 
-        <div style={{flex:1,overflow:'auto',position:'relative',background:'#dfe3e0',display:'flex',alignItems:'flex-start',justifyContent:'center'}}>
+        <div style={{flex:1,minWidth:0,minHeight:0,overflow:'hidden',position:'relative',background:'#dfe3e0',display:'flex',alignItems:'center',justifyContent:'center'}}>
+          {/* aspectRatio+max-w/h (em vez de um width fixo em px) faz esse
+          wrapper ocupar o maior tamanho possível preservando a proporção da
+          imagem sem nunca estourar o espaço disponível — a tela inteira cabe
+          sem precisar rolar, em qualquer resolução. Os pinos continuam
+          posicionados por % em cima desse wrapper (não da imagem em si), e
+          como o wrapper agora tem exatamente o formato/tamanho renderizado
+          da imagem (sem sobra tipo letterbox), a matemática de % continua
+          válida sem nenhuma mudança. */}
           <div ref={imgWrapRef} onClick={handleMapClick}
-            style={{position:'relative',display:'inline-block',cursor:editing&&placingId?'crosshair':'default'}}>
-            <img src={campusMapImg} alt="Mapa do campus" draggable={false}
-              style={{display:'block',maxWidth:'none',width:1400,userSelect:'none'}}/>
+            style={{position:'relative',aspectRatio:`${currentMap.pxWidth}/${currentMap.pxHeight}`,maxWidth:'100%',maxHeight:'100%',width:'auto',height:'auto',cursor:editing&&placingId?'crosshair':'default'}}>
+            <img src={currentMap.img} alt={`Mapa ${currentMap.label}`} draggable={false}
+              style={{display:'block',width:'100%',height:'100%',userSelect:'none'}}/>
 
-            {positioned.map(b=>{
+            {pinsToRender.map(b=>{
               const isDragging=dragId===b.id;
-              const x=isDragging&&dragPos?dragPos.x:b.mapX;
-              const y=isDragging&&dragPos?dragPos.y:b.mapY;
+              const x=isDragging&&dragPos?dragPos.x:b._x;
+              const y=isDragging&&dragPos?dragPos.y:b._y;
+              const isHighlighted=highlightId===b.id;
               return(
-                <div key={b.id} className="campus-pin"
+                <div key={b.id} ref={el=>{pinRefs.current[b.id]=el;}}
+                  className={`campus-pin${isHighlighted?' campus-pin-highlighted':''}`}
                   onMouseDown={e=>{if(!editing)return;e.preventDefault();e.stopPropagation();setDragId(b.id);}}
                   onClick={e=>{e.stopPropagation();if(!editing)setSelectedId(b.id);}}
                   title={`${b.local} — ${b.name}`}
                   style={{
                     position:'absolute',left:`${x}%`,top:`${y}%`,transform:'translate(-50%,-100%)',
-                    cursor:editing?'grab':'pointer',zIndex:isDragging?20:selectedId===b.id?15:10,
+                    cursor:editing?'grab':'pointer',zIndex:isDragging?20:selectedId===b.id?15:isHighlighted?14:10,
                     filter:isDragging?'drop-shadow(0 4px 6px rgba(0,0,0,.35))':'drop-shadow(0 2px 3px rgba(0,0,0,.25))',
                   }}>
                   <svg width="30" height="38" viewBox="0 0 30 38">
                     <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 23 15 23s15-12.5 15-23C30 6.7 23.3 0 15 0z"
-                      fill={selectedId===b.id||isDragging?'#3b82f6':'#1e3a5f'} stroke="#fff" strokeWidth="1.5"/>
+                      fill={selectedId===b.id||isDragging?'#3b82f6':isHighlighted?'#f59e0b':'#1e3a5f'} stroke="#fff" strokeWidth="1.5"/>
                     <circle cx="15" cy="15" r="6" fill="#fff"/>
                   </svg>
+                  <span style={{
+                    position:'absolute',left:34,top:15,transform:'translateY(-50%)',whiteSpace:'nowrap',
+                    pointerEvents:'none',fontSize:11,fontWeight:700,color:'#0f172a',
+                    background:'rgba(255,255,255,.88)',padding:'2px 6px',borderRadius:5,
+                    boxShadow:'0 1px 3px rgba(0,0,0,.3)',
+                  }}>{b.local} — {b.name}</span>
                 </div>
               );
             })}
           </div>
         </div>
+
+        {!editing&&renderBlockPanel('CCN1','right',mapView==='ccn2')}
       </div>
 
       {selectedBlock&&!editing&&(
@@ -1564,6 +1764,18 @@ function CampusMapScreen({blocks,rooms,onBack}){
                 </div>
               ))}
             </div>
+            {(()=>{const{lat,lon}=pinLatLng(selectedBlock.mapX,selectedBlock.mapY);return(
+              <div style={{display:'flex',gap:8,marginTop:14,paddingTop:14,borderTop:`1px solid ${T.bdr}`}}>
+                <a href={`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`} target="_blank" rel="noopener noreferrer"
+                  style={{flex:1,textAlign:'center',padding:'8px 0',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt,fontSize:12,fontWeight:600,textDecoration:'none'}}>
+                  📍 Ver no Google Maps
+                </a>
+                <a href={`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}`} target="_blank" rel="noopener noreferrer"
+                  style={{flex:1,textAlign:'center',padding:'8px 0',background:'#3b82f6',border:'1px solid #3b82f6',borderRadius:7,color:'#fff',fontSize:12,fontWeight:600,textDecoration:'none'}}>
+                  🧭 Traçar rota
+                </a>
+              </div>
+            );})()}
           </div>
         </div>
       )}
@@ -1767,7 +1979,7 @@ function RoomSection({title,rooms,alloc,courses,sel,roleId,dept,canAllocate,canD
         <span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:theme==='light'?'#d97706':'#F59E0B'}}>{busy.length} {canMerge?'disponíveis para mescla':'ocupadas'}</span>
       </div>
       {byBlock.map(([blockLabel,bRooms])=>{
-        const bSorted=[...bRooms].sort((a,b)=>(freeSet.has(b.id)?1:0)-(freeSet.has(a.id)?1:0));
+        const bSorted=[...bRooms].sort((a,b)=>(freeSet.has(b.id)?1:0)-(freeSet.has(a.id)?1:0)||a.label.localeCompare(b.label,undefined,{numeric:true}));
         return(
           <div key={blockLabel} style={{marginBottom:14}}>
             <div style={{fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:600,color:T.txt2,marginBottom:6,paddingLeft:2,letterSpacing:.5}}>{blockLabel}</div>
@@ -1963,6 +2175,60 @@ function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,
   );
 }
 
+// ─── Aviso antes da alocação automática — o algoritmo (autoAllocate) só
+// considera capacidade e disponibilidade de horário, nunca tipo/recursos da
+// sala, então disciplinas que precisam de uma sala específica (laboratório,
+// projetor etc.) devem ser alocadas manualmente antes ─────────────────────
+function AutoAllocWarningModal({onConfirm,onCancel}){
+  const{T,theme}=useT();
+  return(
+    <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:440,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+        <div style={{display:'flex',alignItems:'center',marginBottom:16}}>
+          <div style={{fontSize:16,fontWeight:700,color:T.txt}}>✨ Alocar Automaticamente</div>
+          <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
+        </div>
+        <div style={{background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#fcd34d':'#F59E0B44'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:13,color:theme==='light'?'#b45309':'#FBBF24',lineHeight:1.6}}>
+          ⚠ A alocação automática só considera capacidade e horário livre — ela <strong>não sabe</strong> que uma disciplina precisa de um tipo específico de sala (ex.: um laboratório) e pode colocá-la numa sala comum.
+        </div>
+        <div style={{fontSize:13,color:T.txt2,lineHeight:1.6,marginBottom:20}}>Aloque manualmente as disciplinas que dependem de uma sala específica antes de continuar. Quer prosseguir com a alocação automática para as demais disciplinas pendentes?</div>
+        <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+          <button onClick={onCancel} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+          <button onClick={onConfirm} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,background:'#3b82f6',border:'none',color:'#fff',cursor:'pointer'}}>Continuar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Escolha de escopo antes da alocação automática (só institucional com
+// uma função específica selecionada — ver handleAutoAllocate) ────────────────
+function AutoAllocScopeModal({roleName,allCount,mineCount,onChoose,onCancel}){
+  const{T,theme}=useT();
+  return(
+    <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:420,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+        <div style={{display:'flex',alignItems:'center',marginBottom:16}}>
+          <div style={{fontSize:16,fontWeight:700,color:T.txt}}>✨ Alocar Automaticamente</div>
+          <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
+        </div>
+        <div style={{fontSize:13,color:T.txt2,lineHeight:1.6,marginBottom:20}}>Você está vendo a função <strong>{roleName}</strong>. Quer alocar automaticamente as disciplinas pendentes de todas as funções, ou só as de <strong>{roleName}</strong>?</div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          <button onClick={()=>onChoose('mine')} disabled={mineCount===0}
+            style={{padding:'10px 14px',background:'#3b82f6',border:'none',borderRadius:8,color:'#fff',fontSize:13,fontWeight:600,cursor:mineCount===0?'default':'pointer',opacity:mineCount===0?.5:1,textAlign:'left'}}>
+            Apenas {roleName} <span style={{fontWeight:400,opacity:.85}}>({mineCount} disciplina{mineCount!==1?'s':''})</span>
+          </button>
+          <button onClick={()=>onChoose('all')} disabled={allCount===0}
+            style={{padding:'10px 14px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:8,color:T.txt,fontSize:13,fontWeight:600,cursor:allCount===0?'default':'pointer',opacity:allCount===0?.5:1,textAlign:'left'}}>
+            Todas as funções <span style={{fontWeight:400,color:T.dim}}>({allCount} disciplina{allCount!==1?'s':''})</span>
+          </button>
+          <button onClick={onCancel} style={{padding:'8px',background:'transparent',border:'none',borderRadius:8,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Modal de pré-visualização da alocação automática ────────────────────────
 function AutoAllocModal({result,dept,onApply,onCancel}){
   const{T,theme}=useT();
@@ -2070,72 +2336,6 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
 }
 
 // ─── Modal de confirmação de conclusão ────────────────────────────────────────
-// ─── Trocar a própria senha (autoatendimento — qualquer usuário logado,
-// não depende de EDIT_ANY_USER) ─────────────────────────────────────────────
-function ChangePasswordModal({onClose}){
-  const{T,theme}=useT();
-  const[current,setCurrent]=useState('');
-  const[next,setNext]=useState('');
-  const[confirm,setConfirm]=useState('');
-  const[error,setError]=useState(null);
-  const[saving,setSaving]=useState(false);
-  const[done,setDone]=useState(false);
-  const lbl={...{fontFamily:"'DM Mono',monospace"},fontSize:10,color:T.dim,textTransform:'uppercase',letterSpacing:1,display:'block',marginBottom:5};
-  const inp={width:'100%',padding:'9px 11px',background:T.inputBg,border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt,fontSize:13,outline:'none'};
-
-  const submit=async e=>{
-    e.preventDefault();
-    setError(null);
-    if(next.length<6){setError('A nova senha deve ter pelo menos 6 caracteres.');return;}
-    if(next!==confirm){setError('A confirmação não bate com a nova senha.');return;}
-    setSaving(true);
-    try{
-      await authApi.changeOwnPassword(current,next);
-      setDone(true);
-    }catch(e){setError(ptError(e));}
-    finally{setSaving(false);}
-  };
-
-  return(
-    <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:380,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
-        <div style={{display:'flex',alignItems:'center',marginBottom:20}}>
-          <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Trocar Senha</div>
-          <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
-        </div>
-        {done?(
-          <>
-            <div style={{background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,borderRadius:8,padding:'12px 14px',marginBottom:20,fontSize:13,color:theme==='light'?'#15803d':'#34d399'}}>
-              ✓ Senha alterada com sucesso.
-            </div>
-            <button onClick={onClose} style={{width:'100%',padding:'9px',background:'#3b82f6',border:'none',borderRadius:7,color:'#fff',fontSize:13,fontWeight:600,cursor:'pointer'}}>Fechar</button>
-          </>
-        ):(
-          <form onSubmit={submit}>
-            <div style={{marginBottom:12}}>
-              <label style={lbl}>Senha Atual</label>
-              <input autoFocus type="password" value={current} onChange={e=>{setCurrent(e.target.value);setError(null);}} style={inp}/>
-            </div>
-            <div style={{marginBottom:12}}>
-              <label style={lbl}>Nova Senha</label>
-              <input type="password" value={next} onChange={e=>{setNext(e.target.value);setError(null);}} style={inp}/>
-            </div>
-            <div style={{marginBottom:12}}>
-              <label style={lbl}>Confirmar Nova Senha</label>
-              <input type="password" value={confirm} onChange={e=>{setConfirm(e.target.value);setError(null);}} style={inp}/>
-            </div>
-            {error&&<div style={{fontSize:11,color:'#ef4444',marginBottom:12}}>{error}</div>}
-            <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-              <button type="button" onClick={onClose} disabled={saving} style={{padding:'8px 18px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,cursor:saving?'wait':'pointer'}}>Cancelar</button>
-              <button type="submit" disabled={saving} style={{padding:'8px 20px',borderRadius:7,fontSize:12,fontWeight:700,background:'#3b82f6',border:'none',color:'#fff',cursor:saving?'wait':'pointer',opacity:saving?.7:1}}>{saving?'Salvando…':'Salvar Nova Senha'}</button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
-  );
-}
-
 function FinishConfirmModal({roleName,remaining,onConfirm,onCancel}){
   const{T,theme}=useT();
   return(
@@ -2451,7 +2651,9 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
                 <br/>Ano Período, Tipo, Situação e Local do arquivo são ignorados — o período é o já selecionado nesta tela, e turmas sem professor definido ainda entram normalmente.
                 <br/>Horário usa o código do SIGAA (ex.: <span style={mono}>35M34</span>, podendo ter mais de um bloco separado por espaço para dias com horários diferentes).
               </div>
-              <input type="file" accept=".csv,.ods,.xlsx,.xls" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}} style={{...mono,fontSize:12,color:T.txt}}/>
+              <a href={importTemplateXlsx} download="modelo-importacao-disciplinas.xlsx"
+                style={{display:'inline-block',padding:'6px 12px',marginBottom:12,background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.muted,fontSize:12,textDecoration:'none',cursor:'pointer'}}>⬇ Baixar modelo (.xlsx)</a>
+              <input type="file" accept=".csv,.ods,.xlsx,.xls" onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);}} style={{...mono,fontSize:12,color:T.txt,display:'block'}}/>
               {parseError&&<div style={{fontSize:12,color:'#ef4444',marginTop:10}}>{parseError}</div>}
             </div>
             <div style={{padding:'14px 20px',borderTop:`1px solid ${T.bdr}`,display:'flex',justifyContent:'flex-end'}}>

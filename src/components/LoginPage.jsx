@@ -68,7 +68,7 @@ export default function LoginPage() {
             </div>
           </div>
           <div style={{fontSize:23,fontWeight:700,color:'#f1f5f9',lineHeight:1.25,marginBottom:8,position:'relative'}}>
-            Sistema de Gerenciamento de Salas de Aula do CCN
+            Sistema de Gerenciamento de Salas de Aula — CCN/UFPI
           </div>
           <div style={{fontSize:13,color:'#94a3b8',lineHeight:1.6,marginBottom:32,position:'relative'}}>
             Gerenciamento centralizado de salas do Centro de Ciências da Natureza (CCN)
@@ -81,7 +81,7 @@ export default function LoginPage() {
           <div style={{padding:'10px 12px',background:'rgba(167,139,250,.08)',border:'1px solid rgba(167,139,250,.2)',borderRadius:8,marginBottom:8}}>
             <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
               <div style={{width:6,height:6,borderRadius:'50%',background:'#A78BFA'}}/>
-              <span style={{fontSize:13,fontWeight:600,color:'#c4b5fd'}}>Diretor</span>
+              <span style={{fontSize:13,fontWeight:600,color:'#c4b5fd'}}>Diretoria</span>
             </div>
             <div style={{fontSize:11,color:'#94a3b8',lineHeight:1.5}}>
               Acesso institucional completo — gerencia todos os departamentos, salas e usuários do sistema.

@@ -70,7 +70,7 @@ function ptError(e) {
   return msg;
 }
 
-export default function ManagementScreen({ onBack, courses=[], onPeriodCreated, currentPeriodOverride=null }) {
+export default function ManagementScreen({ onBack, onProfile, courses=[], onPeriodCreated, currentPeriodOverride=null }) {
   const { currentUser, logout, can } = useAuth();
   const { T, theme, toggleTheme } = useT();
   const mono = { fontFamily:"'DM Mono',monospace" };
@@ -170,6 +170,7 @@ export default function ManagementScreen({ onBack, courses=[], onPeriodCreated, 
           <span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
         </div>
         <button className="icon-btn" onClick={toggleTheme} style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>{theme==='light'?'🌙':'☀'}</button>
+        <button className="icon-btn" onClick={onProfile} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
 
@@ -249,12 +250,19 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
   const [editing, setEditing] = useState(null); // user object | 'new' | null
   const [form, setForm] = useState(null);
   const [search, setSearch] = useState('');
-  const [confirmDelete, setConfirmDelete] = useState(null); // user id | null
+  const [confirmDelete, setConfirmDelete] = useState(null); // user | null
+  const [deleting, setDeleting] = useState(false);
+  // Já nasce em 'name' pois é a ordenação que já vem do backend (ver
+  // list_app_users em schema.sql) — assim o indicador de coluna ativa reflete
+  // a ordenação real desde a primeira renderização, em vez de nenhuma coluna
+  // aparecer marcada enquanto a lista já está, de fato, ordenada por nome.
+  const [sortKey, setSortKey] = useState('name'); // 'name'|'username'|'role'|'status'
+  const [sortDir, setSortDir] = useState('asc');
 
   const isSystemUser = u => u.username === 'admin';
 
-  const startCreate = () => { setEditing('new'); setForm({ name:'', username:'', email:'', roleId:'', password:'' }); };
-  const startEdit = u => { setEditing(u); setForm({ name:u.name, username:u.username, email:u.email, roleId:u.roleId, password:'', isActive:u.isActive }); };
+  const startCreate = () => { setEditing('new'); setForm({ name:'', username:'', email:'', roleId:'', password:'' }); setConfirmDelete(null); };
+  const startEdit = u => { setEditing(u); setForm({ name:u.name, username:u.username, email:u.email, roleId:u.roleId, password:'', isActive:u.isActive }); setConfirmDelete(null); };
   const cancel = () => { setEditing(null); setForm(null); };
 
   const visible = useMemo(() => {
@@ -262,6 +270,33 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
     const q = search.toLowerCase();
     return users.filter(u => u.name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q));
   }, [users, search]);
+
+  const userSortValue = (u, key) => {
+    switch (key) {
+      case 'name': return u.name ?? '';
+      case 'username': return u.username ?? '';
+      case 'role': return gRole(u.roleId).full;
+      case 'status': return u.isActive ? 1 : 0;
+      default: return '';
+    }
+  };
+  const toggleSort = key => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  const sorted = useMemo(() => {
+    if (!sortKey) return visible;
+    const arr = [...visible];
+    arr.sort((a, b) => {
+      const va = userSortValue(a, sortKey), vb = userSortValue(b, sortKey);
+      const cmp = typeof va === 'number' && typeof vb === 'number'
+        ? va - vb
+        : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true });
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, sortKey, sortDir, roles]);
 
   const save = async () => {
     if (!form.name.trim())     return flash('err', 'Informe o nome completo.');
@@ -286,9 +321,18 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
     try { await authApi.deactivateUser(u.id); flash('ok', `${u.name} foi desativado(a).`); reloadUsers(); }
     catch (e) { flash('err', e.message); }
   };
-  const deleteUser = async u => {
-    try { await authApi.deleteUser(u.id); flash('ok', `${u.name} foi excluído(a) permanentemente.`); setConfirmDelete(null); reloadUsers(); }
-    catch (e) { flash('err', e.message); setConfirmDelete(null); }
+  const activate = async u => {
+    try { await authApi.updateUser(u.id, { isActive:true }); flash('ok', `${u.name} foi reativado(a).`); reloadUsers(); }
+    catch (e) { flash('err', e.message); }
+  };
+  const confirmDeleteNow = async () => {
+    const u = confirmDelete;
+    setDeleting(true);
+    try {
+      await authApi.deleteUser(u.id);
+      flash('ok', `${u.name} foi excluído(a) permanentemente.`); setConfirmDelete(null); reloadUsers();
+    } catch (e) { flash('err', e.message); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -300,10 +344,15 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
         </div>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
           <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-            {['Nome','Usuário','Função','Status',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
+            {[['Nome','name'],['Usuário','username'],['Função','role'],['Status','status'],['',null]].map(([h,key])=>(
+              <th key={h||'actions'} onClick={key?()=>toggleSort(key):undefined}
+                style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:sortKey===key?T.txt:T.dim,textTransform:'uppercase',cursor:key?'pointer':'default',userSelect:'none',whiteSpace:'nowrap'}}>
+                {h}{sortKey===key?(sortDir==='asc'?' ▲':' ▼'):''}
+              </th>
+            ))}
           </tr></thead>
           <tbody>
-            {visible.map(u=>{
+            {sorted.map(u=>{
               const role=gRole(u.roleId);
               return(
                 <tr key={u.id} style={{borderBottom:`1px solid ${T.bdr}`,opacity:u.isActive?1:.55}}>
@@ -318,14 +367,8 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
                     <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                       {can(PERMS.EDIT_ANY_USER)&&<button onClick={()=>startEdit(u)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>}
                       {can(PERMS.DEACTIVATE_USER)&&u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&<button onClick={()=>deactivate(u)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Desativar</button>}
-                      {can(PERMS.DELETE_USER)&&!u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&(
-                        confirmDelete===u.id
-                          ? <>
-                              <button onClick={()=>deleteUser(u)} style={{padding:'3px 10px',background:'#ef4444',border:'none',borderRadius:4,color:'#fff',fontSize:11,cursor:'pointer',fontWeight:600}}>Confirmar</button>
-                              <button onClick={()=>setConfirmDelete(null)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Cancelar</button>
-                            </>
-                          : <button onClick={()=>setConfirmDelete(u.id)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
-                      )}
+                      {can(PERMS.EDIT_ANY_USER)&&!u.isActive&&!isSystemUser(u)&&<button onClick={()=>activate(u)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #22c55e55',borderRadius:4,color:'#22c55e',fontSize:11,cursor:'pointer'}}>Ativar</button>}
+                      {can(PERMS.DELETE_USER)&&!u.isActive&&u.id!==currentUser.id&&!isSystemUser(u)&&<button onClick={()=>{cancel();setConfirmDelete(u);}} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>}
                     </div>
                   </td>
                 </tr>
@@ -334,11 +377,23 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
           </tbody>
         </table>
       </>
-    )} panel={editing&&(
+    )} panel={confirmDelete?(
+      <div>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+        <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+          O usuário <strong>{confirmDelete.name}</strong> ({confirmDelete.username}) será excluído permanentemente.
+        </div>
+        <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>
+        <div style={{display:'flex',gap:8}}>
+          <button type="button" onClick={()=>setConfirmDelete(null)} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>Cancelar</button>
+          <button type="button" onClick={confirmDeleteNow} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':'Excluir usuário'}</button>
+        </div>
+      </div>
+    ):editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
         <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Novo Usuário':'Editar Usuário'}</div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome Completo</label><input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
-        <div style={{marginBottom:12}}><label style={lblStyle(T)}>Usuário</label><input value={form.username} readOnly={editing!=='new'} onChange={e=>setForm({...form,username:e.target.value})} style={{...inpStyle(T),opacity:editing!=='new'?.6:1}}/></div>
+        <div style={{marginBottom:12}}><label style={lblStyle(T)}>Usuário</label><input value={form.username} readOnly={editing!=='new'} onChange={e=>setForm({...form,username:e.target.value.toLowerCase()})} style={{...inpStyle(T),opacity:editing!=='new'?.6:1}}/></div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>E-mail</label><input type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} style={inpStyle(T)}/></div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>{editing==='new'?'Senha':'Nova Senha (deixe em branco para manter)'}</label><input type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} style={inpStyle(T)}/></div>
         <div style={{marginBottom:12}}>
@@ -373,10 +428,11 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
   const [editing, setEditing] = useState(null); // role | 'new' | null
   const [form, setForm] = useState(null);
   const [advOpen, setAdvOpen] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(null); // {role, courseCount} | null
+  const [confirmDelete, setConfirmDelete] = useState(null); // {role, blocked, courseCount} | null
+  const [deleting, setDeleting] = useState(false);
 
-  const startCreate = () => { setForm({ id:crypto.randomUUID(), name:'', subUnitId:subUnits[0]?.id??'', permissions:[] }); setEditing('new'); setAdvOpen(false); };
-  const startEdit = r => { setForm({ id:r.id, name:r.name, subUnitId:r.subUnitId??'', permissions:[...r.permissions] }); setEditing(r); setAdvOpen(false); };
+  const startCreate = () => { setForm({ id:crypto.randomUUID(), name:'', subUnitId:subUnits[0]?.id??'', permissions:[] }); setEditing('new'); setAdvOpen(false); setConfirmDelete(null); };
+  const startEdit = r => { setForm({ id:r.id, name:r.name, subUnitId:r.subUnitId??'', permissions:[...r.permissions] }); setEditing(r); setAdvOpen(false); setConfirmDelete(null); };
   const cancel = () => { setEditing(null); setForm(null); setAdvOpen(false); };
   const togglePerm = p => setForm(f=>({...f,permissions:f.permissions.includes(p)?f.permissions.filter(x=>x!==p):[...f.permissions,p]}));
 
@@ -391,21 +447,30 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
   };
   const remove = async r => {
     if (r.isSystem) { flash('err','Esta função é protegida e não pode ser excluída.'); return; }
+    cancel();
     const linkedRooms = rooms.filter(rm=>rm.roleId===r.id);
-    if (linkedRooms.length) { flash('err',`Ainda há ${linkedRooms.length} sala(s) vinculada(s) a esta função. Desvincule-as antes de excluir.`); return; }
+    if (linkedRooms.length) {
+      setConfirmDelete({ role:r, blocked:`Ainda há ${linkedRooms.length} sala(s) vinculada(s) a esta função (${linkedRooms.map(x=>x.label).join(', ')}). Desvincule-as antes de excluir.` });
+      return;
+    }
     const linkedUsers = users.filter(u=>u.roleId===r.id);
-    if (linkedUsers.length) { flash('err',`Ainda há ${linkedUsers.length} usuário(s) vinculado(s) a esta função (incluindo desativados). Edite cada um e atribua outra função antes de excluir.`); return; }
+    if (linkedUsers.length) {
+      setConfirmDelete({ role:r, blocked:`Ainda há ${linkedUsers.length} usuário(s) vinculado(s) a esta função (incluindo desativados) (${linkedUsers.map(x=>x.name).join(', ')}). Edite cada um e atribua outra função antes de excluir.` });
+      return;
+    }
     try {
       const courseCount = await mgmt.countRoleCourses(r.id);
-      if (courseCount > 0) { setConfirmDelete({ role:r, courseCount }); return; }
-      await mgmt.deleteRoleAndCourses(r.id); flash('ok','Função excluída.'); reloadDomain();
-    } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+      setConfirmDelete({ role:r, blocked:null, courseCount });
+    } catch (e) { flash('err', `Não foi possível verificar disciplinas: ${e.message}`); }
   };
   const confirmRemove = async () => {
+    setDeleting(true);
     try {
       await mgmt.deleteRoleAndCourses(confirmDelete.role.id);
-      flash('ok','Função e disciplinas associadas excluídas.'); setConfirmDelete(null); reloadDomain();
-    } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); setConfirmDelete(null); }
+      flash('ok', confirmDelete.courseCount>0?'Função e disciplinas associadas excluídas.':'Função excluída.');
+      setConfirmDelete(null); reloadDomain();
+    } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+    finally { setDeleting(false); }
   };
   const roomsOfRole = id => rooms.filter(r=>r.roleId===id);
   const toggleRoom = async (room, checked) => {
@@ -438,12 +503,16 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
       <div>
         <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
         <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
-          A função <strong>{confirmDelete.role.name}</strong> possui <strong>{confirmDelete.courseCount} disciplina(s)</strong> associada(s) em todos os períodos. Ao excluir, todas serão removidas permanentemente.
+          {confirmDelete.blocked
+            ? confirmDelete.blocked
+            : confirmDelete.courseCount>0
+              ? <>A função <strong>{confirmDelete.role.name}</strong> possui <strong>{confirmDelete.courseCount} disciplina(s)</strong> associada(s) em todos os períodos. Ao excluir, todas serão removidas permanentemente.</>
+              : <>A função <strong>{confirmDelete.role.name}</strong> não tem nenhuma sala, usuário ou disciplina vinculada e pode ser excluída com segurança.</>}
         </div>
-        <div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>
+        {!confirmDelete.blocked&&<div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>}
         <div style={{display:'flex',gap:8}}>
-          <button type="button" onClick={()=>setConfirmDelete(null)} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
-          <button type="button" onClick={confirmRemove} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer'}}>Excluir tudo</button>
+          <button type="button" onClick={()=>setConfirmDelete(null)} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>{confirmDelete.blocked?'Entendi':'Cancelar'}</button>
+          {!confirmDelete.blocked&&<button type="button" onClick={confirmRemove} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':confirmDelete.courseCount>0?'Excluir tudo':'Excluir função'}</button>}
         </div>
       </div>
     ):editing&&(
@@ -518,14 +587,16 @@ function RolesTab({ roles, subUnits, rooms, blocks, users, can, reloadDomain, fl
 
 // ─── Aba Sub-unidades ─────────────────────────────────────────────────────────
 function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
-  const { T } = useT();
+  const { T, theme } = useT();
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(null);
   const [colorOpen, setColorOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // {subUnit, blocked} | null
+  const [deleting, setDeleting] = useState(false);
   const DEFAULT_COLORS = { clr:'#60A5FA', textClr:'#1d4ed8', bg:'#0d1f3d', lightBg:'#eff6ff' };
 
-  const startCreate = () => { setForm({ id:crypto.randomUUID(), name:'', fullName:'', ...DEFAULT_COLORS }); setEditing('new'); setColorOpen(false); };
-  const startEdit = s => { setForm({ ...s }); setEditing(s); };
+  const startCreate = () => { setForm({ id:crypto.randomUUID(), name:'', fullName:'', ...DEFAULT_COLORS }); setEditing('new'); setColorOpen(false); setConfirmDelete(null); };
+  const startEdit = s => { setForm({ ...s }); setEditing(s); setConfirmDelete(null); };
   const cancel = () => { setEditing(null); setForm(null); };
 
   const save = async () => {
@@ -537,11 +608,28 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
       flash('ok','Sub-unidade salva.'); cancel(); reloadDomain();
     } catch (e) { flash('err', ptError(e)); }
   };
-  const remove = async s => {
+  const toggleActive = async s => {
+    try {
+      await mgmt.setSubUnitActive(s.id, !s.isActive);
+      flash('ok', s.isActive ? `${s.fullName} foi desativada.` : `${s.fullName} foi reativada.`);
+      reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+  };
+  const remove = s => {
+    cancel();
     const linked = roles.filter(r=>r.subUnitId===s.id);
-    if (linked.length) { flash('err',`Ainda há ${linked.length} função(ões) vinculada(s) a esta sub-unidade. Remova-as ou reatribua-as antes de excluir.`); return; }
-    try { await mgmt.deleteSubUnit(s.id); flash('ok','Sub-unidade excluída.'); reloadDomain(); }
-    catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+    setConfirmDelete({
+      subUnit: s,
+      blocked: linked.length ? `Ainda há ${linked.length} função(ões) vinculada(s) a esta sub-unidade (${linked.map(r=>r.name).join(', ')}). Remova-as ou reatribua-as antes de excluir.` : null,
+    });
+  };
+  const confirmRemoveNow = async () => {
+    setDeleting(true);
+    try {
+      await mgmt.deleteSubUnit(confirmDelete.subUnit.id);
+      flash('ok','Sub-unidade excluída.'); setConfirmDelete(null); reloadDomain();
+    } catch (e) { flash('err', `Não foi possível excluir: ${e.message}`); }
+    finally { setDeleting(false); }
   };
 
   return (
@@ -550,19 +638,38 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
         {can(PERMS.MANAGE_SUB_UNITS)&&<button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sub-unidade</button>}
         <div style={{display:'flex',flexDirection:'column',gap:8}}>
           {subUnits.map(s=>(
-            <div key={s.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
+            <div key={s.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12,opacity:s.isActive?1:.55}}>
               <div style={{width:3,height:28,borderRadius:1,background:s.clr}}/>
               <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:600,color:T.txt}}>{s.fullName}</div>
+                <div style={{fontSize:13,fontWeight:600,color:T.txt}}>{s.fullName}{!s.isActive&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginLeft:6}}>(inativa)</span>}</div>
                 <div style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:T.dim}}>{s.name&&<span style={{marginRight:8}}>{s.name}</span>}{roles.filter(r=>r.subUnitId===s.id).length} funções</div>
               </div>
               <button onClick={()=>startEdit(s)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
-              <button onClick={()=>remove(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+              {s.isActive
+                ? <button onClick={()=>toggleActive(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Desativar</button>
+                : <>
+                    <button onClick={()=>toggleActive(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #22c55e55',borderRadius:5,color:'#22c55e',fontSize:11,cursor:'pointer'}}>Ativar</button>
+                    <button onClick={()=>remove(s)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                  </>}
             </div>
           ))}
         </div>
       </>
-    )} panel={editing&&(
+    )} panel={confirmDelete?(
+      <div>
+        <div style={{fontSize:14,fontWeight:700,marginBottom:12,color:T.txt}}>Confirmar exclusão</div>
+        <div style={{padding:'12px 14px',background:theme==='light'?'#fef2f2':'#2a0a0a',border:`1px solid ${theme==='light'?'#fca5a5':'#ef444444'}`,borderRadius:8,marginBottom:16,fontSize:13,color:theme==='light'?'#b91c1c':'#ef4444',lineHeight:1.6}}>
+          {confirmDelete.blocked
+            ? confirmDelete.blocked
+            : <>A sub-unidade <strong>{confirmDelete.subUnit.fullName}</strong> não tem nenhuma função vinculada e pode ser excluída com segurança.</>}
+        </div>
+        {!confirmDelete.blocked&&<div style={{fontSize:13,color:T.muted,marginBottom:16}}>Esta ação não pode ser desfeita.</div>}
+        <div style={{display:'flex',gap:8}}>
+          <button type="button" onClick={()=>setConfirmDelete(null)} disabled={deleting} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:deleting?'wait':'pointer'}}>{confirmDelete.blocked?'Entendi':'Cancelar'}</button>
+          {!confirmDelete.blocked&&<button type="button" onClick={confirmRemoveNow} disabled={deleting} style={{flex:2,padding:'8px',background:'#ef4444',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:deleting?'wait':'pointer',opacity:deleting?.7:1}}>{deleting?'Excluindo…':'Excluir sub-unidade'}</button>}
+        </div>
+      </div>
+    ):editing&&(
       <form onSubmit={e=>{e.preventDefault();save();}}>
         <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editing==='new'?'Nova Sub-unidade':'Editar Sub-unidade'}</div>
         <div style={{marginBottom:12}}><label style={lblStyle(T)}>Nome curto</label><input value={form.name} maxLength={20} onChange={e=>setForm({...form,name:e.target.value})} style={inpStyle(T)}/></div>
@@ -591,6 +698,8 @@ function SubUnitsTab({ subUnits, roles, can, reloadDomain, flash }) {
 }
 
 // ─── Aba Salas e Blocos ───────────────────────────────────────────────────────
+const KNOWN_CENTROS = ['CCN1', 'CCN2'];
+
 function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDomain, flash, gRole }) {
   const { T, theme } = useT();
   const [sub, setSub] = useState('rooms'); // 'rooms' | 'blocks'
@@ -598,6 +707,11 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
   const [roomForm, setRoomForm] = useState(null);
   const [editingBlock, setEditingBlock] = useState(null);
   const [blockForm, setBlockForm] = useState(null);
+  // Centro do bloco continua um campo de texto livre no banco (não é um
+  // enum) — CCN1/CCN2 são só atalhos pros dois valores reais que existem
+  // hoje; "Outro…" troca pra um <input> de texto livre, pra não travar
+  // quem precisar cadastrar um centro novo.
+  const [blockCentroCustom, setBlockCentroCustom] = useState(false);
   // Sala: sem FK real pra courses (room_by_day é jsonb — soft reference),
   // então excluir não é bloqueado pelo banco; mostramos quantas disciplinas
   // seriam desalocadas antes de confirmar. Bloco: TEM FK real
@@ -608,10 +722,58 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
   const [confirmDeleteRoom, setConfirmDeleteRoom] = useState(null);   // room | null
   const [confirmDeleteBlock, setConfirmDeleteBlock] = useState(null); // block | null
   const [deleting, setDeleting] = useState(false);
+  const [sortKey, setSortKey] = useState('role'); // 'label'|'block'|'type'|'cap'|'role'|'subUnit'
+  const [sortDir, setSortDir] = useState('asc');
 
   const blockLabel = id => { const b=blocks.find(x=>x.id===id); return b?`${b.local} — ${b.name}`:'—'; };
   const roomCoursesOf = r => courses.filter(c => Object.values(c.roomByDay).includes(r.id));
   const roomsOfBlock = b => rooms.filter(r => r.blockId === b.id);
+
+  const roleLabelOf = r => r.roleId ? gRole(r.roleId).full : (roles.find(ro=>ro.isSystem)?.name??'Diretoria');
+  const subUnitLabelOf = r => {
+    const roleObj = roles.find(ro=>ro.id===r.roleId);
+    const su = roleObj?.subUnitId ? subUnits.find(s=>s.id===roleObj.subUnitId) : null;
+    return su ? su.fullName : '';
+  };
+  const roomSortValue = (r, key) => {
+    switch (key) {
+      case 'label': return r.label ?? '';
+      case 'block': return blockLabel(r.blockId);
+      case 'type': return r.type ?? '';
+      case 'cap': return r.cap ?? 0;
+      case 'role': return roleLabelOf(r);
+      case 'subUnit': return subUnitLabelOf(r);
+      default: return '';
+    }
+  };
+  const toggleSort = key => {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+  // Desempate fixo, sempre nesta ordem (Sub-Unidade → Função → Bloco → Sala),
+  // pulando a coluna já usada como critério principal — a coluna escolhida
+  // manualmente vira o primeiro critério, o resto da hierarquia resolve os
+  // empates na ordem acima.
+  const TIEBREAK_HIERARCHY = ['subUnit', 'role', 'block', 'label'];
+  const compareByKey = (a, b, key) => {
+    const va = roomSortValue(a, key), vb = roomSortValue(b, key);
+    return typeof va === 'number' && typeof vb === 'number'
+      ? va - vb
+      : String(va).localeCompare(String(vb), 'pt-BR', { numeric: true });
+  };
+  const sortedRooms = useMemo(() => {
+    const chain = [sortKey, ...TIEBREAK_HIERARCHY.filter(k => k !== sortKey)];
+    const arr = [...rooms];
+    arr.sort((a, b) => {
+      for (let i = 0; i < chain.length; i++) {
+        const cmp = compareByKey(a, b, chain[i]);
+        if (cmp !== 0) return i === 0 && sortDir === 'desc' ? -cmp : cmp;
+      }
+      return 0;
+    });
+    return arr;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rooms, sortKey, sortDir, blocks, roles, subUnits]);
 
   const startCreateRoom = () => { setRoomForm({ id:crypto.randomUUID(), label:'', cap:30, type:'Sala de Aula', floor:1, blockId:blocks[0]?.id??'', roleId:'', features:[], description:'' }); setEditingRoom('new'); setConfirmDeleteRoom(null); };
   const startEditRoom = r => { setRoomForm({ ...r, roleId:r.roleId??'' }); setEditingRoom(r); setConfirmDeleteRoom(null); };
@@ -624,6 +786,13 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
       if (editingRoom==='new') await mgmt.createRoom(payload);
       else await mgmt.updateRoom(editingRoom.id, payload);
       flash('ok','Sala salva.'); cancelRoom(); reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+  };
+  const toggleRoomActive = async r => {
+    try {
+      await mgmt.setRoomActive(r.id, !r.isActive);
+      flash('ok', r.isActive ? `Sala ${r.label} foi desativada.` : `Sala ${r.label} foi reativada.`);
+      reloadDomain();
     } catch (e) { flash('err', ptError(e)); }
   };
   const startDeleteRoom = r => { setConfirmDeleteRoom(r); cancelRoom(); setConfirmDeleteBlock(null); };
@@ -640,8 +809,8 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
     finally { setDeleting(false); }
   };
 
-  const startCreateBlock = () => { setBlockForm({ id:crypto.randomUUID(), local:'', name:'' }); setEditingBlock('new'); setConfirmDeleteBlock(null); };
-  const startEditBlock = b => { setBlockForm({ ...b }); setEditingBlock(b); setConfirmDeleteBlock(null); };
+  const startCreateBlock = () => { setBlockForm({ id:crypto.randomUUID(), local:'', name:'' }); setEditingBlock('new'); setConfirmDeleteBlock(null); setBlockCentroCustom(false); };
+  const startEditBlock = b => { setBlockForm({ ...b }); setEditingBlock(b); setConfirmDeleteBlock(null); setBlockCentroCustom(!KNOWN_CENTROS.includes(b.local)); };
   const cancelBlock = () => { setEditingBlock(null); setBlockForm(null); };
   const saveBlock = async () => {
     if (!blockForm.local.trim()) return flash('err', 'Informe o centro do bloco.');
@@ -650,6 +819,13 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
       if (editingBlock==='new') await mgmt.createBlock(blockForm);
       else await mgmt.updateBlock(editingBlock.id, blockForm);
       flash('ok','Bloco salvo.'); cancelBlock(); reloadDomain();
+    } catch (e) { flash('err', ptError(e)); }
+  };
+  const toggleBlockActive = async b => {
+    try {
+      await mgmt.setBlockActive(b.id, !b.isActive);
+      flash('ok', b.isActive ? `Bloco ${b.local} — ${b.name} foi desativado.` : `Bloco ${b.local} — ${b.name} foi reativado.`);
+      reloadDomain();
     } catch (e) { flash('err', ptError(e)); }
   };
   const startDeleteBlock = b => { setConfirmDeleteBlock(b); cancelBlock(); setConfirmDeleteRoom(null); };
@@ -679,25 +855,36 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
             {can(PERMS.MANAGE_ROOMS)&&<button onClick={startCreateRoom} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sala</button>}
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
               <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
-                {['Sala','Bloco','Vagas','Função','Sub-unidade',''].map(h=><th key={h} style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,textTransform:'uppercase'}}>{h}</th>)}
+                {[['Sala','label'],['Bloco','block'],['Tipo','type'],['Vagas','cap'],['Função','role'],['Sub-unidade','subUnit'],[ '',null]].map(([h,key])=>(
+                  <th key={h||'actions'} onClick={key?()=>toggleSort(key):undefined}
+                    style={{padding:'6px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:sortKey===key?T.txt:T.dim,textTransform:'uppercase',cursor:key?'pointer':'default',userSelect:'none',whiteSpace:'nowrap'}}>
+                    {h}{sortKey===key?(sortDir==='asc'?' ▲':' ▼'):''}
+                  </th>
+                ))}
               </tr></thead>
               <tbody>
-                {rooms.map(r=>{
+                {sortedRooms.map(r=>{
                   const role=gRole(r.roleId);
                   const roleObj=roles.find(ro=>ro.id===r.roleId);
                   const su=roleObj?.subUnitId?subUnits.find(s=>s.id===roleObj.subUnitId):null;
-                  const roleLabel=r.roleId?role.full:(roles.find(ro=>ro.isSystem)?.name??'Diretoria');
+                  const roleLabel=roleLabelOf(r);
                   return(
-                    <tr key={r.id} style={{borderBottom:`1px solid ${T.bdr}`}}>
-                      <td style={{padding:'7px 10px'}}>{r.label}</td>
+                    <tr key={r.id} style={{borderBottom:`1px solid ${T.bdr}`,opacity:r.isActive?1:.55}}>
+                      <td style={{padding:'7px 10px'}}>{r.label}{!r.isActive&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginLeft:6}}>(inativa)</span>}</td>
                       <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{blockLabel(r.blockId)}</td>
+                      <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{r.type}</td>
                       <td style={{padding:'7px 10px'}}>{r.cap}</td>
                       <td style={{padding:'7px 10px'}}><span style={{fontFamily:"'DM Mono',monospace",fontSize:10,color:role.textClr,background:`${role.clr}22`,borderRadius:4,padding:'2px 6px'}}>{roleLabel}</span></td>
                       <td style={{padding:'7px 10px',fontFamily:"'DM Mono',monospace",fontSize:11,color:T.dim}}>{su?su.fullName:'—'}</td>
                       <td style={{padding:'7px 10px'}}>
-                        <div style={{display:'flex',gap:6}}>
+                        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                           <button onClick={()=>startEditRoom(r)} style={{padding:'3px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:4,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
-                          <button onClick={()=>startDeleteRoom(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                          {r.isActive
+                            ? <button onClick={()=>toggleRoomActive(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Desativar</button>
+                            : <>
+                                <button onClick={()=>toggleRoomActive(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #22c55e55',borderRadius:4,color:'#22c55e',fontSize:11,cursor:'pointer'}}>Ativar</button>
+                                <button onClick={()=>startDeleteRoom(r)} style={{padding:'3px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:4,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                              </>}
                         </div>
                       </td>
                     </tr>
@@ -711,10 +898,15 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
             {can(PERMS.MANAGE_BLOCKS)&&<button onClick={startCreateBlock} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Novo Bloco</button>}
             <div style={{display:'flex',flexDirection:'column',gap:8}}>
               {blocks.map(b=>(
-                <div key={b.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{flex:1,fontSize:13,color:T.txt}}>{b.local} — {b.name}</div>
+                <div key={b.id} style={{padding:'10px 14px',border:`1px solid ${T.bdr}`,borderRadius:8,display:'flex',alignItems:'center',gap:12,opacity:b.isActive?1:.55}}>
+                  <div style={{flex:1,fontSize:13,color:T.txt}}>{b.local} — {b.name}{!b.isActive&&<span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,marginLeft:6}}>(inativo)</span>}</div>
                   <button onClick={()=>startEditBlock(b)} style={{padding:'4px 10px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:5,color:T.muted,fontSize:11,cursor:'pointer'}}>Editar</button>
-                  <button onClick={()=>startDeleteBlock(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                  {b.isActive
+                    ? <button onClick={()=>toggleBlockActive(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Desativar</button>
+                    : <>
+                        <button onClick={()=>toggleBlockActive(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #22c55e55',borderRadius:5,color:'#22c55e',fontSize:11,cursor:'pointer'}}>Ativar</button>
+                        <button onClick={()=>startDeleteBlock(b)} style={{padding:'4px 10px',background:'transparent',border:'1px solid #ef444455',borderRadius:5,color:'#ef4444',fontSize:11,cursor:'pointer'}}>Excluir</button>
+                      </>}
                 </div>
               ))}
             </div>
@@ -773,7 +965,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
             </select>
           </div>
           <div style={{marginBottom:16}}>
-            <label style={lblStyle(T)}>Função dona (vazio = compartilhada)</label>
+            <label style={lblStyle(T)}>Função Dona</label>
             <select value={roomForm.roleId} onChange={e=>setRoomForm({...roomForm,roleId:e.target.value})} style={{...inpStyle(T),cursor:'pointer'}}>
               <option value="" style={{fontWeight:'bold'}}>{roles.find(r=>r.isSystem)?.name??'Diretoria'}</option>
               {subUnits.map(su=>{
@@ -791,7 +983,29 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
       ):editingBlock?(
         <form onSubmit={e=>{e.preventDefault();saveBlock();}}>
           <div style={{fontSize:14,fontWeight:700,marginBottom:16,color:T.txt}}>{editingBlock==='new'?'Novo Bloco':'Editar Bloco'}</div>
-          <div style={{marginBottom:12}}><label style={lblStyle(T)}>Centro (ex.: CCN1)</label><input value={blockForm.local} onChange={e=>setBlockForm({...blockForm,local:e.target.value})} style={inpStyle(T)}/></div>
+          <div style={{marginBottom:12}}>
+            <label style={lblStyle(T)}>Centro</label>
+            {blockCentroCustom?(
+              <>
+                <input autoFocus value={blockForm.local} onChange={e=>setBlockForm({...blockForm,local:e.target.value})} placeholder="Digite o centro" style={inpStyle(T)}/>
+                <button type="button" onClick={()=>{setBlockCentroCustom(false);setBlockForm({...blockForm,local:''});}}
+                  style={{marginTop:4,background:'none',border:'none',padding:0,color:T.dim,fontSize:10,cursor:'pointer',textDecoration:'underline'}}>
+                  ← escolher CCN1/CCN2
+                </button>
+              </>
+            ):(
+              <select value={KNOWN_CENTROS.includes(blockForm.local)?blockForm.local:''}
+                onChange={e=>{
+                  if(e.target.value==='__custom__'){ setBlockCentroCustom(true); setBlockForm({...blockForm,local:''}); }
+                  else setBlockForm({...blockForm,local:e.target.value});
+                }}
+                style={{...inpStyle(T),cursor:'pointer'}}>
+                <option value="" disabled>Selecione…</option>
+                {KNOWN_CENTROS.map(c=><option key={c} value={c}>{c}</option>)}
+                <option value="__custom__">Outro…</option>
+              </select>
+            )}
+          </div>
           <div style={{marginBottom:16}}><label style={lblStyle(T)}>Nome do bloco (ex.: SG-04)</label><input value={blockForm.name} onChange={e=>setBlockForm({...blockForm,name:e.target.value})} style={inpStyle(T)}/></div>
           <div style={{display:'flex',gap:8}}>
             <button type="button" onClick={cancelBlock} style={{flex:1,padding:'8px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>Cancelar</button>
