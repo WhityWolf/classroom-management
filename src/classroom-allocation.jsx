@@ -14,6 +14,8 @@ import * as authApi from './db/authApi.js';
 import { useRealtimeSync } from './db/useRealtimeSync.js';
 import { supabaseConfigured } from './db/supabaseClient.js';
 import campusMapImg from './assets/campus-map.png';
+import campusMapCcn1Img from './assets/campus-map-ccn1.png';
+import campusMapCcn2Img from './assets/campus-map-ccn2.png';
 // ?url força o Vite a tratar o import como URL de asset estático mesmo
 // .xlsx não estando na lista padrão de extensões reconhecidas (que cobre
 // principalmente imagem/mídia/fonte) — sem isso, precisaria de
@@ -1431,33 +1433,43 @@ function RoomMapGrid({rooms,alloc,mapHours,buildColMap,gRole,gBlockLabel,subUnit
 // Posição de cada pino é salva como porcentagem da imagem (block.mapX/mapY,
 // 0-100), não pixel — continua válida em qualquer tamanho de tela ou se a
 // imagem for trocada por uma versão de resolução diferente depois. ─────────
-// Converte a posição percentual de um pino (block.mapX/mapY, 0-100) em
-// lat/lon real, pra abrir a localização/rota no Google Maps sem precisar
-// cadastrar coordenada por bloco. A princípio dava pra fazer isso por
-// interpolação linear direta usando a tag <bounds> do map.osm original
-// (export do OpenStreetMap usado pra gerar campus-map.png, mantido fora do
-// repo) — mas a proporção lon/lat desse bbox bruto não bate com a
-// proporção da imagem renderizada (a ferramenta de export recortou/deu
-// margem diferente da consulta bruta), o que gerava erro de até ~50-116m.
-// Por isso os coeficientes abaixo vêm de uma transformação afim (rotação +
-// escala não-uniforme, sem distorção perspectiva) calibrada por mínimos
-// quadrados a partir de 5 pontos de controle: prédios com marcador/rótulo
-// já "cozidos" na própria imagem (RU-CCN, Reitoria, HU, RU II, Biblioteca
-// Universitária) cuja posição em pixel foi extraída detectando o ponto
-// escuro do marcador na imagem, casada com a lat/lon real do mesmo prédio
-// lida do map.osm — erro residual caiu pra ~2-17m. Se a imagem for trocada
-// de novo, repetir esse processo (achar prédios rotulados na imagem nova,
-// pegar lat/lon deles no .osm correspondente, reajustar os coeficientes).
-const CAMPUS_GEO_TRANSFORM={
-  latA:7.39853864e-6,  latB:-1.08716770e-4, latC:-5.05296922,
-  lonA:1.53449600e-4,  lonB:-3.49992620e-6, lonC:-42.80189400,
+// Três imagens: o mapa geral (onde block.mapX/mapY — 0-100% — é de fato
+// salvo/editado) e dois recortes com mais zoom, um por centro (CCN1 =
+// cluster leste/Reitoria, CCN2 = cluster oeste/HU) — ver "zoom" mais abaixo.
+// Cada bbox aqui é o lon/lat real coberto pelos 4 cantos da respectiva
+// imagem, medido a partir do dado geográfico de origem (não é mais a tag
+// <bounds> bruta de uma consulta OSM, que numa versão anterior desta tela
+// não batia com a proporção da imagem já renderizada e gerava erro de
+// ~50-116m) — a proporção lon/lat de cada bbox abaixo já bate com o
+// px_width/px_height da respectiva imagem, então dá pra interpolar
+// linearmente sem precisar de nenhuma calibração extra.
+const CAMPUS_MAPS={
+  geral:{img:campusMapImg,local:null,label:'Mapa Geral',pxWidth:2600,pxHeight:1892,
+    lonMin:-42.802288408,lonMax:-42.786554792,latMin:-5.063605871999999,latMax:-5.052200228},
+  ccn1:{img:campusMapCcn1Img,local:'CCN1',label:'CCN1',pxWidth:1600,pxHeight:2227,
+    lonMin:-42.793978816,lonMax:-42.787177184,latMin:-5.061485530000001,latMax:-5.05205597},
+  ccn2:{img:campusMapCcn2Img,local:'CCN2',label:'CCN2',pxWidth:2400,pxHeight:1778,
+    lonMin:-42.801539245,lonMax:-42.794836055,latMin:-5.060280730000001,latMax:-5.05533527},
 };
-function pinLatLng(x,y){
-  const{latA,latB,latC,lonA,lonB,lonC}=CAMPUS_GEO_TRANSFORM;
-  const lat=latA*x+latB*y+latC;
-  const lon=lonA*x+lonB*y+lonC;
+// Posição percentual (0-100, em cima da imagem `mapKey`) -> lat/lon real.
+function pctToLatLng(mapKey,xPct,yPct){
+  const m=CAMPUS_MAPS[mapKey];
+  const lat=m.latMax-(yPct/100)*(m.latMax-m.latMin);
+  const lon=m.lonMin+(xPct/100)*(m.lonMax-m.lonMin);
   return{lat,lon};
 }
+// Inverso: lat/lon real -> posição percentual na imagem `mapKey`. Usado pra
+// projetar um pino salvo em relação ao mapa geral dentro de um dos recortes
+// com zoom (CCN1/CCN2), que não têm sua própria coluna de posição — a
+// mesma coordenada real é reaproveitada nos três mapas.
+function latLngToPct(mapKey,lat,lon){
+  const m=CAMPUS_MAPS[mapKey];
+  return{
+    x:((lon-m.lonMin)/(m.lonMax-m.lonMin))*100,
+    y:((m.latMax-lat)/(m.latMax-m.latMin))*100,
+  };
+}
+function pinLatLng(x,y){ return pctToLatLng('geral',x,y); }
 
 function CampusMapScreen({blocks,rooms,onBack}){
   const{can}=useAuth();
@@ -1480,6 +1492,11 @@ function CampusMapScreen({blocks,rooms,onBack}){
   const[expandedIds,setExpandedIds]=useState(()=>new Set());
   const[highlightId,setHighlightId]=useState(null);
   const pinRefs=useRef({});
+  // "Zoom" simples: troca a imagem exibida por um recorte focado num dos
+  // centros. Editar posição só faz sentido no mapa geral (é onde
+  // block.mapX/mapY de fato mora), então entrar em edição sempre volta pra
+  // 'geral' e a troca de mapa fica escondida enquanto editing=true.
+  const[mapView,setMapView]=useState('geral');
 
   const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),4000);};
 
@@ -1487,6 +1504,18 @@ function CampusMapScreen({blocks,rooms,onBack}){
   const unpositioned=useMemo(()=>blocks.filter(b=>b.mapX==null||b.mapY==null),[blocks]);
   const roomsOf=blockId=>rooms.filter(r=>r.blockId===blockId);
   const selectedBlock=blocks.find(b=>b.id===selectedId)??null;
+  const currentMap=CAMPUS_MAPS[mapView];
+  // Pinos a desenhar no mapa atual: no geral é a posição salva direto; num
+  // recorte com zoom, reprojeta a mesma coordenada real (via mapa geral)
+  // pra posição % dentro daquele recorte, e só pros blocos daquele centro.
+  const pinsToRender=useMemo(()=>{
+    if(mapView==='geral')return positioned.map(b=>({...b,_x:b.mapX,_y:b.mapY}));
+    return positioned.filter(b=>b.local===currentMap.local).map(b=>{
+      const{lat,lon}=pctToLatLng('geral',b.mapX,b.mapY);
+      const{x,y}=latLngToPct(mapView,lat,lon);
+      return{...b,_x:x,_y:y};
+    });
+  },[mapView,positioned,currentMap.local]);
 
   const stopEditing=()=>{setEditing(false);setPlacingId(null);setDragId(null);setDragPos(null);setSelectedId(null);};
 
@@ -1546,10 +1575,11 @@ function CampusMapScreen({blocks,rooms,onBack}){
     pinRefs.current[id]?.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
   };
 
-  const renderBlockPanel=(local,side)=>{
+  const renderBlockPanel=(local,side,disabled=false)=>{
     const list=blocks.filter(b=>b.local===local);
     return(
-      <div style={{width:250,flexShrink:0,[side==='left'?'borderRight':'borderLeft']:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14}}>
+      <div style={{width:250,flexShrink:0,[side==='left'?'borderRight':'borderLeft']:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14,
+        opacity:disabled?.45:1,filter:disabled?'grayscale(1)':'none',pointerEvents:disabled?'none':'auto',transition:'opacity .15s,filter .15s'}}>
         <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:2}}>{local}</div>
         <div style={{...mono,fontSize:10,color:T.dim,marginBottom:10}}>{list.length} bloco{list.length!==1?'s':''}</div>
         {list.length===0?(
@@ -1605,11 +1635,22 @@ function CampusMapScreen({blocks,rooms,onBack}){
         <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         <span style={{fontSize:14,fontWeight:700,color:T.txt}}>📍 Localização de Salas</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
-        <span style={{...mono,fontSize:11,color:T.dim}}>{positioned.length} bloco{positioned.length!==1?'s':''} no mapa{unpositioned.length>0?` · ${unpositioned.length} sem posição`:''}</span>
+        <span style={{...mono,fontSize:11,color:T.dim}}>{pinsToRender.length} bloco{pinsToRender.length!==1?'s':''} no mapa{mapView==='geral'&&unpositioned.length>0?` · ${unpositioned.length} sem posição`:''}</span>
+        {!editing&&(
+          <div style={{display:'flex',gap:3,background:T.inner,padding:3,borderRadius:8,border:`1px solid ${T.bdr2}`,marginLeft:6}}>
+            {Object.entries(CAMPUS_MAPS).map(([key,m])=>(
+              <button key={key} onClick={()=>setMapView(key)}
+                style={{padding:'4px 11px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,
+                  background:mapView===key?'#3b82f6':'transparent',color:mapView===key?'#fff':T.muted}}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div style={{flex:1}}/>
         {saving&&<span style={{...mono,fontSize:10,color:T.dim}}>Salvando…</span>}
         {canEdit&&(
-          <button className="icon-btn" onClick={()=>editing?stopEditing():setEditing(true)}
+          <button className="icon-btn" onClick={()=>{if(editing){stopEditing();}else{setMapView('geral');setEditing(true);}}}
             style={{padding:'5px 12px',background:editing?'#3b82f6':T.inner,border:`1px solid ${editing?'#3b82f6':T.bdr2}`,borderRadius:6,color:editing?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
             {editing?'✕ Concluir edição':'✎ Editar posições'}
           </button>
@@ -1635,7 +1676,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
               </button>
             ))}
           </div>
-        ):renderBlockPanel('CCN2','left')}
+        ):renderBlockPanel('CCN2','left',mapView==='ccn1')}
 
         <div style={{flex:1,minWidth:0,minHeight:0,overflow:'hidden',position:'relative',background:'#dfe3e0',display:'flex',alignItems:'center',justifyContent:'center'}}>
           {/* aspectRatio+max-w/h (em vez de um width fixo em px) faz esse
@@ -1647,14 +1688,14 @@ function CampusMapScreen({blocks,rooms,onBack}){
           da imagem (sem sobra tipo letterbox), a matemática de % continua
           válida sem nenhuma mudança. */}
           <div ref={imgWrapRef} onClick={handleMapClick}
-            style={{position:'relative',aspectRatio:'2906/2124',maxWidth:'100%',maxHeight:'100%',width:'auto',height:'auto',cursor:editing&&placingId?'crosshair':'default'}}>
-            <img src={campusMapImg} alt="Mapa do campus" draggable={false}
+            style={{position:'relative',aspectRatio:`${currentMap.pxWidth}/${currentMap.pxHeight}`,maxWidth:'100%',maxHeight:'100%',width:'auto',height:'auto',cursor:editing&&placingId?'crosshair':'default'}}>
+            <img src={currentMap.img} alt={`Mapa ${currentMap.label}`} draggable={false}
               style={{display:'block',width:'100%',height:'100%',userSelect:'none'}}/>
 
-            {positioned.map(b=>{
+            {pinsToRender.map(b=>{
               const isDragging=dragId===b.id;
-              const x=isDragging&&dragPos?dragPos.x:b.mapX;
-              const y=isDragging&&dragPos?dragPos.y:b.mapY;
+              const x=isDragging&&dragPos?dragPos.x:b._x;
+              const y=isDragging&&dragPos?dragPos.y:b._y;
               const isHighlighted=highlightId===b.id;
               return(
                 <div key={b.id} ref={el=>{pinRefs.current[b.id]=el;}}
@@ -1684,7 +1725,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
           </div>
         </div>
 
-        {!editing&&renderBlockPanel('CCN1','right')}
+        {!editing&&renderBlockPanel('CCN1','right',mapView==='ccn2')}
       </div>
 
       {selectedBlock&&!editing&&(
