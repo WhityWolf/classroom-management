@@ -1473,6 +1473,13 @@ function CampusMapScreen({blocks,rooms,onBack}){
   const[saving,setSaving]=useState(false);
   const[toast,setToast]=useState(null);
   const imgWrapRef=useRef(null);
+  // Menus laterais (CCN1/CCN2): bloco expandido mostra suas salas inline; o
+  // último bloco clicado num menu fica "em destaque" (cor diferente da
+  // seleção-por-clique-no-pino, que abre o modal) e o mapa rola até o pino
+  // correspondente, se ele já tiver posição.
+  const[expandedIds,setExpandedIds]=useState(()=>new Set());
+  const[highlightId,setHighlightId]=useState(null);
+  const pinRefs=useRef({});
 
   const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),4000);};
 
@@ -1529,6 +1536,58 @@ function CampusMapScreen({blocks,rooms,onBack}){
     showToast('Bloco voltou pra lista de "sem posição".');
   };
 
+  const toggleBlockPanel=id=>{
+    setExpandedIds(prev=>{
+      const next=new Set(prev);
+      if(next.has(id))next.delete(id);else next.add(id);
+      return next;
+    });
+    setHighlightId(id);
+    pinRefs.current[id]?.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
+  };
+
+  const renderBlockPanel=(local,side)=>{
+    const list=blocks.filter(b=>b.local===local);
+    return(
+      <div style={{width:250,flexShrink:0,[side==='left'?'borderRight':'borderLeft']:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14}}>
+        <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:2}}>{local}</div>
+        <div style={{...mono,fontSize:10,color:T.dim,marginBottom:10}}>{list.length} bloco{list.length!==1?'s':''}</div>
+        {list.length===0?(
+          <div style={{fontSize:11,color:T.dim,fontStyle:'italic'}}>Nenhum bloco cadastrado.</div>
+        ):list.map(b=>{
+          const expanded=expandedIds.has(b.id);
+          const rs=roomsOf(b.id);
+          const isHighlighted=highlightId===b.id;
+          const hasPosition=b.mapX!=null&&b.mapY!=null;
+          return(
+            <div key={b.id} style={{marginBottom:6}}>
+              <button onClick={()=>toggleBlockPanel(b.id)}
+                style={{display:'flex',alignItems:'center',gap:8,width:'100%',textAlign:'left',padding:'8px 10px',borderRadius:7,cursor:'pointer',
+                  background:isHighlighted?'#f59e0b22':T.inner,border:`1px solid ${isHighlighted?'#f59e0b':T.bdr2}`}}>
+                <span style={{fontSize:9,color:T.dim,transform:expanded?'rotate(90deg)':'none',transition:'transform .15s',flexShrink:0}}>▶</span>
+                <span style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:600,color:T.txt}}>{b.name}</div>
+                  <div style={{...mono,fontSize:9,color:T.dim}}>{rs.length} sala{rs.length!==1?'s':''}{!hasPosition?' · sem posição no mapa':''}</div>
+                </span>
+              </button>
+              {expanded&&(
+                <div style={{paddingLeft:22,marginTop:4}}>
+                  {rs.length===0?(
+                    <div style={{fontSize:11,color:T.dim,fontStyle:'italic',padding:'4px 0'}}>Nenhuma sala cadastrada.</div>
+                  ):rs.map(r=>(
+                    <div key={r.id} style={{fontSize:11,color:T.txt,padding:'4px 0',borderBottom:`1px solid ${T.bdr}`}}>
+                      Sala {r.label} <span style={{color:T.dim}}>· {r.cap} lugares</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
       <style>{`
@@ -1538,6 +1597,8 @@ function CampusMapScreen({blocks,rooms,onBack}){
         .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
         .campus-pin{transition:transform .1s;}
         .campus-pin:hover{transform:translate(-50%,-100%) scale(1.15);}
+        @keyframes campus-pin-pulse{0%,100%{filter:drop-shadow(0 0 2px #f59e0b);}50%{filter:drop-shadow(0 0 10px #f59e0b);}}
+        .campus-pin-highlighted{animation:campus-pin-pulse 1.3s ease-in-out infinite;}
       `}</style>
 
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
@@ -1557,7 +1618,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
       </div>
 
       <div style={{flex:1,display:'flex',overflow:'hidden'}}>
-        {editing&&(
+        {editing?(
           <div style={{width:260,flexShrink:0,borderRight:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14}}>
             <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:4}}>Blocos sem posição</div>
             <div style={{fontSize:11,color:T.dim,marginBottom:12,lineHeight:1.5}}>
@@ -1574,7 +1635,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
               </button>
             ))}
           </div>
-        )}
+        ):renderBlockPanel('CCN2','left')}
 
         <div style={{flex:1,overflow:'auto',position:'relative',background:'#dfe3e0',display:'flex',alignItems:'flex-start',justifyContent:'center'}}>
           <div ref={imgWrapRef} onClick={handleMapClick}
@@ -1586,19 +1647,21 @@ function CampusMapScreen({blocks,rooms,onBack}){
               const isDragging=dragId===b.id;
               const x=isDragging&&dragPos?dragPos.x:b.mapX;
               const y=isDragging&&dragPos?dragPos.y:b.mapY;
+              const isHighlighted=highlightId===b.id;
               return(
-                <div key={b.id} className="campus-pin"
+                <div key={b.id} ref={el=>{pinRefs.current[b.id]=el;}}
+                  className={`campus-pin${isHighlighted?' campus-pin-highlighted':''}`}
                   onMouseDown={e=>{if(!editing)return;e.preventDefault();e.stopPropagation();setDragId(b.id);}}
                   onClick={e=>{e.stopPropagation();if(!editing)setSelectedId(b.id);}}
                   title={`${b.local} — ${b.name}`}
                   style={{
                     position:'absolute',left:`${x}%`,top:`${y}%`,transform:'translate(-50%,-100%)',
-                    cursor:editing?'grab':'pointer',zIndex:isDragging?20:selectedId===b.id?15:10,
+                    cursor:editing?'grab':'pointer',zIndex:isDragging?20:selectedId===b.id?15:isHighlighted?14:10,
                     filter:isDragging?'drop-shadow(0 4px 6px rgba(0,0,0,.35))':'drop-shadow(0 2px 3px rgba(0,0,0,.25))',
                   }}>
                   <svg width="30" height="38" viewBox="0 0 30 38">
                     <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 23 15 23s15-12.5 15-23C30 6.7 23.3 0 15 0z"
-                      fill={selectedId===b.id||isDragging?'#3b82f6':'#1e3a5f'} stroke="#fff" strokeWidth="1.5"/>
+                      fill={selectedId===b.id||isDragging?'#3b82f6':isHighlighted?'#f59e0b':'#1e3a5f'} stroke="#fff" strokeWidth="1.5"/>
                     <circle cx="15" cy="15" r="6" fill="#fff"/>
                   </svg>
                   <span style={{
@@ -1612,6 +1675,8 @@ function CampusMapScreen({blocks,rooms,onBack}){
             })}
           </div>
         </div>
+
+        {!editing&&renderBlockPanel('CCN1','right')}
       </div>
 
       {selectedBlock&&!editing&&(
