@@ -1502,7 +1502,8 @@ function CampusMapScreen({blocks,rooms,onBack}){
 
   const positioned=useMemo(()=>blocks.filter(b=>b.mapX!=null&&b.mapY!=null),[blocks]);
   const unpositioned=useMemo(()=>blocks.filter(b=>b.mapX==null||b.mapY==null),[blocks]);
-  const roomsOf=blockId=>rooms.filter(r=>r.blockId===blockId);
+  const roomsOf=blockId=>rooms.filter(r=>r.blockId===blockId)
+    .sort((a,b)=>a.label.localeCompare(b.label,undefined,{numeric:true,sensitivity:'base'}));
   const selectedBlock=blocks.find(b=>b.id===selectedId)??null;
   const currentMap=CAMPUS_MAPS[mapView];
   // Pinos a desenhar no mapa atual: no geral é a posição salva direto; num
