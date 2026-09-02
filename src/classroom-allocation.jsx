@@ -1074,7 +1074,7 @@ function ScreenSelector({onPick,subUnits}){
   const cards=[
     {key:'allocate',icon:'📋',title:'Alocar Disciplinas',desc:'Cadastre disciplinas e aloque-as nas salas da sua função.'},
     {key:'map',icon:'🗺',title:'Mapa de Salas',desc:'Veja uma visão geral de todas as salas, com disciplinas alocadas por dia e horário.'},
-    {key:'campus',icon:'📍',title:'Mapa do Campus',desc:'Veja onde cada bloco fica fisicamente no campus.'},
+    {key:'campus',icon:'📍',title:'Localização de Salas',desc:'Veja onde cada bloco fica fisicamente no campus.'},
     ...(canManage?[{key:'manage',icon:'⚙️',title:'Gerenciamento',desc:'Usuários, funções, sub-unidades, salas e blocos.'}]:[]),
   ];
   return(
@@ -1514,7 +1514,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
 
       <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
-        <span style={{fontSize:14,fontWeight:700,color:T.txt}}>📍 Mapa do Campus</span>
+        <span style={{fontSize:14,fontWeight:700,color:T.txt}}>📍 Localização de Salas</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
         <span style={{...mono,fontSize:11,color:T.dim}}>{positioned.length} bloco{positioned.length!==1?'s':''} no mapa{unpositioned.length>0?` · ${unpositioned.length} sem posição`:''}</span>
         <div style={{flex:1}}/>
@@ -1573,6 +1573,12 @@ function CampusMapScreen({blocks,rooms,onBack}){
                       fill={selectedId===b.id||isDragging?'#3b82f6':'#1e3a5f'} stroke="#fff" strokeWidth="1.5"/>
                     <circle cx="15" cy="15" r="6" fill="#fff"/>
                   </svg>
+                  <span style={{
+                    position:'absolute',left:34,top:15,transform:'translateY(-50%)',whiteSpace:'nowrap',
+                    pointerEvents:'none',fontSize:11,fontWeight:700,color:'#0f172a',
+                    background:'rgba(255,255,255,.88)',padding:'2px 6px',borderRadius:5,
+                    boxShadow:'0 1px 3px rgba(0,0,0,.3)',
+                  }}>{b.local} — {b.name}</span>
                 </div>
               );
             })}
