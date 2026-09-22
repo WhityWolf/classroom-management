@@ -1099,25 +1099,33 @@ function ScreenSelector({onPick,subUnits}){
         <button className="icon-btn" onClick={()=>onPick('profile')} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
-      {/* overflowY:'auto' é o que falta pra dar pra rolar até o último card
-          quando os 4 não cabem numa linha só (o pai tem overflow:'hidden' —
-          sem isto, o conteúdo que passa da altura disponível fica cortado e
-          inalcançável, não só espremido). */}
-      <div style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,padding:'24px 16px',overflowY:'auto',animation:'fadeIn .2s ease'}}>
-        <div style={{textAlign:'center'}}>
-          <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>Sistema de Gerenciamento de Salas de Aula — CCN/UFPI</div>
-        </div>
-        <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center'}}>
-          {cards.map(c=>(
-            <button key={c.key} onClick={()=>onPick(c.key)}
-              style={{width:260,padding:'28px 24px',background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,cursor:'pointer',textAlign:'left',transition:'all .15s',boxShadow:T.shadowSm}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;e.currentTarget.style.boxShadow=T.shadowMd;}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr;e.currentTarget.style.boxShadow=T.shadowSm;}}>
-              <div style={{fontSize:31,marginBottom:14}}>{c.icon}</div>
-              <div style={{fontSize:16,fontWeight:700,color:T.txt,marginBottom:6}}>{c.title}</div>
-              <div style={{fontSize:12,color:T.muted,lineHeight:1.5}}>{c.desc}</div>
-            </button>
-          ))}
+      {/* overflowY:'auto' é o que dá pra rolar quando o conteúdo não cabe
+          (o pai tem overflow:'hidden'). Mas só isso não bastava: com
+          justifyContent:'center' no eixo que transborda, o navegador nunca
+          deixa rolar pra ANTES do centro — só depois — então o título
+          (o primeiro filho, "antes" dos cards) ficava inatingível em telas
+          baixas/estreitas mesmo já dando pra rolar até o último card. Troca:
+          o container vira flex-start (scroll sempre no sentido normal, sem
+          zona negativa inatingível) e quem centraliza de verdade — só
+          quando sobra espaço — é o wrapper interno com margin:'auto 0'
+          (some sozinho quando o conteúdo já não cabe). */}
+      <div style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',alignItems:'center',padding:'24px 16px',overflowY:'auto',animation:'fadeIn .2s ease'}}>
+        <div style={{margin:'auto 0',display:'flex',flexDirection:'column',alignItems:'center',gap:28}}>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>Sistema de Gerenciamento de Salas de Aula — CCN/UFPI</div>
+          </div>
+          <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center'}}>
+            {cards.map(c=>(
+              <button key={c.key} onClick={()=>onPick(c.key)}
+                style={{width:260,padding:'28px 24px',background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,cursor:'pointer',textAlign:'left',transition:'all .15s',boxShadow:T.shadowSm}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;e.currentTarget.style.boxShadow=T.shadowMd;}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr;e.currentTarget.style.boxShadow=T.shadowSm;}}>
+                <div style={{fontSize:31,marginBottom:14}}>{c.icon}</div>
+                <div style={{fontSize:16,fontWeight:700,color:T.txt,marginBottom:6}}>{c.title}</div>
+                <div style={{fontSize:12,color:T.muted,lineHeight:1.5}}>{c.desc}</div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
