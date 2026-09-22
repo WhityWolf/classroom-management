@@ -1,5 +1,6 @@
 import { useState, useMemo, Fragment, useRef, useEffect, createContext, useContext } from 'react';
 import { ThemeCtx, LIGHT, DARK, useT, dtc, dbg } from './theme.jsx';
+import { useIsNarrow, TABLET_BP } from './responsive.js';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { isInstitutionalRole } from './auth/roles.js';
 import { PERMS } from './auth/permissions.js';
@@ -1258,7 +1259,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPerio
         ::-webkit-scrollbar-thumb{background:${T.scrollThumb};border-radius:4px;}
         .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
       `}</style>
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+      <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:10,rowGap:8,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         <span style={{fontSize:14,fontWeight:700,color:T.txt}}>🗺 Mapa de Salas</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
@@ -1470,6 +1471,26 @@ function latLngToPct(mapKey,lat,lon){
 }
 function pinLatLng(x,y){ return pctToLatLng('geral',x,y); }
 
+// Painel lateral em modo "gaveta" — abaixo de TABLET_BP os dois menus fixos
+// de 250px do CampusMapScreen (CCN1/CCN2) não cabem ao lado do mapa, então
+// viram isto: um overlay deslizante, reaproveitando o mesmo padrão visual
+// (backdrop + painel com slideIn) já usado no drawer de UserManagement.
+function SideDrawer({side='right',onClose,width='min(300px, 86vw)',title,children}){
+  const{T,theme}=useT();
+  return(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.6)',display:'flex',alignItems:'stretch',justifyContent:side==='left'?'flex-start':'flex-end',zIndex:150}}>
+      <div onClick={e=>e.stopPropagation()} style={{width,background:T.surface,[side==='left'?'borderRight':'borderLeft']:`1px solid ${T.bdr}`,display:'flex',flexDirection:'column',animation:'slideIn .2s ease',overflow:'hidden'}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,padding:'12px 14px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
+          <span style={{fontSize:13,fontWeight:700,color:T.txt}}>{title}</span>
+          <div style={{flex:1}}/>
+          <button onClick={onClose} style={{padding:'6px 11px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>✕</button>
+        </div>
+        <div style={{flex:1,overflow:'auto',padding:14}}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
 function CampusMapScreen({blocks,rooms,onBack}){
   const{can}=useAuth();
   const{T,theme,toggleTheme}=useT();
@@ -1496,6 +1517,11 @@ function CampusMapScreen({blocks,rooms,onBack}){
   // block.mapX/mapY de fato mora), então entrar em edição sempre volta pra
   // 'geral' e a troca de mapa fica escondida enquanto editing=true.
   const[mapView,setMapView]=useState('geral');
+  // Abaixo de TABLET_BP os menus CCN1/CCN2 (e o painel "sem posição" da
+  // edição) viram gaveta em vez de ficarem fixos ao lado do mapa — ver
+  // SideDrawer acima. null = nenhuma gaveta aberta.
+  const narrow=useIsNarrow(TABLET_BP);
+  const[mobilePanel,setMobilePanel]=useState(null); // null | 'ccn1' | 'ccn2' | 'unpositioned'
 
   const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),4000);};
 
@@ -1517,7 +1543,15 @@ function CampusMapScreen({blocks,rooms,onBack}){
     });
   },[mapView,positioned,currentMap.local]);
 
-  const stopEditing=()=>{setEditing(false);setPlacingId(null);setDragId(null);setDragPos(null);setSelectedId(null);};
+  const stopEditing=()=>{setEditing(false);setPlacingId(null);setDragId(null);setDragPos(null);setSelectedId(null);setMobilePanel(null);};
+
+  // Se o mapa mudar de zoom enquanto a gaveta do centro que acabou de ficar
+  // inativo está aberta, fecha ela — o botão que a abriria também fica
+  // desabilitado (mesma lógica do painel fixo em desktop, ver disabled=).
+  useEffect(()=>{
+    if(mapView==='ccn1'&&mobilePanel==='ccn2')setMobilePanel(null);
+    if(mapView==='ccn2'&&mobilePanel==='ccn1')setMobilePanel(null);
+  },[mapView]);
 
   const posFromEvent=e=>{
     const rect=imgWrapRef.current.getBoundingClientRect();
@@ -1590,11 +1624,16 @@ function CampusMapScreen({blocks,rooms,onBack}){
     pinRefs.current[id]?.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
   };
 
-  const renderBlockPanel=(local,side,disabled=false)=>{
+  // Conteúdo puro da lista de blocos de um centro (sem a moldura de 250px
+  // fixos) — reaproveitado tanto pelo painel fixo (desktop) quanto pela
+  // SideDrawer (mobile). `narrow` já está no escopo do componente: quando
+  // true isto só é chamado de dentro de uma gaveta, então usa padding maior
+  // pra alvo de toque em vez de precisar de mais um parâmetro.
+  const blockListJsx=local=>{
     const list=blocks.filter(b=>b.local===local);
+    const btnPad=narrow?'11px 12px':'8px 10px';
     return(
-      <div style={{width:250,flexShrink:0,[side==='left'?'borderRight':'borderLeft']:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14,
-        opacity:disabled?.45:1,filter:disabled?'grayscale(1)':'none',pointerEvents:disabled?'none':'auto',transition:'opacity .15s,filter .15s'}}>
+      <>
         <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:2}}>{local}</div>
         <div style={{...mono,fontSize:10,color:T.dim,marginBottom:10}}>{list.length} bloco{list.length!==1?'s':''}</div>
         {list.length===0?(
@@ -1607,7 +1646,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
           return(
             <div key={b.id} style={{marginBottom:6}}>
               <button onClick={()=>toggleBlockPanel(b.id)}
-                style={{display:'flex',alignItems:'center',gap:8,width:'100%',textAlign:'left',padding:'8px 10px',borderRadius:7,cursor:'pointer',
+                style={{display:'flex',alignItems:'center',gap:8,width:'100%',textAlign:'left',padding:btnPad,borderRadius:7,cursor:'pointer',
                   background:isHighlighted?'#f59e0b22':T.inner,border:`1px solid ${isHighlighted?'#f59e0b':T.bdr2}`}}>
                 <span style={{fontSize:9,color:T.dim,transform:expanded?'rotate(90deg)':'none',transition:'transform .15s',flexShrink:0}}>▶</span>
                 <span style={{flex:1,minWidth:0}}>
@@ -1620,7 +1659,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
                   {rs.length===0?(
                     <div style={{fontSize:11,color:T.dim,fontStyle:'italic',padding:'4px 0'}}>Nenhuma sala cadastrada.</div>
                   ):rs.map(r=>(
-                    <div key={r.id} style={{fontSize:11,color:T.txt,padding:'4px 0',borderBottom:`1px solid ${T.bdr}`}}>
+                    <div key={r.id} style={{fontSize:11,color:T.txt,padding:narrow?'7px 0':'4px 0',borderBottom:`1px solid ${T.bdr}`}}>
                       Sala {r.label} <span style={{color:T.dim}}>· {r.cap} lugares</span>
                     </div>
                   ))}
@@ -1629,9 +1668,42 @@ function CampusMapScreen({blocks,rooms,onBack}){
             </div>
           );
         })}
-      </div>
+      </>
     );
   };
+
+  // Moldura fixa de 250px — só usada no layout de desktop (!narrow), lado a
+  // lado com o mapa. Em mobile o mesmo conteúdo (blockListJsx) entra numa
+  // SideDrawer em vez disso.
+  const renderBlockPanel=(local,side,disabled=false)=>(
+    <div style={{width:250,flexShrink:0,[side==='left'?'borderRight':'borderLeft']:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14,
+      opacity:disabled?.45:1,filter:disabled?'grayscale(1)':'none',pointerEvents:disabled?'none':'auto',transition:'opacity .15s,filter .15s'}}>
+      {blockListJsx(local)}
+    </div>
+  );
+
+  // Idem para o painel "Blocos sem posição" do modo de edição — conteúdo
+  // extraído pra ser reaproveitado pela moldura fixa (desktop) e pela
+  // SideDrawer (mobile). No mobile, escolher um bloco já fecha a gaveta
+  // sozinho, senão ela ficaria cobrindo o mapa bem na hora de clicar nele.
+  const unpositionedListJsx=()=>(
+    <>
+      <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:4}}>Blocos sem posição</div>
+      <div style={{fontSize:11,color:T.dim,marginBottom:12,lineHeight:1.5}}>
+        Clique num bloco da lista e depois clique no mapa pra posicioná-lo. Pra reposicionar um que já está no mapa, arraste o pino direto. Dá pra trocar pro mapa do CCN1/CCN2 pra mirar com mais precisão — a posição é convertida de volta pro mapa geral automaticamente.
+      </div>
+      {unpositioned.length===0?(
+        <div style={{fontSize:11,color:T.dim,fontStyle:'italic'}}>Todos os blocos já têm posição definida.</div>
+      ):unpositioned.map(b=>(
+        <button key={b.id} onClick={()=>{setPlacingId(placingId===b.id?null:b.id);if(narrow)setMobilePanel(null);}}
+          style={{display:'block',width:'100%',textAlign:'left',padding:narrow?'11px 12px':'8px 10px',marginBottom:6,borderRadius:7,cursor:'pointer',
+            background:placingId===b.id?'#3b82f622':T.inner,border:`1px solid ${placingId===b.id?'#3b82f6':T.bdr2}`}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.txt}}>{b.local} — {b.name}</div>
+          {placingId===b.id&&<div style={{...mono,fontSize:9,color:'#3b82f6',marginTop:2}}>Clique no mapa…</div>}
+        </button>
+      ))}
+    </>
+  );
 
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -1644,9 +1716,10 @@ function CampusMapScreen({blocks,rooms,onBack}){
         .campus-pin:hover{transform:translate(-50%,-100%) scale(1.15);}
         @keyframes campus-pin-pulse{0%,100%{filter:drop-shadow(0 0 2px #f59e0b);}50%{filter:drop-shadow(0 0 10px #f59e0b);}}
         .campus-pin-highlighted{animation:campus-pin-pulse 1.3s ease-in-out infinite;}
+        @keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
       `}</style>
 
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+      <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:10,rowGap:8,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         <span style={{fontSize:14,fontWeight:700,color:T.txt}}>📍 Localização de Salas</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
@@ -1660,10 +1733,33 @@ function CampusMapScreen({blocks,rooms,onBack}){
             </button>
           ))}
         </div>
+        {/* Só existe abaixo de TABLET_BP — em desktop os menus já ficam
+            fixos ao lado do mapa (renderBlockPanel/painel de edição). */}
+        {narrow&&(
+          <div style={{display:'flex',gap:6}}>
+            {editing?(
+              <button onClick={()=>setMobilePanel(mobilePanel==='unpositioned'?null:'unpositioned')}
+                style={{padding:'5px 10px',background:mobilePanel==='unpositioned'?'#3b82f6':T.inner,border:`1px solid ${mobilePanel==='unpositioned'?'#3b82f6':T.bdr2}`,borderRadius:6,color:mobilePanel==='unpositioned'?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                📋 Sem posição{unpositioned.length>0?` (${unpositioned.length})`:''}
+              </button>
+            ):(
+              <>
+                <button disabled={mapView==='ccn1'} onClick={()=>setMobilePanel(mobilePanel==='ccn2'?null:'ccn2')}
+                  style={{padding:'5px 10px',background:mobilePanel==='ccn2'?'#3b82f6':T.inner,border:`1px solid ${mobilePanel==='ccn2'?'#3b82f6':T.bdr2}`,borderRadius:6,color:mobilePanel==='ccn2'?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:mapView==='ccn1'?'not-allowed':'pointer',opacity:mapView==='ccn1'?.4:1}}>
+                  ☰ CCN2
+                </button>
+                <button disabled={mapView==='ccn2'} onClick={()=>setMobilePanel(mobilePanel==='ccn1'?null:'ccn1')}
+                  style={{padding:'5px 10px',background:mobilePanel==='ccn1'?'#3b82f6':T.inner,border:`1px solid ${mobilePanel==='ccn1'?'#3b82f6':T.bdr2}`,borderRadius:6,color:mobilePanel==='ccn1'?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:mapView==='ccn2'?'not-allowed':'pointer',opacity:mapView==='ccn2'?.4:1}}>
+                  ☰ CCN1
+                </button>
+              </>
+            )}
+          </div>
+        )}
         <div style={{flex:1}}/>
         {saving&&<span style={{...mono,fontSize:10,color:T.dim}}>Salvando…</span>}
         {canEdit&&(
-          <button className="icon-btn" onClick={()=>editing?stopEditing():setEditing(true)}
+          <button className="icon-btn" onClick={()=>{if(editing)stopEditing();else{setEditing(true);setMobilePanel(null);}}}
             style={{padding:'5px 12px',background:editing?'#3b82f6':T.inner,border:`1px solid ${editing?'#3b82f6':T.bdr2}`,borderRadius:6,color:editing?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
             {editing?'✕ Concluir edição':'✎ Editar posições'}
           </button>
@@ -1672,24 +1768,11 @@ function CampusMapScreen({blocks,rooms,onBack}){
       </div>
 
       <div style={{flex:1,minHeight:0,display:'flex',overflow:'hidden'}}>
-        {editing?(
+        {!narrow&&(editing?(
           <div style={{width:260,flexShrink:0,borderRight:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14}}>
-            <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:4}}>Blocos sem posição</div>
-            <div style={{fontSize:11,color:T.dim,marginBottom:12,lineHeight:1.5}}>
-              Clique num bloco da lista e depois clique no mapa pra posicioná-lo. Pra reposicionar um que já está no mapa, arraste o pino direto. Dá pra trocar pro mapa do CCN1/CCN2 pra mirar com mais precisão — a posição é convertida de volta pro mapa geral automaticamente.
-            </div>
-            {unpositioned.length===0?(
-              <div style={{fontSize:11,color:T.dim,fontStyle:'italic'}}>Todos os blocos já têm posição definida.</div>
-            ):unpositioned.map(b=>(
-              <button key={b.id} onClick={()=>setPlacingId(placingId===b.id?null:b.id)}
-                style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',marginBottom:6,borderRadius:7,cursor:'pointer',
-                  background:placingId===b.id?'#3b82f622':T.inner,border:`1px solid ${placingId===b.id?'#3b82f6':T.bdr2}`}}>
-                <div style={{fontSize:12,fontWeight:600,color:T.txt}}>{b.local} — {b.name}</div>
-                {placingId===b.id&&<div style={{...mono,fontSize:9,color:'#3b82f6',marginTop:2}}>Clique no mapa…</div>}
-              </button>
-            ))}
+            {unpositionedListJsx()}
           </div>
-        ):renderBlockPanel('CCN2','left',mapView==='ccn1')}
+        ):renderBlockPanel('CCN2','left',mapView==='ccn1'))}
 
         <div style={{flex:1,minWidth:0,minHeight:0,overflow:'hidden',position:'relative',background:'#dfe3e0',display:'flex',alignItems:'center',justifyContent:'center'}}>
           {/* aspectRatio+max-w/h (em vez de um width fixo em px) faz esse
@@ -1738,8 +1821,18 @@ function CampusMapScreen({blocks,rooms,onBack}){
           </div>
         </div>
 
-        {!editing&&renderBlockPanel('CCN1','right',mapView==='ccn2')}
+        {!narrow&&!editing&&renderBlockPanel('CCN1','right',mapView==='ccn2')}
       </div>
+
+      {narrow&&mobilePanel==='unpositioned'&&(
+        <SideDrawer side="left" onClose={()=>setMobilePanel(null)} title="Blocos sem posição">{unpositionedListJsx()}</SideDrawer>
+      )}
+      {narrow&&mobilePanel==='ccn2'&&(
+        <SideDrawer side="left" onClose={()=>setMobilePanel(null)} title="CCN2">{blockListJsx('CCN2')}</SideDrawer>
+      )}
+      {narrow&&mobilePanel==='ccn1'&&(
+        <SideDrawer side="right" onClose={()=>setMobilePanel(null)} title="CCN1">{blockListJsx('CCN1')}</SideDrawer>
+      )}
 
       {selectedBlock&&!editing&&(
         <div onClick={()=>setSelectedId(null)} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.35)':'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
