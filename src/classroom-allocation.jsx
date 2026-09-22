@@ -1483,6 +1483,24 @@ function latLngToPct(mapKey,lat,lon){
 }
 function pinLatLng(x,y){ return pctToLatLng('geral',x,y); }
 
+// Pinos de referência — pontos fixos no mapa (biblioteca, restaurantes
+// universitários, HU, PREUNI...) que NÃO são blocos: não têm salas, não
+// entram nos menus CCN1/CCN2, e não existe nenhuma tela pra criar/editar/
+// mover um destes pela interface — é uma decisão de produto, não uma
+// limitação técnica (ao contrário de um block, cuja posição é editável por
+// quem tem MANAGE_BLOCKS). Pra adicionar um novo, é só acrescentar aqui,
+// com lat/lon reais (ex.: botão direito no Google Maps → coordenadas).
+// Ao contrário de block.mapX/mapY (% já convertido, só válido pro mapa
+// geral), aqui a lat/lon é a própria fonte da verdade — a % de cada mapa é
+// calculada na hora, em CampusMapScreen, via latLngToPct.
+const REFERENCE_PINS=[
+  {id:'ref-biblioteca-comunitaria',name:'Biblioteca Comunitária',lat:-5.0603699,lon:-42.7963712},
+  {id:'ref-ru2',name:'RU II',lat:-5.0608018,lon:-42.7960974},
+  {id:'ref-hu',name:'HU',lat:-5.0598698,lon:-42.7940539},
+  {id:'ref-ru-ccn',name:'RU - CCN',lat:-5.0560317,lon:-42.7883894},
+  {id:'ref-preuni',name:'PREUNI',lat:-5.0570491,lon:-42.7915809},
+];
+
 // Painel lateral em modo "gaveta" — abaixo de TABLET_BP os dois menus fixos
 // de 250px do CampusMapScreen (CCN1/CCN2) não cabem ao lado do mapa, então
 // viram isto: um overlay deslizante, reaproveitando o mesmo padrão visual
@@ -1511,6 +1529,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
 
   const[editing,setEditing]=useState(false);
   const[selectedId,setSelectedId]=useState(null);   // pino aberto (ver detalhes, os dois modos)
+  const[selectedRefId,setSelectedRefId]=useState(null); // pino de referência aberto (REFERENCE_PINS, não bloco)
   const[placingId,setPlacingId]=useState(null);      // bloco esperando um clique no mapa pra ser posicionado (só edição)
   const[dragId,setDragId]=useState(null);            // bloco sendo arrastado agora (só edição)
   const[dragPos,setDragPos]=useState(null);          // {x,y} prévia visual durante o arraste, antes de salvar
@@ -1554,6 +1573,17 @@ function CampusMapScreen({blocks,rooms,onBack}){
       return{...b,_x:x,_y:y};
     });
   },[mapView,positioned,currentMap.local]);
+  const selectedRefPin=REFERENCE_PINS.find(p=>p.id===selectedRefId)??null;
+  // Idem, mas a partir de lat/lon direto (fonte da verdade aqui, ver
+  // REFERENCE_PINS) em vez de round-trip via o mapa geral — e filtrado pelo
+  // resultado cair dentro de 0-100% (visível no recorte atual), já que
+  // esses pinos não têm um campo `local` marcando de qual centro são.
+  const referencePinsToRender=useMemo(()=>{
+    return REFERENCE_PINS.map(p=>{
+      const{x,y}=latLngToPct(mapView,p.lat,p.lon);
+      return{...p,_x:x,_y:y};
+    }).filter(p=>p._x>=0&&p._x<=100&&p._y>=0&&p._y<=100);
+  },[mapView]);
 
   const stopEditing=()=>{setEditing(false);setPlacingId(null);setDragId(null);setDragPos(null);setSelectedId(null);setMobilePanel(null);};
 
@@ -1830,6 +1860,33 @@ function CampusMapScreen({blocks,rooms,onBack}){
                 </div>
               );
             })}
+
+            {/* Pinos de referência (REFERENCE_PINS) — amarelos, sem drag
+                (nenhum onMouseDown), clicáveis em qualquer modo (inclusive
+                durante a edição de blocos, já que não interferem nela). */}
+            {referencePinsToRender.map(p=>(
+              <div key={p.id}
+                className="campus-pin"
+                onClick={e=>{e.stopPropagation();setSelectedRefId(p.id);}}
+                title={p.name}
+                style={{
+                  position:'absolute',left:`${p._x}%`,top:`${p._y}%`,transform:'translate(-50%,-100%)',
+                  cursor:'pointer',zIndex:selectedRefId===p.id?15:9,
+                  filter:'drop-shadow(0 2px 3px rgba(0,0,0,.25))',
+                }}>
+                <svg width="26" height="33" viewBox="0 0 30 38">
+                  <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 23 15 23s15-12.5 15-23C30 6.7 23.3 0 15 0z"
+                    fill="#eab308" stroke="#fff" strokeWidth="1.5"/>
+                  <circle cx="15" cy="15" r="6" fill="#fff"/>
+                </svg>
+                <span style={{
+                  position:'absolute',left:30,top:13,transform:'translateY(-50%)',whiteSpace:'nowrap',
+                  pointerEvents:'none',fontSize:10,fontWeight:700,color:'#713f12',
+                  background:'rgba(255,255,255,.88)',padding:'2px 6px',borderRadius:5,
+                  boxShadow:'0 1px 3px rgba(0,0,0,.3)',
+                }}>{p.name}</span>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -1880,6 +1937,31 @@ function CampusMapScreen({blocks,rooms,onBack}){
                 </a>
               </div>
             );})()}
+          </div>
+        </div>
+      )}
+
+      {selectedRefPin&&(
+        <div onClick={()=>setSelectedRefId(null)} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.35)':'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:24,width:'min(340px, calc(100vw - 32px))',boxShadow:T.shadowMd}}>
+            <div style={{display:'flex',alignItems:'flex-start',marginBottom:14}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{width:8,height:8,borderRadius:'50%',background:'#eab308',flexShrink:0}}/>
+                <div style={{fontSize:16,fontWeight:700,color:T.txt}}>{selectedRefPin.name}</div>
+              </div>
+              <button onClick={()=>setSelectedRefId(null)} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
+            </div>
+            {selectedRefPin.desc&&<div style={{fontSize:12,color:T.muted,lineHeight:1.5,marginBottom:4}}>{selectedRefPin.desc}</div>}
+            <div style={{display:'flex',gap:8,marginTop:14,paddingTop:14,borderTop:`1px solid ${T.bdr}`}}>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${selectedRefPin.lat},${selectedRefPin.lon}`} target="_blank" rel="noopener noreferrer"
+                style={{flex:1,textAlign:'center',padding:'8px 0',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt,fontSize:12,fontWeight:600,textDecoration:'none'}}>
+                📍 Ver no Google Maps
+              </a>
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${selectedRefPin.lat},${selectedRefPin.lon}`} target="_blank" rel="noopener noreferrer"
+                style={{flex:1,textAlign:'center',padding:'8px 0',background:'#3b82f6',border:'1px solid #3b82f6',borderRadius:7,color:'#fff',fontSize:12,fontWeight:600,textDecoration:'none'}}>
+                🧭 Traçar rota
+              </a>
+            </div>
           </div>
         </div>
       )}
