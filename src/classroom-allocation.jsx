@@ -829,7 +829,7 @@ function Dashboard(){
       `}</style>
 
       {/* Cabeçalho */}
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+      <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:10,rowGap:8,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={()=>setScreen('select')} title="Voltar ao menu"
           style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         {isInstitutional?(
@@ -1099,7 +1099,11 @@ function ScreenSelector({onPick,subUnits}){
         <button className="icon-btn" onClick={()=>onPick('profile')} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
-      <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,animation:'fadeIn .2s ease'}}>
+      {/* overflowY:'auto' é o que falta pra dar pra rolar até o último card
+          quando os 4 não cabem numa linha só (o pai tem overflow:'hidden' —
+          sem isto, o conteúdo que passa da altura disponível fica cortado e
+          inalcançável, não só espremido). */}
+      <div style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,padding:'24px 16px',overflowY:'auto',animation:'fadeIn .2s ease'}}>
         <div style={{textAlign:'center'}}>
           <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>Sistema de Gerenciamento de Salas de Aula — CCN/UFPI</div>
         </div>

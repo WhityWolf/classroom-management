@@ -154,7 +154,7 @@ export default function ManagementScreen({ onBack, onProfile, courses=[], onPeri
         .mgmt-tab:hover{color:${T.txt}!important;}
       `}</style>
 
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+      <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:10,rowGap:8,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         <span style={{fontSize:14,fontWeight:700,color:T.txt}}>⚙️ Gerenciamento</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
