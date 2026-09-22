@@ -1,5 +1,6 @@
 import { useState, useMemo, Fragment, useRef, useEffect, createContext, useContext } from 'react';
 import { ThemeCtx, LIGHT, DARK, useT, dtc, dbg } from './theme.jsx';
+import { useIsNarrow, useIsCoarsePointer, TABLET_BP } from './responsive.js';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { isInstitutionalRole } from './auth/roles.js';
 import { PERMS } from './auth/permissions.js';
@@ -828,7 +829,7 @@ function Dashboard(){
       `}</style>
 
       {/* Cabeçalho */}
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+      <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:10,rowGap:8,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={()=>setScreen('select')} title="Voltar ao menu"
           style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         {isInstitutional?(
@@ -1088,8 +1089,7 @@ function ScreenSelector({onPick,subUnits}){
         .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
         @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
       `}</style>
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
-        <div style={{flex:1}}/>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',flexWrap:'wrap',gap:10,rowGap:8,padding:'9px 18px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
           <span style={{...mono,fontSize:10,color:T.muted}}>{currentUser.name}</span>
           <span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
@@ -1099,21 +1099,33 @@ function ScreenSelector({onPick,subUnits}){
         <button className="icon-btn" onClick={()=>onPick('profile')} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>👤 Perfil</button>
         <button className="icon-btn" onClick={logout} style={{padding:'5px 12px',background:'transparent',border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:11,cursor:'pointer'}}>Sair</button>
       </div>
-      <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:28,animation:'fadeIn .2s ease'}}>
-        <div style={{textAlign:'center'}}>
-          <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>Sistema de Gerenciamento de Salas de Aula — CCN/UFPI</div>
-        </div>
-        <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center'}}>
-          {cards.map(c=>(
-            <button key={c.key} onClick={()=>onPick(c.key)}
-              style={{width:260,padding:'28px 24px',background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,cursor:'pointer',textAlign:'left',transition:'all .15s',boxShadow:T.shadowSm}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;e.currentTarget.style.boxShadow=T.shadowMd;}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr;e.currentTarget.style.boxShadow=T.shadowSm;}}>
-              <div style={{fontSize:31,marginBottom:14}}>{c.icon}</div>
-              <div style={{fontSize:16,fontWeight:700,color:T.txt,marginBottom:6}}>{c.title}</div>
-              <div style={{fontSize:12,color:T.muted,lineHeight:1.5}}>{c.desc}</div>
-            </button>
-          ))}
+      {/* overflowY:'auto' é o que dá pra rolar quando o conteúdo não cabe
+          (o pai tem overflow:'hidden'). Mas só isso não bastava: com
+          justifyContent:'center' no eixo que transborda, o navegador nunca
+          deixa rolar pra ANTES do centro — só depois — então o título
+          (o primeiro filho, "antes" dos cards) ficava inatingível em telas
+          baixas/estreitas mesmo já dando pra rolar até o último card. Troca:
+          o container vira flex-start (scroll sempre no sentido normal, sem
+          zona negativa inatingível) e quem centraliza de verdade — só
+          quando sobra espaço — é o wrapper interno com margin:'auto 0'
+          (some sozinho quando o conteúdo já não cabe). */}
+      <div style={{flex:1,minHeight:0,display:'flex',flexDirection:'column',alignItems:'center',padding:'24px 16px',overflowY:'auto',animation:'fadeIn .2s ease'}}>
+        <div style={{margin:'auto 0',display:'flex',flexDirection:'column',alignItems:'center',gap:28}}>
+          <div style={{textAlign:'center'}}>
+            <div style={{fontSize:21,fontWeight:700,marginBottom:4}}>Sistema de Gerenciamento de Salas de Aula — CCN/UFPI</div>
+          </div>
+          <div style={{display:'flex',gap:20,flexWrap:'wrap',justifyContent:'center'}}>
+            {cards.map(c=>(
+              <button key={c.key} onClick={()=>onPick(c.key)}
+                style={{width:260,padding:'28px 24px',background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,cursor:'pointer',textAlign:'left',transition:'all .15s',boxShadow:T.shadowSm}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.muted;e.currentTarget.style.boxShadow=T.shadowMd;}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.bdr;e.currentTarget.style.boxShadow=T.shadowSm;}}>
+                <div style={{fontSize:31,marginBottom:14}}>{c.icon}</div>
+                <div style={{fontSize:16,fontWeight:700,color:T.txt,marginBottom:6}}>{c.title}</div>
+                <div style={{fontSize:12,color:T.muted,lineHeight:1.5}}>{c.desc}</div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -1259,7 +1271,7 @@ function RoomMapScreen({rooms,courses,roles,subUnits,blocks,periods,currentPerio
         ::-webkit-scrollbar-thumb{background:${T.scrollThumb};border-radius:4px;}
         .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
       `}</style>
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+      <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:10,rowGap:8,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         <span style={{fontSize:14,fontWeight:700,color:T.txt}}>🗺 Mapa de Salas</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
@@ -1471,6 +1483,45 @@ function latLngToPct(mapKey,lat,lon){
 }
 function pinLatLng(x,y){ return pctToLatLng('geral',x,y); }
 
+// Pinos de referência — pontos fixos no mapa (biblioteca, restaurantes
+// universitários, HU, PREUNI...) que NÃO são blocos: não têm salas, não
+// entram nos menus CCN1/CCN2, e não existe nenhuma tela pra criar/editar/
+// mover um destes pela interface — é uma decisão de produto, não uma
+// limitação técnica (ao contrário de um block, cuja posição é editável por
+// quem tem MANAGE_BLOCKS). Pra adicionar um novo, é só acrescentar aqui,
+// com lat/lon reais (ex.: botão direito no Google Maps → coordenadas).
+// Ao contrário de block.mapX/mapY (% já convertido, só válido pro mapa
+// geral), aqui a lat/lon é a própria fonte da verdade — a % de cada mapa é
+// calculada na hora, em CampusMapScreen, via latLngToPct.
+const REFERENCE_PINS=[
+  {id:'ref-biblioteca-comunitaria',name:'Biblioteca Comunitária',lat:-5.0603699,lon:-42.7963712},
+  {id:'ref-ru2',name:'RU II',lat:-5.0608018,lon:-42.7960974},
+  {id:'ref-hu',name:'HU',lat:-5.0598698,lon:-42.7940539},
+  {id:'ref-ru-ccn',name:'RU - CCN',lat:-5.0560317,lon:-42.7883894},
+  {id:'ref-preuni',name:'PREUNI',lat:-5.0570750,lon:-42.7911578},
+  {id:'ref-reitoria',name:'Reitoria',lat:-5.0574780,lon:-42.7916462},
+];
+
+// Painel lateral em modo "gaveta" — abaixo de TABLET_BP os dois menus fixos
+// de 250px do CampusMapScreen (CCN1/CCN2) não cabem ao lado do mapa, então
+// viram isto: um overlay deslizante, reaproveitando o mesmo padrão visual
+// (backdrop + painel com slideIn) já usado no drawer de UserManagement.
+function SideDrawer({side='right',onClose,width='min(300px, 86vw)',title,children}){
+  const{T,theme}=useT();
+  return(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.6)',display:'flex',alignItems:'stretch',justifyContent:side==='left'?'flex-start':'flex-end',zIndex:150}}>
+      <div onClick={e=>e.stopPropagation()} style={{width,background:T.surface,[side==='left'?'borderRight':'borderLeft']:`1px solid ${T.bdr}`,display:'flex',flexDirection:'column',animation:'slideIn .2s ease',overflow:'hidden'}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,padding:'12px 14px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
+          <span style={{fontSize:13,fontWeight:700,color:T.txt}}>{title}</span>
+          <div style={{flex:1}}/>
+          <button onClick={onClose} style={{padding:'6px 11px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>✕</button>
+        </div>
+        <div style={{flex:1,overflow:'auto',padding:14}}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
 function CampusMapScreen({blocks,rooms,onBack}){
   const{can}=useAuth();
   const{T,theme,toggleTheme}=useT();
@@ -1479,6 +1530,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
 
   const[editing,setEditing]=useState(false);
   const[selectedId,setSelectedId]=useState(null);   // pino aberto (ver detalhes, os dois modos)
+  const[selectedRefId,setSelectedRefId]=useState(null); // pino de referência aberto (REFERENCE_PINS, não bloco)
   const[placingId,setPlacingId]=useState(null);      // bloco esperando um clique no mapa pra ser posicionado (só edição)
   const[dragId,setDragId]=useState(null);            // bloco sendo arrastado agora (só edição)
   const[dragPos,setDragPos]=useState(null);          // {x,y} prévia visual durante o arraste, antes de salvar
@@ -1497,6 +1549,11 @@ function CampusMapScreen({blocks,rooms,onBack}){
   // block.mapX/mapY de fato mora), então entrar em edição sempre volta pra
   // 'geral' e a troca de mapa fica escondida enquanto editing=true.
   const[mapView,setMapView]=useState('geral');
+  // Abaixo de TABLET_BP os menus CCN1/CCN2 (e o painel "sem posição" da
+  // edição) viram gaveta em vez de ficarem fixos ao lado do mapa — ver
+  // SideDrawer acima. null = nenhuma gaveta aberta.
+  const narrow=useIsNarrow(TABLET_BP);
+  const[mobilePanel,setMobilePanel]=useState(null); // null | 'ccn1' | 'ccn2' | 'unpositioned'
 
   const showToast=(msg,type='ok')=>{setToast({msg,type});setTimeout(()=>setToast(null),4000);};
 
@@ -1517,8 +1574,27 @@ function CampusMapScreen({blocks,rooms,onBack}){
       return{...b,_x:x,_y:y};
     });
   },[mapView,positioned,currentMap.local]);
+  const selectedRefPin=REFERENCE_PINS.find(p=>p.id===selectedRefId)??null;
+  // Idem, mas a partir de lat/lon direto (fonte da verdade aqui, ver
+  // REFERENCE_PINS) em vez de round-trip via o mapa geral — e filtrado pelo
+  // resultado cair dentro de 0-100% (visível no recorte atual), já que
+  // esses pinos não têm um campo `local` marcando de qual centro são.
+  const referencePinsToRender=useMemo(()=>{
+    return REFERENCE_PINS.map(p=>{
+      const{x,y}=latLngToPct(mapView,p.lat,p.lon);
+      return{...p,_x:x,_y:y};
+    }).filter(p=>p._x>=0&&p._x<=100&&p._y>=0&&p._y<=100);
+  },[mapView]);
 
-  const stopEditing=()=>{setEditing(false);setPlacingId(null);setDragId(null);setDragPos(null);setSelectedId(null);};
+  const stopEditing=()=>{setEditing(false);setPlacingId(null);setDragId(null);setDragPos(null);setSelectedId(null);setMobilePanel(null);};
+
+  // Se o mapa mudar de zoom enquanto a gaveta do centro que acabou de ficar
+  // inativo está aberta, fecha ela — o botão que a abriria também fica
+  // desabilitado (mesma lógica do painel fixo em desktop, ver disabled=).
+  useEffect(()=>{
+    if(mapView==='ccn1'&&mobilePanel==='ccn2')setMobilePanel(null);
+    if(mapView==='ccn2'&&mobilePanel==='ccn1')setMobilePanel(null);
+  },[mapView]);
 
   const posFromEvent=e=>{
     const rect=imgWrapRef.current.getBoundingClientRect();
@@ -1591,11 +1667,16 @@ function CampusMapScreen({blocks,rooms,onBack}){
     pinRefs.current[id]?.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
   };
 
-  const renderBlockPanel=(local,side,disabled=false)=>{
+  // Conteúdo puro da lista de blocos de um centro (sem a moldura de 250px
+  // fixos) — reaproveitado tanto pelo painel fixo (desktop) quanto pela
+  // SideDrawer (mobile). `narrow` já está no escopo do componente: quando
+  // true isto só é chamado de dentro de uma gaveta, então usa padding maior
+  // pra alvo de toque em vez de precisar de mais um parâmetro.
+  const blockListJsx=local=>{
     const list=blocks.filter(b=>b.local===local);
+    const btnPad=narrow?'11px 12px':'8px 10px';
     return(
-      <div style={{width:250,flexShrink:0,[side==='left'?'borderRight':'borderLeft']:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14,
-        opacity:disabled?.45:1,filter:disabled?'grayscale(1)':'none',pointerEvents:disabled?'none':'auto',transition:'opacity .15s,filter .15s'}}>
+      <>
         <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:2}}>{local}</div>
         <div style={{...mono,fontSize:10,color:T.dim,marginBottom:10}}>{list.length} bloco{list.length!==1?'s':''}</div>
         {list.length===0?(
@@ -1608,7 +1689,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
           return(
             <div key={b.id} style={{marginBottom:6}}>
               <button onClick={()=>toggleBlockPanel(b.id)}
-                style={{display:'flex',alignItems:'center',gap:8,width:'100%',textAlign:'left',padding:'8px 10px',borderRadius:7,cursor:'pointer',
+                style={{display:'flex',alignItems:'center',gap:8,width:'100%',textAlign:'left',padding:btnPad,borderRadius:7,cursor:'pointer',
                   background:isHighlighted?'#f59e0b22':T.inner,border:`1px solid ${isHighlighted?'#f59e0b':T.bdr2}`}}>
                 <span style={{fontSize:9,color:T.dim,transform:expanded?'rotate(90deg)':'none',transition:'transform .15s',flexShrink:0}}>▶</span>
                 <span style={{flex:1,minWidth:0}}>
@@ -1621,7 +1702,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
                   {rs.length===0?(
                     <div style={{fontSize:11,color:T.dim,fontStyle:'italic',padding:'4px 0'}}>Nenhuma sala cadastrada.</div>
                   ):rs.map(r=>(
-                    <div key={r.id} style={{fontSize:11,color:T.txt,padding:'4px 0',borderBottom:`1px solid ${T.bdr}`}}>
+                    <div key={r.id} style={{fontSize:11,color:T.txt,padding:narrow?'7px 0':'4px 0',borderBottom:`1px solid ${T.bdr}`}}>
                       Sala {r.label} <span style={{color:T.dim}}>· {r.cap} lugares</span>
                     </div>
                   ))}
@@ -1630,9 +1711,42 @@ function CampusMapScreen({blocks,rooms,onBack}){
             </div>
           );
         })}
-      </div>
+      </>
     );
   };
+
+  // Moldura fixa de 250px — só usada no layout de desktop (!narrow), lado a
+  // lado com o mapa. Em mobile o mesmo conteúdo (blockListJsx) entra numa
+  // SideDrawer em vez disso.
+  const renderBlockPanel=(local,side,disabled=false)=>(
+    <div style={{width:250,flexShrink:0,[side==='left'?'borderRight':'borderLeft']:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14,
+      opacity:disabled?.45:1,filter:disabled?'grayscale(1)':'none',pointerEvents:disabled?'none':'auto',transition:'opacity .15s,filter .15s'}}>
+      {blockListJsx(local)}
+    </div>
+  );
+
+  // Idem para o painel "Blocos sem posição" do modo de edição — conteúdo
+  // extraído pra ser reaproveitado pela moldura fixa (desktop) e pela
+  // SideDrawer (mobile). No mobile, escolher um bloco já fecha a gaveta
+  // sozinho, senão ela ficaria cobrindo o mapa bem na hora de clicar nele.
+  const unpositionedListJsx=()=>(
+    <>
+      <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:4}}>Blocos sem posição</div>
+      <div style={{fontSize:11,color:T.dim,marginBottom:12,lineHeight:1.5}}>
+        Clique num bloco da lista e depois clique no mapa pra posicioná-lo. Pra reposicionar um que já está no mapa, arraste o pino direto. Dá pra trocar pro mapa do CCN1/CCN2 pra mirar com mais precisão — a posição é convertida de volta pro mapa geral automaticamente.
+      </div>
+      {unpositioned.length===0?(
+        <div style={{fontSize:11,color:T.dim,fontStyle:'italic'}}>Todos os blocos já têm posição definida.</div>
+      ):unpositioned.map(b=>(
+        <button key={b.id} onClick={()=>{setPlacingId(placingId===b.id?null:b.id);if(narrow)setMobilePanel(null);}}
+          style={{display:'block',width:'100%',textAlign:'left',padding:narrow?'11px 12px':'8px 10px',marginBottom:6,borderRadius:7,cursor:'pointer',
+            background:placingId===b.id?'#3b82f622':T.inner,border:`1px solid ${placingId===b.id?'#3b82f6':T.bdr2}`}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.txt}}>{b.local} — {b.name}</div>
+          {placingId===b.id&&<div style={{...mono,fontSize:9,color:'#3b82f6',marginTop:2}}>Clique no mapa…</div>}
+        </button>
+      ))}
+    </>
+  );
 
   return(
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,height:'100vh',display:'flex',flexDirection:'column',overflow:'hidden'}}>
@@ -1645,9 +1759,10 @@ function CampusMapScreen({blocks,rooms,onBack}){
         .campus-pin:hover{transform:translate(-50%,-100%) scale(1.15);}
         @keyframes campus-pin-pulse{0%,100%{filter:drop-shadow(0 0 2px #f59e0b);}50%{filter:drop-shadow(0 0 10px #f59e0b);}}
         .campus-pin-highlighted{animation:campus-pin-pulse 1.3s ease-in-out infinite;}
+        @keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
       `}</style>
 
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
+      <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:10,rowGap:8,padding:'9px 18px',background:T.surface,borderBottom:`1px solid ${T.bdr}`,flexShrink:0,boxShadow:T.shadowSm}}>
         <button className="icon-btn" onClick={onBack} title="Voltar ao menu" style={{padding:'5px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:6,color:T.muted,fontSize:12,cursor:'pointer'}}>☰</button>
         <span style={{fontSize:14,fontWeight:700,color:T.txt}}>📍 Localização de Salas</span>
         <div style={{width:1,height:16,background:T.bdr2}}/>
@@ -1661,10 +1776,33 @@ function CampusMapScreen({blocks,rooms,onBack}){
             </button>
           ))}
         </div>
+        {/* Só existe abaixo de TABLET_BP — em desktop os menus já ficam
+            fixos ao lado do mapa (renderBlockPanel/painel de edição). */}
+        {narrow&&(
+          <div style={{display:'flex',gap:6}}>
+            {editing?(
+              <button onClick={()=>setMobilePanel(mobilePanel==='unpositioned'?null:'unpositioned')}
+                style={{padding:'5px 10px',background:mobilePanel==='unpositioned'?'#3b82f6':T.inner,border:`1px solid ${mobilePanel==='unpositioned'?'#3b82f6':T.bdr2}`,borderRadius:6,color:mobilePanel==='unpositioned'?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
+                📋 Sem posição{unpositioned.length>0?` (${unpositioned.length})`:''}
+              </button>
+            ):(
+              <>
+                <button disabled={mapView==='ccn1'} onClick={()=>setMobilePanel(mobilePanel==='ccn2'?null:'ccn2')}
+                  style={{padding:'5px 10px',background:mobilePanel==='ccn2'?'#3b82f6':T.inner,border:`1px solid ${mobilePanel==='ccn2'?'#3b82f6':T.bdr2}`,borderRadius:6,color:mobilePanel==='ccn2'?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:mapView==='ccn1'?'not-allowed':'pointer',opacity:mapView==='ccn1'?.4:1}}>
+                  ☰ CCN2
+                </button>
+                <button disabled={mapView==='ccn2'} onClick={()=>setMobilePanel(mobilePanel==='ccn1'?null:'ccn1')}
+                  style={{padding:'5px 10px',background:mobilePanel==='ccn1'?'#3b82f6':T.inner,border:`1px solid ${mobilePanel==='ccn1'?'#3b82f6':T.bdr2}`,borderRadius:6,color:mobilePanel==='ccn1'?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:mapView==='ccn2'?'not-allowed':'pointer',opacity:mapView==='ccn2'?.4:1}}>
+                  ☰ CCN1
+                </button>
+              </>
+            )}
+          </div>
+        )}
         <div style={{flex:1}}/>
         {saving&&<span style={{...mono,fontSize:10,color:T.dim}}>Salvando…</span>}
         {canEdit&&(
-          <button className="icon-btn" onClick={()=>editing?stopEditing():setEditing(true)}
+          <button className="icon-btn" onClick={()=>{if(editing)stopEditing();else{setEditing(true);setMobilePanel(null);}}}
             style={{padding:'5px 12px',background:editing?'#3b82f6':T.inner,border:`1px solid ${editing?'#3b82f6':T.bdr2}`,borderRadius:6,color:editing?'#fff':T.muted,fontSize:11,fontWeight:600,cursor:'pointer'}}>
             {editing?'✕ Concluir edição':'✎ Editar posições'}
           </button>
@@ -1673,24 +1811,11 @@ function CampusMapScreen({blocks,rooms,onBack}){
       </div>
 
       <div style={{flex:1,minHeight:0,display:'flex',overflow:'hidden'}}>
-        {editing?(
+        {!narrow&&(editing?(
           <div style={{width:260,flexShrink:0,borderRight:`1px solid ${T.bdr}`,background:T.surface,overflow:'auto',padding:14}}>
-            <div style={{fontSize:12,fontWeight:700,color:T.txt,marginBottom:4}}>Blocos sem posição</div>
-            <div style={{fontSize:11,color:T.dim,marginBottom:12,lineHeight:1.5}}>
-              Clique num bloco da lista e depois clique no mapa pra posicioná-lo. Pra reposicionar um que já está no mapa, arraste o pino direto. Dá pra trocar pro mapa do CCN1/CCN2 pra mirar com mais precisão — a posição é convertida de volta pro mapa geral automaticamente.
-            </div>
-            {unpositioned.length===0?(
-              <div style={{fontSize:11,color:T.dim,fontStyle:'italic'}}>Todos os blocos já têm posição definida.</div>
-            ):unpositioned.map(b=>(
-              <button key={b.id} onClick={()=>setPlacingId(placingId===b.id?null:b.id)}
-                style={{display:'block',width:'100%',textAlign:'left',padding:'8px 10px',marginBottom:6,borderRadius:7,cursor:'pointer',
-                  background:placingId===b.id?'#3b82f622':T.inner,border:`1px solid ${placingId===b.id?'#3b82f6':T.bdr2}`}}>
-                <div style={{fontSize:12,fontWeight:600,color:T.txt}}>{b.local} — {b.name}</div>
-                {placingId===b.id&&<div style={{...mono,fontSize:9,color:'#3b82f6',marginTop:2}}>Clique no mapa…</div>}
-              </button>
-            ))}
+            {unpositionedListJsx()}
           </div>
-        ):renderBlockPanel('CCN2','left',mapView==='ccn1')}
+        ):renderBlockPanel('CCN2','left',mapView==='ccn1'))}
 
         <div style={{flex:1,minWidth:0,minHeight:0,overflow:'hidden',position:'relative',background:'#dfe3e0',display:'flex',alignItems:'center',justifyContent:'center'}}>
           {/* aspectRatio+max-w/h (em vez de um width fixo em px) faz esse
@@ -1736,15 +1861,52 @@ function CampusMapScreen({blocks,rooms,onBack}){
                 </div>
               );
             })}
+
+            {/* Pinos de referência (REFERENCE_PINS) — amarelos, sem drag
+                (nenhum onMouseDown), clicáveis em qualquer modo (inclusive
+                durante a edição de blocos, já que não interferem nela). */}
+            {referencePinsToRender.map(p=>(
+              <div key={p.id}
+                className="campus-pin"
+                onClick={e=>{e.stopPropagation();setSelectedRefId(p.id);}}
+                title={p.name}
+                style={{
+                  position:'absolute',left:`${p._x}%`,top:`${p._y}%`,transform:'translate(-50%,-100%)',
+                  cursor:'pointer',zIndex:selectedRefId===p.id?15:9,
+                  filter:'drop-shadow(0 2px 3px rgba(0,0,0,.25))',
+                }}>
+                <svg width="26" height="33" viewBox="0 0 30 38">
+                  <path d="M15 0C6.7 0 0 6.7 0 15c0 10.5 15 23 15 23s15-12.5 15-23C30 6.7 23.3 0 15 0z"
+                    fill="#eab308" stroke="#fff" strokeWidth="1.5"/>
+                  <circle cx="15" cy="15" r="6" fill="#fff"/>
+                </svg>
+                <span style={{
+                  position:'absolute',left:30,top:13,transform:'translateY(-50%)',whiteSpace:'nowrap',
+                  pointerEvents:'none',fontSize:10,fontWeight:700,color:'#713f12',
+                  background:'rgba(255,255,255,.88)',padding:'2px 6px',borderRadius:5,
+                  boxShadow:'0 1px 3px rgba(0,0,0,.3)',
+                }}>{p.name}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {!editing&&renderBlockPanel('CCN1','right',mapView==='ccn2')}
+        {!narrow&&!editing&&renderBlockPanel('CCN1','right',mapView==='ccn2')}
       </div>
+
+      {narrow&&mobilePanel==='unpositioned'&&(
+        <SideDrawer side="left" onClose={()=>setMobilePanel(null)} title="Blocos sem posição">{unpositionedListJsx()}</SideDrawer>
+      )}
+      {narrow&&mobilePanel==='ccn2'&&(
+        <SideDrawer side="left" onClose={()=>setMobilePanel(null)} title="CCN2">{blockListJsx('CCN2')}</SideDrawer>
+      )}
+      {narrow&&mobilePanel==='ccn1'&&(
+        <SideDrawer side="right" onClose={()=>setMobilePanel(null)} title="CCN1">{blockListJsx('CCN1')}</SideDrawer>
+      )}
 
       {selectedBlock&&!editing&&(
         <div onClick={()=>setSelectedId(null)} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.35)':'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:24,width:340,maxHeight:'70vh',display:'flex',flexDirection:'column',boxShadow:T.shadowMd}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:24,width:'min(340px, calc(100vw - 32px))',maxHeight:'70vh',display:'flex',flexDirection:'column',boxShadow:T.shadowMd}}>
             <div style={{display:'flex',alignItems:'flex-start',marginBottom:14}}>
               <div>
                 <div style={{fontSize:16,fontWeight:700,color:T.txt}}>{selectedBlock.local}</div>
@@ -1776,6 +1938,31 @@ function CampusMapScreen({blocks,rooms,onBack}){
                 </a>
               </div>
             );})()}
+          </div>
+        </div>
+      )}
+
+      {selectedRefPin&&(
+        <div onClick={()=>setSelectedRefId(null)} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.35)':'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:24,width:'min(340px, calc(100vw - 32px))',boxShadow:T.shadowMd}}>
+            <div style={{display:'flex',alignItems:'flex-start',marginBottom:14}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{width:8,height:8,borderRadius:'50%',background:'#eab308',flexShrink:0}}/>
+                <div style={{fontSize:16,fontWeight:700,color:T.txt}}>{selectedRefPin.name}</div>
+              </div>
+              <button onClick={()=>setSelectedRefId(null)} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
+            </div>
+            {selectedRefPin.desc&&<div style={{fontSize:12,color:T.muted,lineHeight:1.5,marginBottom:4}}>{selectedRefPin.desc}</div>}
+            <div style={{display:'flex',gap:8,marginTop:14,paddingTop:14,borderTop:`1px solid ${T.bdr}`}}>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${selectedRefPin.lat},${selectedRefPin.lon}`} target="_blank" rel="noopener noreferrer"
+                style={{flex:1,textAlign:'center',padding:'8px 0',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:7,color:T.txt,fontSize:12,fontWeight:600,textDecoration:'none'}}>
+                📍 Ver no Google Maps
+              </a>
+              <a href={`https://www.google.com/maps/dir/?api=1&destination=${selectedRefPin.lat},${selectedRefPin.lon}`} target="_blank" rel="noopener noreferrer"
+                style={{flex:1,textAlign:'center',padding:'8px 0',background:'#3b82f6',border:'1px solid #3b82f6',borderRadius:7,color:'#fff',fontSize:12,fontWeight:600,textDecoration:'none'}}>
+                🧭 Traçar rota
+              </a>
+            </div>
           </div>
         </div>
       )}
@@ -1861,7 +2048,14 @@ function CourseCard({course,activeRole,showRoleBadge,selected,locked,roomLabel,o
 function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
   const{T,theme}=useT();
   const{gRole,gBlockLabel}=useRolesData();
-  const CW=76,RH=33,LW=130;
+  // Grade densa por natureza (16 colunas de hora) — não dá pra reformatar
+  // pra mobile sem virar outra tela (decisão tomada: só polir o que já
+  // existe). Melhoria de toque: linhas mais altas em tela sensível ao toque
+  // (`pointer:coarse`, não largura — um tablet largo usado no dedo também
+  // se beneficia). Melhoria de navegação: coluna da sala fixa (sticky) ao
+  // rolar horizontalmente, pra sempre saber qual linha é qual sala.
+  const coarse=useIsCoarsePointer();
+  const CW=76,RH=coarse?42:33,LW=130;
   const byBlockThenLabel=(a,b)=>gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true});
   const sorted=useMemo(()=>[
     ...rooms.filter(r=>r.roleId===roleId).sort(byBlockThenLabel),
@@ -1872,7 +2066,7 @@ function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,ca
       <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
       <thead>
         <tr style={{position:'sticky',top:0,zIndex:5,background:T.surface,boxShadow:theme==='light'?'0 1px 2px rgba(0,0,0,.06)':'none'}}>
-          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
+          <th style={{position:'sticky',left:0,zIndex:1,background:T.surface,padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
           {HOURS.map(h=><th key={h} style={{padding:'7px 0 7px 5px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`}}>{h}:00</th>)}
         </tr>
       </thead>
@@ -1893,10 +2087,10 @@ function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,ca
               {showSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:T.txt2,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outras Funções ↓</td></tr>}
               {showBlockSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{gBlockLabel(room.blockId)}</td></tr>}
               <tr style={{borderBottom:`1px solid ${T.bdr}`,background:rowBg}}>
-                <td style={{padding:'0 6px 0 10px',height:RH}}>
+                <td style={{position:'sticky',left:0,zIndex:1,background:rowBg,padding:'0 6px 0 10px',height:RH}}>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
                     <div style={{width:2,height:18,borderRadius:1,background:rd.clr,opacity:isOwn?1:0.4}}/>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:isOwn?rdClr:T.muted,whiteSpace:'nowrap'}}>{room.label}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:coarse?12:11,color:isOwn?rdClr:T.muted,whiteSpace:'nowrap'}}>{room.label}</span>
                     <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:capWarn&&sel?'#d97706':T.dim}}>{room.cap}{capWarn&&sel?'⚠':''}</span>
                     {room.features.length>0&&<span title={room.features.join(', ')} style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,opacity:.7}}>⚙{room.features.length}</span>}
                     {room.desc&&<span title={room.desc} style={{fontSize:10,color:T.dim,opacity:.7}}>💬</span>}
@@ -2114,7 +2308,7 @@ function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,
   };
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:540,maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(540px, calc(100vw - 32px))',maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         {/* Cabeçalho */}
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:20,flexShrink:0}}>
           <div style={{width:3,height:20,borderRadius:1,background:rd.clr}}/>
@@ -2183,7 +2377,7 @@ function AutoAllocWarningModal({onConfirm,onCancel}){
   const{T,theme}=useT();
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:440,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(440px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:16}}>
           <div style={{fontSize:16,fontWeight:700,color:T.txt}}>✨ Alocar Automaticamente</div>
           <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
@@ -2207,7 +2401,7 @@ function AutoAllocScopeModal({roleName,allCount,mineCount,onChoose,onCancel}){
   const{T,theme}=useT();
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:420,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(420px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:16}}>
           <div style={{fontSize:16,fontWeight:700,color:T.txt}}>✨ Alocar Automaticamente</div>
           <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
@@ -2240,7 +2434,7 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
   const placedCount=assignments.length,failedCount=failed.length;
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,width:580,maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,width:'min(580px, calc(100vw - 32px))',maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{padding:'20px 24px 16px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
             <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19}}>✨</div>
@@ -2340,7 +2534,7 @@ function FinishConfirmModal({roleName,remaining,onConfirm,onCancel}){
   const{T,theme}=useT();
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:420,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(420px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
           <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19}}>✓</div>
           <div>
@@ -2376,7 +2570,7 @@ function CoordinationStatusPanel({roles,subUnits,coordinationStatuses,notificati
   const statusLabel={[DS.ACTIVE]:'Ativo',[DS.FINISHED]:'Concluído',[DS.FORCE_FINISHED]:'Bloqueado'};
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:520,animation:'scaleIn .18s ease',boxShadow:T.shadowMd,maxHeight:'80vh',overflow:'auto'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(520px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd,maxHeight:'80vh',overflow:'auto'}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:20}}>
           <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Status de Alocação das Coordenações</div>
           <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
@@ -2418,7 +2612,7 @@ function NotifPanel({notifications,onClose}){
   const{gRole}=useRolesData();
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'transparent',display:'flex',alignItems:'flex-start',justifyContent:'flex-end',zIndex:150,paddingTop:52,paddingRight:16}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:10,width:340,animation:'slideIn .15s ease',boxShadow:T.shadowMd,overflow:'hidden',maxHeight:'70vh',display:'flex',flexDirection:'column'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:10,width:'min(340px, calc(100vw - 32px))',animation:'slideIn .15s ease',boxShadow:T.shadowMd,overflow:'hidden',maxHeight:'70vh',display:'flex',flexDirection:'column'}}>
         <div style={{padding:'12px 16px',borderBottom:`1px solid ${T.bdr}`,display:'flex',alignItems:'center'}}>
           <span style={{fontSize:14,fontWeight:600,color:T.txt}}>Notificações</span>
           <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:15,cursor:'pointer'}}>✕</button>
@@ -2501,7 +2695,7 @@ function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onS
   const inp={width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:13,outline:'none'};
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:440,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(440px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
           <div style={{width:3,height:20,borderRadius:1,background:cd.clr}}/>
           {course&&<span style={{...mono,fontSize:11,color:cdClr,fontWeight:500}}>{course.code}</span>}
@@ -2633,7 +2827,7 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
 
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,width:600,maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,width:'min(600px, calc(100vw - 32px))',maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
 
         {step==='pick'&&(
           <>
@@ -2768,7 +2962,7 @@ function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,day,onConfir
   const[confirmed,setConfirmed]=useState(false);
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:440,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(440px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
           <div style={{width:34,height:34,borderRadius:8,background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#f59e0b44':'#F59E0B44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:17}}>⇄</div>
           <div>
@@ -2841,7 +3035,7 @@ function DayPickerModal({room,course,dept,onConfirm,onCancel}){
   const allDays=selectedDays.length===days.length;
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:400,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(400px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
           <div style={{width:3,height:20,borderRadius:1,background:dept.clr}}/>
           <div>

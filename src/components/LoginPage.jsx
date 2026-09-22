@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useT } from '../theme.jsx';
+import { useIsNarrow } from '../responsive.js';
 import ufpiLogo from '../assets/ufpi-logo.png';
 
 const GITHUB_REPO_URL = 'https://github.com/WhityWolf/classroom-management';
@@ -8,6 +9,10 @@ const GITHUB_REPO_URL = 'https://github.com/WhityWolf/classroom-management';
 export default function LoginPage() {
   const { login, authError } = useAuth();
   const { T, theme, toggleTheme } = useT();
+  // Abaixo de 700px o painel decorativo (290px fixos) + o formulário não
+  // cabem lado a lado sem forçar scroll horizontal da página inteira — nesse
+  // caso empilha um em cima do outro em vez disso.
+  const narrow = useIsNarrow(700);
 
   const [username,   setUsername]   = useState('');
   const [password,   setPassword]   = useState('');
@@ -38,6 +43,13 @@ export default function LoginPage() {
     <div style={{fontFamily:"'DM Sans',sans-serif",background:T.bg,color:T.txt,
                  height:'100vh',boxSizing:'border-box',overflowY:'auto',display:'flex',alignItems:'center',
                  justifyContent:'center',padding:'24px 16px',position:'relative'}}>
+      {/* Sem isto, `width` percentual + `padding` nos painéis abaixo (modo
+          narrow, empilhado) soma o padding por cima da largura em vez de
+          descontar dela (box-sizing padrão é content-box) e estoura a
+          largura da viewport — outras telas do app (ScreenSelector,
+          ManagementScreen, ProfileScreen) já injetam este mesmo reset,
+          só faltava aqui. */}
+      <style>{`*{box-sizing:border-box;}`}</style>
 
       <button onClick={toggleTheme}
         style={{position:'absolute',top:16,right:20,padding:'5px 12px',
@@ -46,15 +58,16 @@ export default function LoginPage() {
         {theme==='light'?'🌙 Escuro':'☀ Claro'}
       </button>
 
-      <div style={{width:'100%',maxWidth:860,display:'flex',gap:0,
-                   borderRadius:14,overflow:'hidden',boxShadow:T.shadowMd,border:`1px solid ${T.bdr}`}}>
+      <div style={{width:'100%',maxWidth:860,display:'flex',flexDirection:narrow?'column':'row',gap:0,
+                   borderRadius:14,overflow:'hidden',boxShadow:T.shadowMd,border:`1px solid ${T.bdr}`,
+                   maxHeight:narrow?'calc(100vh - 48px)':'none',overflowY:narrow?'auto':'visible'}}>
 
         {/* Painel esquerdo */}
-        <div style={{width:290,flexShrink:0,position:'relative',overflow:'hidden',
+        <div style={{width:narrow?'100%':290,flexShrink:0,position:'relative',overflow:'hidden',
                      background:theme==='light'
                        ?'linear-gradient(160deg,#1e293b 0%,#0f172a 100%)'
                        :'linear-gradient(160deg,#0a1424 0%,#040810 100%)',
-                     padding:'40px 28px',display:'flex',flexDirection:'column'}}>
+                     padding:narrow?'28px 24px':'40px 28px',display:'flex',flexDirection:'column'}}>
           <div aria-hidden style={{position:'absolute',inset:0,opacity:.5,
             backgroundImage:'radial-gradient(circle at 1px 1px, rgba(255,255,255,.06) 1px, transparent 0)',
             backgroundSize:'18px 18px'}}/>
@@ -120,7 +133,7 @@ export default function LoginPage() {
         </div>
 
         {/* Painel direito */}
-        <div style={{flex:1,background:T.surface,padding:'40px 36px',display:'flex',
+        <div style={{flex:1,background:T.surface,padding:narrow?'28px 24px':'40px 36px',display:'flex',
                      flexDirection:'column',overflowY:'auto',overflowX:'hidden'}}>
 
           <div style={{marginBottom:28}}>

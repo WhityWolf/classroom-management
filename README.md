@@ -25,23 +25,28 @@ salas e blocos novos.
   (visão somente-leitura de todas as salas, organizadas por departamento →
   bloco; cada sala tem sua própria tabela com dias da semana como colunas e
   horários 8h–22h como linhas; um seletor filtra entre todas as salas, apenas
-  alocadas ou apenas vazias), "Mapa do Campus" (ver abaixo) e, só pra quem
-  tem permissão de gerenciamento (Diretor/secretários), uma opção
+  alocadas ou apenas vazias), "Localização de Salas" (ver abaixo) e, só pra
+  quem tem permissão de gerenciamento (Diretor/secretários), uma opção
   "Gerenciamento".
-- **Mapa do Campus** — mostra onde cada *bloco* (não sala individual) fica
-  fisicamente, como pinos sobre uma imagem estática do campus (gerada a
+- **Localização de Salas** — mostra onde cada *bloco* (não sala individual)
+  fica fisicamente, como pinos sobre uma imagem estática do campus (gerada a
   partir de um export do OpenStreetMap — `src/assets/campus-map.png`, sem
   nenhuma chamada a serviço de mapa externo em tempo de execução, então
-  funciona em rede totalmente interna/offline). Clicar num pino mostra o
-  nome do bloco e a lista de salas dele. A posição de cada bloco é salva
-  como porcentagem da imagem (`blocks.map_x`/`map_y`, não pixel — continua
-  válida em qualquer tamanho de tela ou se a imagem for trocada depois), via
-  a função `set_block_position`. Editar posições (arrastar um pino
-  existente, ou clicar num bloco "sem posição" e depois no mapa pra
-  posicioná-lo) é restrito a quem tem `MANAGE_BLOCKS` — mesma permissão que
-  já controla o CRUD de blocos em Gerenciamento; qualquer usuário logado
-  pode *ver* o mapa. Atribuição "© OpenStreetMap contributors" incluída na
-  própria imagem (exigência da licença ODbL dos dados).
+  funciona em rede totalmente interna/offline). Além do mapa geral, dois
+  recortes com mais zoom (CCN1/CCN2, um por centro) ajudam a mirar a posição
+  de um bloco com mais precisão; a posição salva (`blocks.map_x`/`map_y`,
+  percentual, não pixel) é sempre em relação ao mapa geral e reprojetada nos
+  recortes via lat/lon. Clicar num pino mostra o nome do bloco e a lista de
+  salas dele. Editar posições (arrastar um pino existente, ou clicar num
+  bloco "sem posição" e depois no mapa pra posicioná-lo, via
+  `set_block_position`) é restrito a quem tem `MANAGE_BLOCKS`; qualquer
+  usuário logado pode *ver* o mapa. Atribuição "© OpenStreetMap
+  contributors" incluída na própria imagem (exigência da licença ODbL dos
+  dados). Um segundo tipo de pino, amarelo, marca pontos de referência fixos
+  (Biblioteca Comunitária, RU II, RU - CCN, HU, PREUNI, Reitoria) que **não**
+  são blocos — sem sala, sem posição editável pela interface (é uma lista
+  fixa no código, `REFERENCE_PINS` em `classroom-allocation.jsx`, não uma
+  tabela) — mas ainda clicáveis pra ver o nome e abrir no Google Maps.
 - **Perfil** — tela própria (`src/components/ProfileScreen.jsx`), acessível
   pelo botão "👤 Perfil" ao lado de "Sair" em toda tela principal (seleção,
   Alocar Disciplinas, Mapa de Salas, Gerenciamento), não só a partir do menu.
@@ -128,6 +133,14 @@ salas e blocos novos.
   cada conclusão.
 - **Sincronização em tempo real** — duas pessoas em sessões diferentes veem
   as mudanças uma da outra quase instantaneamente, via Supabase Realtime.
+- **Interface adaptada a celular** — Login, Seleção de Tela, Perfil, Mapa de
+  Salas e Localização de Salas funcionam bem em tela de celular
+  (`src/responsive.js`: hook de breakpoint + hook de detecção de toque via
+  `pointer: coarse`, não largura). A tela de Alocação (Grade de Horários)
+  mantém o mesmo layout denso em qualquer tamanho de tela — decisão
+  deliberada, a matriz sala×hora não cabe reformatada num celular sem virar
+  outra tela — só com a rolagem horizontal e o toque polidos (coluna da sala
+  fixa ao rolar, célula maior em tela sensível a toque).
 - **Tema claro/escuro**, interface 100% em português.
 
 ---
@@ -410,6 +423,10 @@ terceiros — ver `CLAUDE.md`.
 - **Permissão de sala é só por função**, sem override individual por
   usuário — uma decisão de design (não uma limitação a corrigir): dois
   usuários com a mesma função sempre têm exatamente as mesmas salas.
+- **Card de sala do Mapa de Salas é largo demais pro celular** (`minWidth`
+  de 520px) — fica contido pelo próprio scroll (não estoura a página), mas
+  cramped; conserto de verdade precisa de um layout de card compacto
+  pensado pra mobile, não só CSS fluido — deliberadamente adiado.
 
 ---
 
