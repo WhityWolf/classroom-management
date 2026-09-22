@@ -1498,7 +1498,8 @@ const REFERENCE_PINS=[
   {id:'ref-ru2',name:'RU II',lat:-5.0608018,lon:-42.7960974},
   {id:'ref-hu',name:'HU',lat:-5.0598698,lon:-42.7940539},
   {id:'ref-ru-ccn',name:'RU - CCN',lat:-5.0560317,lon:-42.7883894},
-  {id:'ref-preuni',name:'PREUNI',lat:-5.0570491,lon:-42.7915809},
+  {id:'ref-preuni',name:'PREUNI',lat:-5.0570750,lon:-42.7911578},
+  {id:'ref-reitoria',name:'Reitoria',lat:-5.0574780,lon:-42.7916462},
 ];
 
 // Painel lateral em modo "gaveta" — abaixo de TABLET_BP os dois menus fixos
