@@ -1088,8 +1088,7 @@ function ScreenSelector({onPick,subUnits}){
         .icon-btn:hover{background:${T.inner}!important;border-color:${T.muted}!important;}
         @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
       `}</style>
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 18px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
-        <div style={{flex:1}}/>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',flexWrap:'wrap',gap:10,rowGap:8,padding:'9px 18px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
         <div style={{padding:'3px 10px',background:T.inner,border:`1px solid ${T.bdr2}`,borderRadius:20,display:'flex',alignItems:'center',gap:6}}>
           <span style={{...mono,fontSize:10,color:T.muted}}>{currentUser.name}</span>
           <span style={{...mono,fontSize:9,color:T.dim,borderLeft:`1px solid ${T.bdr2}`,paddingLeft:6}}>{currentUser.role.name}</span>
@@ -1744,7 +1743,7 @@ function CampusMapScreen({blocks,rooms,onBack}){
 
       {selectedBlock&&!editing&&(
         <div onClick={()=>setSelectedId(null)} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.35)':'rgba(0,0,0,.6)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:100}}>
-          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:24,width:340,maxHeight:'70vh',display:'flex',flexDirection:'column',boxShadow:T.shadowMd}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:24,width:'min(340px, calc(100vw - 32px))',maxHeight:'70vh',display:'flex',flexDirection:'column',boxShadow:T.shadowMd}}>
             <div style={{display:'flex',alignItems:'flex-start',marginBottom:14}}>
               <div>
                 <div style={{fontSize:16,fontWeight:700,color:T.txt}}>{selectedBlock.local}</div>
@@ -2114,7 +2113,7 @@ function RoomFeaturesModal({room,dept,featureOptions,onSave,onClose,onAddOption,
   };
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:540,maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(540px, calc(100vw - 32px))',maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         {/* Cabeçalho */}
         <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:20,flexShrink:0}}>
           <div style={{width:3,height:20,borderRadius:1,background:rd.clr}}/>
@@ -2183,7 +2182,7 @@ function AutoAllocWarningModal({onConfirm,onCancel}){
   const{T,theme}=useT();
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:440,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(440px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:16}}>
           <div style={{fontSize:16,fontWeight:700,color:T.txt}}>✨ Alocar Automaticamente</div>
           <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
@@ -2207,7 +2206,7 @@ function AutoAllocScopeModal({roleName,allCount,mineCount,onChoose,onCancel}){
   const{T,theme}=useT();
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:420,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(420px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:16}}>
           <div style={{fontSize:16,fontWeight:700,color:T.txt}}>✨ Alocar Automaticamente</div>
           <button onClick={onCancel} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
@@ -2240,7 +2239,7 @@ function AutoAllocModal({result,dept,onApply,onCancel}){
   const placedCount=assignments.length,failedCount=failed.length;
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,width:580,maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,width:'min(580px, calc(100vw - 32px))',maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{padding:'20px 24px 16px',borderBottom:`1px solid ${T.bdr}`,flexShrink:0}}>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
             <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#eff6ff':'#0d1f3d',border:`1px solid ${theme==='light'?'#bfdbfe':'#60a5fa44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19}}>✨</div>
@@ -2340,7 +2339,7 @@ function FinishConfirmModal({roleName,remaining,onConfirm,onCancel}){
   const{T,theme}=useT();
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:420,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(420px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
           <div style={{width:36,height:36,borderRadius:8,background:theme==='light'?'#f0fdf4':'#0a2a0a',border:`1px solid ${theme==='light'?'#86efac':'#34d39944'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:19}}>✓</div>
           <div>
@@ -2376,7 +2375,7 @@ function CoordinationStatusPanel({roles,subUnits,coordinationStatuses,notificati
   const statusLabel={[DS.ACTIVE]:'Ativo',[DS.FINISHED]:'Concluído',[DS.FORCE_FINISHED]:'Bloqueado'};
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:520,animation:'scaleIn .18s ease',boxShadow:T.shadowMd,maxHeight:'80vh',overflow:'auto'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(520px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd,maxHeight:'80vh',overflow:'auto'}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:20}}>
           <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Status de Alocação das Coordenações</div>
           <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
@@ -2418,7 +2417,7 @@ function NotifPanel({notifications,onClose}){
   const{gRole}=useRolesData();
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:'transparent',display:'flex',alignItems:'flex-start',justifyContent:'flex-end',zIndex:150,paddingTop:52,paddingRight:16}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:10,width:340,animation:'slideIn .15s ease',boxShadow:T.shadowMd,overflow:'hidden',maxHeight:'70vh',display:'flex',flexDirection:'column'}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:10,width:'min(340px, calc(100vw - 32px))',animation:'slideIn .15s ease',boxShadow:T.shadowMd,overflow:'hidden',maxHeight:'70vh',display:'flex',flexDirection:'column'}}>
         <div style={{padding:'12px 16px',borderBottom:`1px solid ${T.bdr}`,display:'flex',alignItems:'center'}}>
           <span style={{fontSize:14,fontWeight:600,color:T.txt}}>Notificações</span>
           <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:15,cursor:'pointer'}}>✕</button>
@@ -2501,7 +2500,7 @@ function CourseEditModal({course,isInstitutional,targetRoleId,courses,period,onS
   const inp={width:'100%',padding:'7px 10px',background:T.inputBg,border:`1px solid ${T.inputBdr}`,borderRadius:6,color:T.txt,fontSize:13,outline:'none'};
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:440,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(440px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
           <div style={{width:3,height:20,borderRadius:1,background:cd.clr}}/>
           {course&&<span style={{...mono,fontSize:11,color:cdClr,fontWeight:500}}>{course.code}</span>}
@@ -2633,7 +2632,7 @@ function CourseImportModal({targetRoleId,roleName,existingCourses,period,onConfi
 
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,width:600,maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,width:'min(600px, calc(100vw - 32px))',maxHeight:'85vh',display:'flex',flexDirection:'column',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
 
         {step==='pick'&&(
           <>
@@ -2768,7 +2767,7 @@ function MergeModal({room,incomingCourse,conflicts,totalEnroll,dept,day,onConfir
   const[confirmed,setConfirmed]=useState(false);
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:440,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(440px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:20}}>
           <div style={{width:34,height:34,borderRadius:8,background:theme==='light'?'#fffbeb':'#1a1400',border:`1px solid ${theme==='light'?'#f59e0b44':'#F59E0B44'}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:17}}>⇄</div>
           <div>
@@ -2841,7 +2840,7 @@ function DayPickerModal({room,course,dept,onConfirm,onCancel}){
   const allDays=selectedDays.length===days.length;
   return(
     <div onClick={onCancel} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:400,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(400px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16}}>
           <div style={{width:3,height:20,borderRadius:1,background:dept.clr}}/>
           <div>

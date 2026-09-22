@@ -95,6 +95,7 @@ export default function UserManagement({ onClose, roles, subUnits }) {
             {loading?(
               <div style={{padding:32,textAlign:'center',color:T.dim,fontSize:13}}>Carregando…</div>
             ):(
+            <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
               <thead>
                 <tr style={{position:'sticky',top:0,background:T.surface,borderBottom:`1px solid ${T.bdr}`,zIndex:2}}>
@@ -153,6 +154,7 @@ export default function UserManagement({ onClose, roles, subUnits }) {
                 })}
               </tbody>
             </table>
+            </div>
             )}
           </div>
         </div>
@@ -180,7 +182,7 @@ export default function UserManagement({ onClose, roles, subUnits }) {
         <div onClick={()=>setDeactConf(null)}
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300}}>
           <div onClick={e=>e.stopPropagation()}
-            style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:12,padding:24,width:340,boxShadow:T.shadowMd}}>
+            style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:12,padding:24,width:'min(340px, calc(100vw - 32px))',boxShadow:T.shadowMd}}>
             <div style={{fontSize:15,fontWeight:700,color:T.txt,marginBottom:8}}>Desativar usuário?</div>
             <div style={{fontSize:13,color:T.muted,marginBottom:20}}>
               <strong>{deactConf.name}</strong> perderá todo o acesso imediatamente. Os dados são preservados.

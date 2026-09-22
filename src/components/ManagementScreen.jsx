@@ -342,6 +342,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
           <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nome ou usuário…" style={{...inpStyle(T),flex:1}}/>
           {can(PERMS.CREATE_ANY_USER)&&<button onClick={startCreate} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>+ Novo Usuário</button>}
         </div>
+        <div style={{overflowX:'auto'}}>
         <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
           <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
             {[['Nome','name'],['Usuário','username'],['Função','role'],['Status','status'],['',null]].map(([h,key])=>(
@@ -376,6 +377,7 @@ function UsersTab({ users, roles, subUnits, can, currentUser, reloadUsers, flash
             })}
           </tbody>
         </table>
+        </div>
       </>
     )} panel={confirmDelete?(
       <div>
@@ -853,6 +855,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
         {sub==='rooms'?(
           <>
             {can(PERMS.MANAGE_ROOMS)&&<button onClick={startCreateRoom} style={{padding:'7px 16px',background:'#3b82f6',border:'none',borderRadius:6,color:'#fff',fontSize:12,fontWeight:600,cursor:'pointer',marginBottom:14}}>+ Nova Sala</button>}
+            <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
               <thead><tr style={{borderBottom:`1px solid ${T.bdr}`}}>
                 {[['Sala','label'],['Bloco','block'],['Tipo','type'],['Vagas','cap'],['Função','role'],['Sub-unidade','subUnit'],[ '',null]].map(([h,key])=>(
@@ -892,6 +895,7 @@ function RoomsBlocksTab({ rooms, blocks, roles, subUnits, courses, can, reloadDo
                 })}
               </tbody>
             </table>
+            </div>
           </>
         ):(
           <>

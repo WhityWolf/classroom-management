@@ -61,7 +61,7 @@ export default function ProfileScreen({ onBack, subUnits=[] }) {
       </div>
 
       <div style={{flex:1,overflow:'auto',display:'flex',justifyContent:'center',padding:'40px 20px'}}>
-        <div style={{width:440}}>
+        <div style={{width:'100%',maxWidth:440}}>
           <div style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:12,padding:24,marginBottom:20,boxShadow:T.shadowSm}}>
             <div style={{fontSize:15,fontWeight:700,marginBottom:16,color:T.txt}}>Informações da Conta</div>
 
@@ -145,7 +145,7 @@ function ChangePasswordModal({onClose}){
 
   return(
     <div onClick={onClose} style={{position:'fixed',inset:0,background:theme==='light'?'rgba(15,23,42,.4)':'rgba(0,0,0,.75)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:200,backdropFilter:'blur(2px)'}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:380,animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:T.surface,border:`1px solid ${T.bdr}`,borderRadius:14,padding:28,width:'min(380px, calc(100vw - 32px))',animation:'scaleIn .18s ease',boxShadow:T.shadowMd}}>
         <div style={{display:'flex',alignItems:'center',marginBottom:20}}>
           <div style={{fontSize:16,fontWeight:700,color:T.txt}}>Trocar Senha</div>
           <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',color:T.muted,fontSize:17,cursor:'pointer'}}>✕</button>
