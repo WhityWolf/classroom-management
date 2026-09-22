@@ -18,18 +18,32 @@ import { useEffect, useState } from 'react';
 export const MOBILE_BP = 480;
 export const TABLET_BP = 768;
 
-export function useIsNarrow(maxWidthPx = TABLET_BP) {
-  const query = `(max-width: ${maxWidthPx}px)`;
-  const [narrow, setNarrow] = useState(
+// Compartilhado pelos dois hooks abaixo — só troca a query observada.
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(
     () => typeof window !== 'undefined' && window.matchMedia(query).matches
   );
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mql = window.matchMedia(query);
-    const onChange = () => setNarrow(mql.matches);
-    onChange(); // o breakpoint do parâmetro pode ter mudado entre renders
+    const onChange = () => setMatches(mql.matches);
+    onChange(); // a query pode ter mudado entre renders (ex.: breakpoint por parâmetro)
     mql.addEventListener('change', onChange);
     return () => mql.removeEventListener('change', onChange);
   }, [query]);
-  return narrow;
+  return matches;
+}
+
+export function useIsNarrow(maxWidthPx = TABLET_BP) {
+  return useMediaQuery(`(max-width: ${maxWidthPx}px)`);
+}
+
+// true em telas sensíveis ao toque sem mouse/trackpad de precisão (celular,
+// tablet) — via `pointer: coarse`, não largura de viewport: um tablet largo
+// usado por toque também se beneficia de alvo de toque maior, e um notebook
+// estreito com mouse não precisa disso. Usado pra decidir célula/linha
+// maior na Grade (Fase 3), não pra decidir layout/estrutura — isso continua
+// sendo trabalho do useIsNarrow.
+export function useIsCoarsePointer() {
+  return useMediaQuery('(pointer: coarse)');
 }

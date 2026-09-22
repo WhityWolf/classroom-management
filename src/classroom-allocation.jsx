@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment, useRef, useEffect, createContext, useContext } from 'react';
 import { ThemeCtx, LIGHT, DARK, useT, dtc, dbg } from './theme.jsx';
-import { useIsNarrow, TABLET_BP } from './responsive.js';
+import { useIsNarrow, useIsCoarsePointer, TABLET_BP } from './responsive.js';
 import { AuthProvider, useAuth } from './auth/AuthContext.jsx';
 import { isInstitutionalRole } from './auth/roles.js';
 import { PERMS } from './auth/permissions.js';
@@ -1953,7 +1953,14 @@ function CourseCard({course,activeRole,showRoleBadge,selected,locked,roomLabel,o
 function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,canMerge,canEditFeatures,canEditCourse,onTryAlloc,onDealloc,onEditFeatures,onEditCourse}){
   const{T,theme}=useT();
   const{gRole,gBlockLabel}=useRolesData();
-  const CW=76,RH=33,LW=130;
+  // Grade densa por natureza (16 colunas de hora) — não dá pra reformatar
+  // pra mobile sem virar outra tela (decisão tomada: só polir o que já
+  // existe). Melhoria de toque: linhas mais altas em tela sensível ao toque
+  // (`pointer:coarse`, não largura — um tablet largo usado no dedo também
+  // se beneficia). Melhoria de navegação: coluna da sala fixa (sticky) ao
+  // rolar horizontalmente, pra sempre saber qual linha é qual sala.
+  const coarse=useIsCoarsePointer();
+  const CW=76,RH=coarse?42:33,LW=130;
   const byBlockThenLabel=(a,b)=>gBlockLabel(a.blockId).localeCompare(gBlockLabel(b.blockId))||a.label.localeCompare(b.label,undefined,{numeric:true});
   const sorted=useMemo(()=>[
     ...rooms.filter(r=>r.roleId===roleId).sort(byBlockThenLabel),
@@ -1964,7 +1971,7 @@ function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,ca
       <colgroup><col style={{width:LW}}/>{HOURS.map(h=><col key={h} style={{width:CW}}/>)}</colgroup>
       <thead>
         <tr style={{position:'sticky',top:0,zIndex:5,background:T.surface,boxShadow:theme==='light'?'0 1px 2px rgba(0,0,0,.06)':'none'}}>
-          <th style={{padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
+          <th style={{position:'sticky',left:0,zIndex:1,background:T.surface,padding:'7px 10px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Sala / Lim. Alunos</th>
           {HOURS.map(h=><th key={h} style={{padding:'7px 0 7px 5px',textAlign:'left',fontFamily:"'DM Mono',monospace",fontSize:9,color:T.dim,fontWeight:400,borderBottom:`1px solid ${T.bdr}`}}>{h}:00</th>)}
         </tr>
       </thead>
@@ -1985,10 +1992,10 @@ function Grid({rooms,day,alloc,courses,sel,roleId,dept,canAllocate,canDealloc,ca
               {showSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'5px 10px',fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:700,color:T.txt2,background:T.faint,borderTop:`1px solid ${T.bdr}`,borderBottom:`1px solid ${T.bdr}`,letterSpacing:1,textTransform:'uppercase'}}>Outras Funções ↓</td></tr>}
               {showBlockSep&&<tr><td colSpan={HOURS.length+1} style={{padding:'4px 10px 4px 18px',fontFamily:"'DM Mono',monospace",fontSize:9,fontWeight:600,color:T.txt2,background:T.faint,letterSpacing:.5}}>{gBlockLabel(room.blockId)}</td></tr>}
               <tr style={{borderBottom:`1px solid ${T.bdr}`,background:rowBg}}>
-                <td style={{padding:'0 6px 0 10px',height:RH}}>
+                <td style={{position:'sticky',left:0,zIndex:1,background:rowBg,padding:'0 6px 0 10px',height:RH}}>
                   <div style={{display:'flex',alignItems:'center',gap:4}}>
                     <div style={{width:2,height:18,borderRadius:1,background:rd.clr,opacity:isOwn?1:0.4}}/>
-                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:11,color:isOwn?rdClr:T.muted,whiteSpace:'nowrap'}}>{room.label}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontSize:coarse?12:11,color:isOwn?rdClr:T.muted,whiteSpace:'nowrap'}}>{room.label}</span>
                     <span style={{fontFamily:"'DM Mono',monospace",fontSize:9,color:capWarn&&sel?'#d97706':T.dim}}>{room.cap}{capWarn&&sel?'⚠':''}</span>
                     {room.features.length>0&&<span title={room.features.join(', ')} style={{fontFamily:"'DM Mono',monospace",fontSize:8,color:T.dim,opacity:.7}}>⚙{room.features.length}</span>}
                     {room.desc&&<span title={room.desc} style={{fontSize:10,color:T.dim,opacity:.7}}>💬</span>}
